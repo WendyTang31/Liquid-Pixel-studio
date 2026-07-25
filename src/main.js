@@ -2,7 +2,7 @@
 import { W, H, P } from './config.js';
 import { store, cur } from './store.js';
 import { $, setHint } from './utils.js';
-import { makeState, pushUndo, saveProject, loadProject, serializeStates } from './state.js';
+import { makeState, pushUndo, saveProject, loadProject, serializeStates, hydrate } from './state.js';
 import { rasterize, resample, measureText, shapesChanged } from './pipeline.js';
 import { renderStrip, syncStateUI } from './ui/filmstrip.js';
 import { syncUI, updateSelBox, initInspector } from './ui/inspector.js';
@@ -32,6 +32,7 @@ function initTopbar(){
     rd.readAsText(f); e.target.value='';
   });
   $('view3dBtn').onclick=()=>{
+    autosave();
     try{ localStorage.setItem('morph3d-project', JSON.stringify(
       {version:4, states:serializeStates(), active:store.active, params:P})); }catch(_){}
     window.open('viewer.html','morph3d');
@@ -56,14 +57,34 @@ function seedExample(){
   store.states.forEach(s=>{rasterize(s); resample(s);});
 }
 
+// ── 自动保存:15s 定时 + 页面隐藏/离开时即存;启动时若有存档则恢复而非种子示例 ──
+function autosave(){
+  try{ localStorage.setItem('morph-autosave', JSON.stringify(
+    {version:4, states:serializeStates(), active:store.active, params:P})); }catch(_){}
+}
+function tryRestoreAutosave(){
+  try{
+    const raw=localStorage.getItem('morph-autosave'); if(!raw) return false;
+    const d=JSON.parse(raw); if(!d.states?.length) return false;
+    if(d.params) Object.assign(P, d.params);
+    hydrate({states:d.states, active:d.active??0});
+    return true;
+  }catch(_){ return false; }
+}
+
 initToolbar();
 initInspector();
 initStage();
 initTopbar();
-seedExample();
+const restored=tryRestoreAutosave();
+if(!restored) seedExample();
 renderStrip(); syncStateUI(); syncUI();
 setMode('play');
 startLoop();
+if(restored) setHint('✓ 已恢复上次编辑(自动保存)· 若要全新开始:🗑 全部');
+setInterval(autosave, 15000);
+addEventListener('pagehide', autosave);
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden) autosave(); });
 
 // 调试探针:把"应用实际使用的那份"store/P 暴露给控制台/自动化。
 // (Vite 对已编辑模块加 ?t= 时间戳,外部 import 会拿到另一份实例,读不到真实状态。)

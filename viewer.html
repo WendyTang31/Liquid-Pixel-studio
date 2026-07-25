@@ -11,7 +11,7 @@
         font-family:"IBM Plex Sans","Helvetica Neue",system-ui,sans-serif; }
   #scene{position:fixed; inset:0;}
   .bar{ position:fixed; top:10px; left:10px; right:10px; z-index:2;
-        display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+        display:flex; align-items:center; gap:10px; flex-wrap:wrap;
         background:rgba(22,22,22,.88); border:1px solid var(--line); border-radius:8px;
         padding:8px 10px; backdrop-filter:blur(6px);}
   .bar h1{font-size:13px; font-weight:600; letter-spacing:.05em; margin-right:4px;}
@@ -22,6 +22,9 @@
   button:hover{border-color:var(--mint); color:var(--mint);}
   .ck{font-size:11.5px; color:var(--ink); display:flex; gap:4px; align-items:center;}
   input[type=checkbox]{accent-color:var(--mint)}
+  .sl{display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--dim);}
+  .sl input[type=range]{width:90px; accent-color:var(--mint); height:16px;}
+  .sl .val{font-size:10.5px; color:var(--mint); min-width:30px; text-align:right; font-variant-numeric:tabular-nums;}
   #hint{ position:fixed; left:12px; bottom:10px; z-index:2; font-size:11.5px; color:var(--dim);
          background:rgba(10,10,10,.6); padding:4px 8px; border-radius:6px; max-width:92vw;}
   a{color:var(--mint); text-decoration:none;}
@@ -29,21 +32,23 @@
 </head>
 <body>
 <div class="bar">
-  <h1>3D 车模预览 <span>morph → 车尾 LED</span></h1>
-  <button id="loadProj">📂 载入工程 (.json)</button>
+  <h1>3D 车模预览 <span>点击车身 → 投上动画</span></h1>
+  <button id="loadProj">📂 载入工程</button>
   <button id="loadModel">🚗 载入车模 (.glb)</button>
-  <select id="meshSel" title="选择动画贴到哪个网格(或直接点击模型表面)">
-    <option value="">— 选择屏幕网格 —</option>
-  </select>
+  <span class="sl" title="投影贴片的宽度">大小 <input type="range" id="szSl" min="0.3" max="3" step="0.05" value="1.2"><span class="val" id="szV">1.20</span></span>
+  <span class="sl" title="绕表面法线旋转">旋转 <input type="range" id="rotSl" min="-180" max="180" step="1" value="0"><span class="val" id="rotV">0°</span></span>
+  <span class="sl" title="沿表面横向微移">横移 <input type="range" id="uSl" min="-0.8" max="0.8" step="0.01" value="0"><span class="val" id="uV">0.00</span></span>
+  <span class="sl" title="沿表面纵向微移">纵移 <input type="range" id="vSl" min="-0.8" max="0.8" step="0.01" value="0"><span class="val" id="vV">0.00</span></span>
+  <span class="sl" title="环境曝光,让车身更清楚">亮度 <input type="range" id="expSl" min="0.2" max="2.4" step="0.05" value="1.15"><span class="val" id="expV">1.15</span></span>
   <label class="ck"><input type="checkbox" id="bloomCk" checked> 辉光</label>
-  <label class="ck"><input type="checkbox" id="spinCk" checked> 环绕</label>
+  <label class="ck"><input type="checkbox" id="spinCk"> 环绕</label>
   <div class="spacer"></div>
   <a href="./index.html">← 返回编辑器</a>
   <input type="file" id="projFile" accept=".json" style="display:none">
   <input type="file" id="modelFile" accept=".glb,.gltf" style="display:none">
 </div>
 <div id="scene"></div>
-<div id="hint">拖动旋转 · 滚轮缩放 · 点击车身可改选投屏表面</div>
+<div id="hint">点击车身任意位置,把动画投影到那个面上(可反复点换位置)· 拖动旋转 · 滚轮缩放</div>
 <script type="module" src="/src/viewer/main3d.js"></script>
 </body>
 </html>
