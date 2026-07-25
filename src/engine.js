@@ -161,16 +161,21 @@ export function transBalls(pairs,t,time,P){
   return trails.length?out.concat(trails):out;
 }
 
+// 段级有效参数:状态可携带 trans 覆盖对象(ease/stag/flow/stretch/match),缺省继承全局。
+export const segParams=(P,ov)=> (ov && Object.keys(ov).length) ? {...P, ...ov} : P;
+
 // 序列构建:[停留, 过渡, 停留, …(seamless 时补一段 尾→首 过渡)]。
 // 纯函数:states + seamless 开关 + P 进,{segs,T} 出;不碰任何全局。
+// 每段过渡记住出发状态的 trans 覆盖(seg.ov),配对用段级 match,采样时再合并其余参数。
 export function buildSequence(states, seamless, P){
   const segs=[]; const N=states.length;
   for(let i=0;i<N;i++){
     if(states[i].hold>0.01) segs.push({type:'hold', si:i, dur:states[i].hold});
     const isLast=(i===N-1);
     const j=isLast ? (seamless && N>1 ? 0 : null) : i+1;
-    if(j!==null) segs.push({type:'trans', a:i, b:j, dur:states[i].dur,
-      pairs:makePairs(states[i].dots, states[j].dots, P)});
+    if(j!==null){ const ov=states[i].trans||null;
+      segs.push({type:'trans', a:i, b:j, dur:states[i].dur, ov,
+        pairs:makePairs(states[i].dots, states[j].dots, segParams(P,ov))}); }
   }
   if(!segs.length) segs.push({type:'hold', si:0, dur:1});
   let T=0; segs.forEach(s=>{s.t0=T; T+=s.dur;});
@@ -191,7 +196,7 @@ export function sampleFrame(SEQ, states, g, time, P){
   } else {
     const lt=(g-seg.t0)/seg.dur, ca=hex2rgb(states[seg.a].color), cb=hex2rgb(states[seg.b].color);
     const e=EASE.smoothstep(lt);
-    return {seg, balls:transBalls(seg.pairs,lt,time,P),
+    return {seg, balls:transBalls(seg.pairs,lt,time,segParams(P,seg.ov)),
       col:[ca[0]+(cb[0]-ca[0])*e, ca[1]+(cb[1]-ca[1])*e, ca[2]+(cb[2]-ca[2])*e]};
   }
 }

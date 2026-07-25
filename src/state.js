@@ -15,12 +15,13 @@ export function makeState(name,color){
   const mctx=mask.getContext('2d',{willReadFrequently:true});
   mctx.fillStyle='#000'; mctx.fillRect(0,0,W,H);
   const ghost=document.createElement('canvas'); ghost.width=W; ghost.height=H;
-  return {id:store.stateId++, name, color, hold:1.0, dur:3.0,
+  return {id:store.stateId++, name, color, hold:1.0, dur:3.0, trans:{},
           shapes:[], manual:[], dots:[], mask, mctx, ghost, thumb:null};
 }
 
 // 序列化:只留数据字段,深拷贝 shapes/manual。
 export const serializeStates=()=>store.states.map(s=>({id:s.id,name:s.name,color:s.color,hold:s.hold,dur:s.dur,
+  trans:JSON.parse(JSON.stringify(s.trans||{})),
   shapes:JSON.parse(JSON.stringify(s.shapes)), manual:JSON.parse(JSON.stringify(s.manual))}));
 const snapshot=()=>({states:serializeStates(), active:store.active});
 
@@ -31,7 +32,7 @@ export function pushUndo(){ store.undoStack.push(snapshot());
 export function hydrate(data){
   store.states=data.states.map(d=>{
     const s=makeState(d.name,d.color);
-    Object.assign(s,{id:d.id,hold:d.hold,dur:d.dur,shapes:d.shapes,manual:d.manual});
+    Object.assign(s,{id:d.id,hold:d.hold,dur:d.dur,shapes:d.shapes,manual:d.manual,trans:d.trans||{}});
     return s;
   });
   store.stateId=Math.max(1,...store.states.map(s=>s.id))+1;

@@ -12,12 +12,23 @@ export function setActive(i){
   setHint(`编辑「${cur().name}」`);
 }
 
-// 右属性栏"当前状态"区回填。
+// 右属性栏"当前状态"区回填(含本段过渡覆盖控件)。
 export function syncStateUI(){
   const s=cur();
   $('stName').value=s.name; $('stColor').value=s.color;
   $('stHold').value=s.hold; $('vHold').textContent=(+s.hold).toFixed(1);
   $('stDur').value=s.dur; $('vDur').textContent=(+s.dur).toFixed(1);
+  const t=s.trans||{};
+  $('trEase').value=t.ease||'';
+  const syncOv=(ckId,slId,valId,key,dflt)=>{
+    const has=t[key]!==undefined;
+    $(ckId).checked=has;
+    $(slId).value=has?t[key]:dflt;
+    $(valId).textContent=(+(has?t[key]:dflt)).toFixed(2);
+  };
+  syncOv('trStagOn','trStag','vTrStag','stag',0.3);
+  syncOv('trFlowOn','trFlow','vTrFlow','flow',0);
+  syncOv('trStrOn','trStr','vTrStr','stretch',0);
 }
 
 export function renderStrip(){

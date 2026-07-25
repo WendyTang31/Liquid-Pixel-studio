@@ -191,6 +191,27 @@ test('采样器只在蒙版内落点', () => {
   }
 });
 
+test('逐段过渡覆盖:trans.ease 覆盖生效,空 trans 与全局一致', () => {
+  const P0 = { ease: 'smootherstep', stag: 0, amp: 0, freq: .4, match: 'sortXY', flow: 0, stretch: 0 };
+  const mkStates = trans => [
+    { hold: 0, dur: 2, color: '#fff', trans, dots: [{ x: .1, y: .5, r: .02 }] },
+    { hold: 0, dur: 2, color: '#fff', dots: [{ x: .9, y: .5, r: .02 }] },
+  ];
+  // 空覆盖 = 与全局逐位一致
+  const sGlobal = mkStates({});
+  const seqG = buildSequence(sGlobal, false, P0);
+  const gMid = sampleFrame(seqG, sGlobal, 0.5, 0, P0).balls[0].x;
+  // linear 覆盖 = 与直接把全局改成 linear 一致
+  const sOv = mkStates({ ease: 'linear' });
+  const seqO = buildSequence(sOv, false, P0);
+  const oMid = sampleFrame(seqO, sOv, 0.5, 0, P0).balls[0].x;
+  const sLin = mkStates({});
+  const seqL = buildSequence(sLin, false, { ...P0, ease: 'linear' });
+  const lMid = sampleFrame(seqL, sLin, 0.5, 0, { ...P0, ease: 'linear' }).balls[0].x;
+  assert.ok(Math.abs(oMid - lMid) < 1e-12, '覆盖 linear 应等价于全局 linear');
+  assert.ok(Math.abs(oMid - gMid) > 0.01, '覆盖后应与全局 smootherstep 不同(t=0.25 处)');
+});
+
 test('半调:点半径按 √亮度 缩放;不给亮度读取器时行为不变', () => {
   const on = (x, y) => x >= 100 && x <= 380 && y >= 100 && y <= 180;
   const Pl = { sample: 'grid', spacing: 20, jitter: 0, dotR: 4.5 };

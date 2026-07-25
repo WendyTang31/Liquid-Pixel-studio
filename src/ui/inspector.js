@@ -110,9 +110,25 @@ export function initInspector(){
     $('vHold').textContent=cur().hold.toFixed(1); store.seqDirty=true; });
   $('stDur').addEventListener('input',e=>{ cur().dur=parseFloat(e.target.value);
     $('vDur').textContent=cur().dur.toFixed(1); store.seqDirty=true; });
+  // ── 本段过渡覆盖:写 cur().trans,空/未勾选 = 删除键位继承全局 ──
+  const setOv=(key,val)=>{ const t=cur().trans||(cur().trans={});
+    if(val===undefined) delete t[key]; else t[key]=val;
+    store.seqDirty=true; };
+  $('trEase').onchange=e=>setOv('ease', e.target.value||undefined);
+  const bindOv=(ckId,slId,valId,key)=>{
+    $(ckId).addEventListener('change',e=>{
+      setOv(key, e.target.checked? parseFloat($(slId).value):undefined); });
+    $(slId).addEventListener('input',e=>{
+      $(valId).textContent=(+e.target.value).toFixed(2);
+      if($(ckId).checked) setOv(key, parseFloat(e.target.value)); });
+  };
+  bindOv('trStagOn','trStag','vTrStag','stag');
+  bindOv('trFlowOn','trFlow','vTrFlow','flow');
+  bindOv('trStrOn','trStr','vTrStr','stretch');
+
   $('stDup').onclick=()=>{ pushUndo();
     const s=cur(), c=makeState(s.name+' 副本', s.color);
-    Object.assign(c,{hold:s.hold, dur:s.dur,
+    Object.assign(c,{hold:s.hold, dur:s.dur, trans:JSON.parse(JSON.stringify(s.trans||{})),
       shapes:JSON.parse(JSON.stringify(s.shapes)), manual:JSON.parse(JSON.stringify(s.manual))});
     store.states.splice(store.active+1,0,c); rasterize(c); resample(c);
     setActive(store.active+1); renderStrip(); };

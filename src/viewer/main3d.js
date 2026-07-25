@@ -69,7 +69,7 @@ async function loadProjectData(data){
   for(const d of raw){
     for(const sh of d.shapes) if(sh.type==='image') await decodeImageShape(sh);
     paintShapes(mctx, d.shapes);
-    out.push({name:d.name, color:d.color, hold:d.hold, dur:d.dur,
+    out.push({name:d.name, color:d.color, hold:d.hold, dur:d.dur, trans:d.trans||{},
       dots:sampleDots(maskReaderFor(mctx), d.manual||[], P, lumReaderFor(mctx))});
   }
   states=out;

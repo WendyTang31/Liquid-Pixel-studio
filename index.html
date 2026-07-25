@@ -125,6 +125,26 @@
     </div>
     <div class="row"><label>停留 (秒)</label><input type="range" id="stHold" min="0" max="5" step="0.1" value="1"><div class="val" id="vHold">1.0</div></div>
     <div class="row"><label>过渡 (秒)</label><input type="range" id="stDur" min="0.5" max="8" step="0.1" value="3"><div class="val" id="vDur">3.0</div></div>
+    <div class="selbox" title="本状态→下一状态这段过渡的专属参数;不勾选/选'跟随全局'则继承③引擎的全局设置">
+      <div class="small">本段过渡覆盖(→ 下一状态)</div>
+      <div class="row"><label>缓动</label>
+        <select id="trEase" style="flex:1">
+          <option value="">(跟随全局)</option>
+          <option value="linear">linear</option>
+          <option value="smoothstep">smoothstep</option>
+          <option value="smootherstep">smootherstep</option>
+          <option value="cubic">easeInOutCubic</option>
+          <option value="backOut">回弹 backOut</option>
+          <option value="elasticOut">弹性 elasticOut</option>
+          <option value="bounceOut">弹跳 bounceOut</option>
+        </select></div>
+      <div class="row"><label class="ck"><input type="checkbox" id="trStagOn"> 错峰</label>
+        <input type="range" id="trStag" min="0" max="1" step="0.01" value="0.3"><div class="val" id="vTrStag">0.30</div></div>
+      <div class="row"><label class="ck"><input type="checkbox" id="trFlowOn"> 流场</label>
+        <input type="range" id="trFlow" min="0" max="1" step="0.05" value="0"><div class="val" id="vTrFlow">0.00</div></div>
+      <div class="row"><label class="ck"><input type="checkbox" id="trStrOn"> 拉伸</label>
+        <input type="range" id="trStr" min="0" max="1" step="0.05" value="0"><div class="val" id="vTrStr">0.00</div></div>
+    </div>
     <div class="row">
       <button id="stLeft" title="前移">←</button>
       <button id="stRight" title="后移">→</button>
