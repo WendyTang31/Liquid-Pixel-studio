@@ -2,7 +2,7 @@
 import { W, H, P } from './config.js';
 import { store, cur } from './store.js';
 import { $, setHint } from './utils.js';
-import { makeState, pushUndo, saveProject, loadProject } from './state.js';
+import { makeState, pushUndo, saveProject, loadProject, serializeStates } from './state.js';
 import { rasterize, resample, measureText, shapesChanged } from './pipeline.js';
 import { renderStrip, syncStateUI } from './ui/filmstrip.js';
 import { syncUI, updateSelBox, initInspector } from './ui/inspector.js';
@@ -31,6 +31,11 @@ function initTopbar(){
     rd.onload=()=>loadProject(JSON.parse(rd.result));
     rd.readAsText(f); e.target.value='';
   });
+  $('view3dBtn').onclick=()=>{
+    try{ localStorage.setItem('morph3d-project', JSON.stringify(
+      {version:4, states:serializeStates(), active:store.active, params:P})); }catch(_){}
+    window.open('viewer.html','morph3d');
+  };
   $('importImgBtn').onclick=()=>$('importImgFile').click();
   $('importImgFile').addEventListener('change',e=>{
     const f=e.target.files[0]; if(!f) return;

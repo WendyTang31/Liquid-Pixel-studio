@@ -48,6 +48,23 @@ export function createPreviewRenderer(ctx){
   };
 }
 
+// 任意尺寸的复用渲染器(stretch 映射):img/bins 建一次、逐帧复用 —— 3D 预览器的
+// 纹理画布每帧都要重画,用 renderToImageData(每帧新分配 ImageData)会造成 GC 抖动。
+export function createSizedRenderer(ctx, EW, EH){
+  const img=ctx.createImageData(EW,EH);
+  const tc=Math.ceil(EW/TS), tr=Math.ceil(EH/TS);
+  const bins=Array.from({length:tc*tr},()=>[]);
+  const rScale=Math.sqrt((EW*EH)/(W*H));
+  return function render(balls,col,P){
+    const n=balls.length, bg=hex2rgb(P.colBg);
+    const bx=new Float32Array(n), by=new Float32Array(n), br2=new Float32Array(n);
+    for(let i=0;i<n;i++){ bx[i]=balls[i].x*EW; by[i]=balls[i].y*EH;
+      const r=balls[i].r*W*rScale; br2[i]=r*r; }
+    fieldLoop(img.data, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P);
+    ctx.putImageData(img,0,0);
+  };
+}
+
 // 导出渲染器:任意尺寸,stretch(拉伸填满)或 fit(等比留黑)映射。半径按面积比缩放。
 export function renderToImageData(ectx, EW, EH, balls, col, P){
   const eimg=ectx.createImageData(EW,EH), d=eimg.data, bg=hex2rgb(P.colBg);

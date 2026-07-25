@@ -6,12 +6,13 @@
   "description": "点阵形变动画工具 —— 自动驾驶车尾 LED 灯语(eHMI)专属编辑器",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && vite build -c vite.config.viewer.js",
     "preview": "vite preview",
     "test": "node --test"
   },
   "dependencies": {
-    "jszip": "^3.10.1"
+    "jszip": "^3.10.1",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "vite": "^5.4.0",
