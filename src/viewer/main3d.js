@@ -14,7 +14,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { W, H, P } from '../config.js';
 import { buildSequence, sampleFrame } from '../engine.js';
 import { createSizedRenderer } from '../render.js';
-import { paintShapes, maskReaderFor, sampleDots } from '../pipeline.js';
+import { paintShapes, maskReaderFor, lumReaderFor, sampleDots } from '../pipeline.js';
 import { decodeImageShape } from '../image.js';
 
 const $=id=>document.getElementById(id);
@@ -70,7 +70,7 @@ async function loadProjectData(data){
     for(const sh of d.shapes) if(sh.type==='image') await decodeImageShape(sh);
     paintShapes(mctx, d.shapes);
     out.push({name:d.name, color:d.color, hold:d.hold, dur:d.dur,
-      dots:sampleDots(maskReaderFor(mctx), d.manual||[], P)});
+      dots:sampleDots(maskReaderFor(mctx), d.manual||[], P, lumReaderFor(mctx))});
   }
   states=out;
   SEQ=buildSequence(states, true, P);

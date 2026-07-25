@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EASE, buildSequence, makePairs, sampleFrame, transBalls } from '../src/engine.js';
-import { SAMPLERS } from '../src/samplers.js';
+import { SAMPLERS, sampleDots } from '../src/samplers.js';
 import { P } from '../src/config.js';
 
 test('呼吸漂移在停留↔过渡边界连续,无相位跳变(回归:曾用 index/random 两套相位公式)', () => {
@@ -189,6 +189,21 @@ test('采样器只在蒙版内落点', () => {
         `${name} 点 (${x|0},${y|0}) 落到蒙版外`);
     }
   }
+});
+
+test('半调:点半径按 √亮度 缩放;不给亮度读取器时行为不变', () => {
+  const on = (x, y) => x >= 100 && x <= 380 && y >= 100 && y <= 180;
+  const Pl = { sample: 'grid', spacing: 20, jitter: 0, dotR: 4.5 };
+  // 左半亮度 1.0,右半亮度 0.25 → 右半点半径应约为左半的 √0.25=一半
+  const lum = (x, y) => x < 240 ? 1.0 : 0.25;
+  const dots = sampleDots(on, [], Pl, lum);
+  const left = dots.filter(d => d.x * 480 < 240), right = dots.filter(d => d.x * 480 >= 240);
+  assert.ok(left.length && right.length, '两侧都应有点');
+  const rL = left[0].r, rR = right[0].r;
+  assert.ok(Math.abs(rR / rL - 0.5) < 0.05, `右侧半径应约为左侧一半,实际比 ${(rR/rL).toFixed(3)}`);
+  // 无 lum:全部等于基准半径
+  const plain = sampleDots(on, [], Pl);
+  for (const d of plain) assert.ok(Math.abs(d.r - 4.5/480) < 1e-12, '无亮度读取器时半径应为 dotR 基准');
 });
 
 test('智能识别(smart):两个分离圆形 → 还原为两个大球,圆心/半径准确', () => {

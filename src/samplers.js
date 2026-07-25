@@ -95,6 +95,20 @@ export const SAMPLERS = {
   },
 };
 
+// 采样核心:蒙版读取器 + 手动点 → 归一化点集(超 1500 抽稀)。纯函数,主应用/3D 预览器共用。
+// 采样器可返回 [x,y] 或 [x,y,r](逐点独立半径,如 smart);无 r 的用全局 P.dotR,
+// 且若给了亮度读取器 lum(半调),半径按 r=dotR·√B 随亮度缩放(感知墨量∝面积,见 CLAUDE.md §6)。
+export function sampleDots(on, manual, P, lum){
+  let pts=SAMPLERS[P.sample](on,P.spacing,P.jitter);
+  if(pts.length>1500){ const k=Math.ceil(pts.length/1500); pts=pts.filter((_,i)=>i%k===0); }
+  const base=P.dotR/W;
+  return pts.map(p=>{
+    if(p[2]!==undefined) return {x:p[0]/W, y:p[1]/H, r:p[2]/W};
+    const B=lum ? Math.max(0.06, lum(Math.round(p[0]),Math.round(p[1]))) : 1;
+    return {x:p[0]/W, y:p[1]/H, r:base*Math.sqrt(B)};
+  }).concat(manual.map(m=>({x:m.x,y:m.y,r:base})));
+}
+
 function lloydRelax(on,pts,iters){
   const n=pts.length;
   const cell=Math.max(4,Math.sqrt((W*H)/n)); // 网格边长按点密度取,平均每格约一个点

@@ -2,7 +2,7 @@
 // Image/DOM,不在此测,靠浏览器端到端验证)。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { luminanceHistogram, alphaHistogram, hasMeaningfulAlpha, otsuThreshold, binarize } from '../src/image.js';
+import { luminanceHistogram, alphaHistogram, hasMeaningfulAlpha, otsuThreshold, binarize, grayscaleize } from '../src/image.js';
 
 // 造一张合成的 RGBA 像素数组:一半深色像素、一半浅色像素(双峰分布,Otsu 的经典场景)。
 function makeBimodalPixels(n, darkV, lightV){
@@ -60,6 +60,15 @@ test('二值化:sub 模式内部应为黑色而非白色', () => {
   const data=makeBimodalPixels(2, 20, 230);
   binarize(data, { threshold:128, invert:false, useAlpha:false, addColor255:false });
   assert.equal(data[1*4], 0); assert.equal(data[1*4+3], 255); // 内部但 sub → 黑色可见
+});
+
+test('半调灰度化:R=放置(255) G=亮度,黑场之下全透明', () => {
+  const data=makeBimodalPixels(4, 20, 200); // 前两个 v=20(低于黑场),后两个 v=200
+  grayscaleize(data, { threshold:26, invert:false, useAlpha:false });
+  assert.equal(data[0*4+3], 0, 'v=20 < 黑场26 应透明');
+  assert.equal(data[2*4], 255, '内部 R 应为 255(放置通道)');
+  assert.equal(data[2*4+1], 200, '内部 G 应保留亮度值');
+  assert.equal(data[2*4+3], 255, '内部应不透明');
 });
 
 test('二值化:invert 翻转内外判定', () => {

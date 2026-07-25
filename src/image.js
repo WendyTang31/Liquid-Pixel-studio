@@ -53,6 +53,20 @@ export function binarize(data, {threshold, invert, useAlpha, addColor255}){
   }
 }
 
+// 半调灰度化:与 binarize 相对。R=放置(在黑场之上即 255),G/B=亮度值,外部全透明。
+// 蒙版的 R 通道继续担任"形状内外"判定(与全工具链兼容),G 通道携带亮度供半调采样
+// (r=dotR·√B)。threshold 在此模式下语义是"黑场底限":低于它视为背景。
+export function grayscaleize(data,{threshold,invert,useAlpha}){
+  for(let i=0;i<data.length;i+=4){
+    let v=useAlpha ? data[i+3] : (0.2126*data[i]+0.7152*data[i+1]+0.0722*data[i+2]);
+    if(invert) v=255-v;
+    v=Math.min(255,Math.round(v));
+    const inside=v>threshold;
+    if(inside){ data[i]=255; data[i+1]=v; data[i+2]=v; data[i+3]=255; }
+    else data[i+3]=0;
+  }
+}
+
 // dataURL → 解码好的 <img>,挂到 sh._img(非可枚举,JSON.stringify 自动跳过,不会混进工程文件)。
 // 按 dataURL 缓存:撤销/重做/多次打开同一工程时同一张图不用重复解码。
 const _imgCache=new Map();

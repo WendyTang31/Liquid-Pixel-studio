@@ -4,13 +4,16 @@ import { W, H } from './config.js';
 import { P } from './config.js';
 import { store } from './store.js';
 import { $, FONT, hex2rgb } from './utils.js';
-import { SAMPLERS } from './samplers.js';
+import { SAMPLERS, sampleDots } from './samplers.js';
 import { fillSmoothClosedPath } from './path.js';
-import { binarize } from './image.js';
+import { binarize, grayscaleize } from './image.js';
 
-// 蒙版读取器:白(>127)= 形状内。maskReaderFor 接任意 2D 上下文(3D 预览器自建蒙版复用)。
+// 蒙版读取器:R 通道 >127 = 形状内(放置);G 通道 = 亮度(半调用,普通形状画白 G=255 → B=1)。
+// maskReaderFor/lumReaderFor 接任意 2D 上下文(3D 预览器自建蒙版复用)。
 export const maskReaderFor=mctx=>{ const d=mctx.getImageData(0,0,W,H).data;
   return (x,y)=> x>=0&&y>=0&&x<W&&y<H && d[(y*W+x)*4]>127; };
+export const lumReaderFor=mctx=>{ const d=mctx.getImageData(0,0,W,H).data;
+  return (x,y)=> x>=0&&y>=0&&x<W&&y<H ? d[(y*W+x)*4+1]/255 : 0; };
 export const readMask=s=>maskReaderFor(s.mctx);
 
 // 文字量度只依赖字体串,与具体画布无关 —— 用独立 scratch context,
@@ -35,7 +38,10 @@ export function paintShapes(c, shapes){
       const tctx=tmp.getContext('2d',{willReadFrequently:true});
       tctx.drawImage(sh._img,0,0,tw,th);
       const id=tctx.getImageData(0,0,tw,th);
-      binarize(id.data,{threshold:sh.threshold, invert:sh.invert, useAlpha:sh.useAlpha, addColor255:sh.bool==='add'});
+      if(sh.halftone && sh.bool==='add')
+        grayscaleize(id.data,{threshold:sh.threshold, invert:sh.invert, useAlpha:sh.useAlpha});
+      else
+        binarize(id.data,{threshold:sh.threshold, invert:sh.invert, useAlpha:sh.useAlpha, addColor255:sh.bool==='add'});
       tctx.putImageData(id,0,0);
       c.drawImage(tmp, sh.x, sh.y); // 外部像素已置透明,drawImage 天然只覆盖"内部"区域(见 binarize 注释)
     }
@@ -73,20 +79,12 @@ export function updateThumb(s){
   c.globalCompositeOperation='source-over';
 }
 
-// 采样核心:蒙版读取器 + 手动点 → 归一化点集(超 1500 抽稀)。纯函数(不碰 store/DOM),
-// 供主应用 resample 与 3D 预览器复用。采样器可返回 [x,y] 或 [x,y,r](逐点独立半径,
-// 如 smart 结构圆);无 r 的用全局 P.dotR。
-export function sampleDots(on, manual, P){
-  let pts=SAMPLERS[P.sample](on,P.spacing,P.jitter);
-  if(pts.length>1500){ const k=Math.ceil(pts.length/1500); pts=pts.filter((_,i)=>i%k===0); }
-  const r=P.dotR/W;
-  return pts.map(p=>({x:p[0]/W, y:p[1]/H, r:p[2]!==undefined?p[2]/W:r}))
-    .concat(manual.map(m=>({x:m.x,y:m.y,r})));
-}
+// 采样核心已抽到 samplers.sampleDots(纯函数,node 可测);这里转发保持既有引用路径。
+export { sampleDots } from './samplers.js';
 
-// 采样:蒙版 → dots,并刷新点数显示。
+// 采样:蒙版 → dots(带半调亮度),并刷新点数显示。
 export function resample(s){
-  s.dots=sampleDots(readMask(s), s.manual, P);
+  s.dots=sampleDots(readMask(s), s.manual, P, lumReaderFor(s.mctx));
   const cnt=$('cnt');
   if(cnt) cnt.textContent=store.states.map(st=>`${st.name}: ${st.dots.length}`).join(' · ');
   store.seqDirty=true;

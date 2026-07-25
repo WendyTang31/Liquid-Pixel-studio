@@ -16,8 +16,11 @@ export function updateSelBox(){
     path:`自由轮廓 · ${sel.points?.length||0} 个锚点(双击线段加点/双击手柄删点)`,
     image:`图片蒙版${sel.useAlpha?' · 按透明通道':' · 按亮度'}`}[sel.type];
   const imgCtrls = sel.type==='image' ? `
-    <div class="row"><label>阈值</label><input type="range" id="selThr" min="0" max="255" value="${sel.threshold}"><div class="val" id="vSelThr">${sel.threshold}</div></div>
-    <label class="ck"><input type="checkbox" id="selInvert" ${sel.invert?'checked':''}> 反相</label>` : '';
+    <div class="row"><label>${sel.halftone?'黑场':'阈值'}</label><input type="range" id="selThr" min="0" max="255" value="${sel.threshold}"><div class="val" id="vSelThr">${sel.threshold}</div></div>
+    <div class="row">
+      <label class="ck"><input type="checkbox" id="selInvert" ${sel.invert?'checked':''}> 反相</label>
+      <label class="ck" title="按灰度控制点大小(r=R·√亮度),点阵呈现照片明暗"><input type="checkbox" id="selHalf" ${sel.halftone?'checked':''}> 半调</label>
+    </div>` : '';
   box.innerHTML=`<div>${name} · ${Math.round(sel.w)}×${Math.round(sel.h)}</div>
     ${imgCtrls}
     <div style="display:flex;gap:6px">
@@ -31,6 +34,10 @@ export function updateSelBox(){
     $('selThr').addEventListener('input',e=>{ sel.threshold=+e.target.value;
       $('vSelThr').textContent=sel.threshold; shapesChanged(cur()); });
     $('selInvert').addEventListener('change',e=>{ sel.invert=e.target.checked; shapesChanged(cur()); });
+    $('selHalf').addEventListener('change',e=>{ pushUndo(); sel.halftone=e.target.checked;
+      // 半调下阈值语义变为"黑场底限",二值化的高阈值会吃掉大半灰阶 —— 给个合理默认
+      if(sel.halftone && sel.threshold>100) sel.threshold=26;
+      updateSelBox(); shapesChanged(cur()); });
   }
 }
 export function deleteSel(){
