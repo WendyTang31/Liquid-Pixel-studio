@@ -12,6 +12,7 @@ import { updateSelBox, deleteSel } from './inspector.js';
 import { renderStrip } from './filmstrip.js';
 import { setTool } from './toolbar.js';
 import { rdpSimplify, pathBBox, fillSmoothClosedPath } from '../path.js';
+import { applyShapeBBox } from '../shapes.js';
 
 let cv, ctx, previewRender;
 
@@ -19,6 +20,36 @@ const HANDLE=5;
 const handlePts=s=>[[s.x,s.y],[s.x+s.w,s.y],[s.x,s.y+s.h],[s.x+s.w,s.y+s.h]];
 const PEN_MIN_STEP=2.5;   // 原始轨迹节流:相邻捕获点最小间距(px),避免密集到没法简化
 const PEN_EPSILON=2.5;    // RDP 简化容差(px):越大锚点越少、越粗糙
+
+// 智能吸附:移动中的形状的 左/中/右(上/中/下)贴近画布中线或其它形状的边与中心 4px 内
+// 时磁吸到位,同时记录参考线供叠加层高亮 —— PPT/Figma 式对齐体验。
+const SNAP=4;
+function snapMove(sel, px, py){
+  const s=cur();
+  const vT=[W/2], hT=[H/2];
+  for(const sh of s.shapes){ if(sh===sel) continue;
+    vT.push(sh.x, sh.x+sh.w/2, sh.x+sh.w);
+    hT.push(sh.y, sh.y+sh.h/2, sh.y+sh.h); }
+  const guides=[];
+  let bx=null, bdx=SNAP+0.001;
+  for(const t of vT) for(const off of [0, sel.w/2, sel.w]){
+    const d=Math.abs(t-(px+off)); if(d<bdx){ bdx=d; bx=t-off; guides[0]={axis:'v',pos:t}; } }
+  let by=null, bdy=SNAP+0.001;
+  for(const t of hT) for(const off of [0, sel.h/2, sel.h]){
+    const d=Math.abs(t-(py+off)); if(d<bdy){ bdy=d; by=t-off; guides[1]={axis:'h',pos:t}; } }
+  return { x: bx??px, y: by??py, guides: guides.filter(Boolean) };
+}
+function overlaySnapGuides(){
+  if(!store.snapGuides?.length) return;
+  ctx.strokeStyle='rgba(152,245,208,0.85)'; ctx.setLineDash([6,4]); ctx.lineWidth=1;
+  for(const gd of store.snapGuides){
+    ctx.beginPath();
+    if(gd.axis==='v'){ ctx.moveTo(gd.pos,0); ctx.lineTo(gd.pos,H); }
+    else { ctx.moveTo(0,gd.pos); ctx.lineTo(W,gd.pos); }
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+}
 
 // 路径最近线段:返回最近的相邻锚点对索引(环形,与 fillSmoothClosedPath 的闭合方式一致)及距离,
 // 供双击"在线段上插入锚点"命中测试用。
@@ -115,7 +146,7 @@ function tick(now){
       for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
       ctx.stroke();
     }
-    overlaySelection(); overlayFrameGuide();
+    overlaySelection(); overlaySnapGuides(); overlayFrameGuide();
   }
   requestAnimationFrame(tick);
 }
@@ -201,11 +232,14 @@ function onPointerMove(e){
   }
   else if(store.dragAct==='move'&&store.sel){
     const dx=p.x-store.dragStart.x, dy=p.y-store.dragStart.y;
+    const snapped=snapMove(store.sel, store.dragNow.ox+dx, store.dragNow.oy+dy);
+    store.snapGuides=snapped.guides;
+    const tx=snapped.x-store.dragNow.ox, ty=snapped.y-store.dragNow.oy;
     if(store.sel.type==='path'&&store.dragNow.origPoints){
-      store.sel.points=store.dragNow.origPoints.map(pt=>({x:pt.x+dx,y:pt.y+dy}));
+      store.sel.points=store.dragNow.origPoints.map(pt=>({x:pt.x+tx,y:pt.y+ty}));
       Object.assign(store.sel, pathBBox(store.sel.points));
     } else {
-      store.sel.x=store.dragNow.ox+dx; store.sel.y=store.dragNow.oy+dy;
+      store.sel.x=store.dragNow.ox+tx; store.sel.y=store.dragNow.oy+ty;
     }
     shapesChanged(s,true);
   }
@@ -247,7 +281,7 @@ function onPointerUp(e){
       setHint(`已画一条轮廓(${simplified.length} 个锚点)· ➤ 工具可拖动锚点精修`);
     }
   } else { shapesChanged(s); }
-  store.dragAct=null; store.dragStart=null; store.dragNow=null;
+  store.dragAct=null; store.dragStart=null; store.dragNow=null; store.snapGuides=null;
 }
 
 function onKeyDown(e){
@@ -260,6 +294,18 @@ function onKeyDown(e){
   else if(k==='d')setTool('dot'); else if(k==='p')setTool('pen');
   else if(e.key==='Delete'||e.key==='Backspace'){ deleteSel(); e.preventDefault(); }
   else if(e.key==='Escape'){ store.sel=null; updateSelBox(); }
+  else if(e.key.startsWith('Arrow') && store.sel && store.mode==='edit'){
+    const step=e.shiftKey?10:1;
+    const dx=e.key==='ArrowLeft'?-step:e.key==='ArrowRight'?step:0;
+    const dy=e.key==='ArrowUp'?-step:e.key==='ArrowDown'?step:0;
+    // 连续按键只在间隔 >800ms 时压一次撤销栈,避免长按把 60 步历史冲光
+    const now=performance.now();
+    if(!store._lastNudge || now-store._lastNudge>800) pushUndo();
+    store._lastNudge=now;
+    applyShapeBBox(store.sel, store.sel.x+dx, store.sel.y+dy, store.sel.w, store.sel.h);
+    shapesChanged(cur()); updateSelBox();
+    e.preventDefault();
+  }
 }
 
 // 双击编辑路径锚点:双击已有手柄=删除该点(至少保留 3 点);双击轮廓线段=在该处插入新锚点。

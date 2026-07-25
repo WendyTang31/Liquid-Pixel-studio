@@ -20,11 +20,28 @@ export async function exportPNG(){
   store.exporting=true; $('pngBtn').textContent='… 渲染中';
   const ec=document.createElement('canvas'); ec.width=EW; ec.height=EH;
   const ectx=ec.getContext('2d');
+  // 2×超采样:内部按双倍分辨率渲染,drawImage 双线性缩回 → 边缘更细腻
+  const ss=P.ss2x?2:1;
+  const big=document.createElement('canvas'); big.width=EW*ss; big.height=EH*ss;
+  const bctx=big.getContext('2d');
+  // 辉光:成品帧模糊后 lighter 加亮叠回(经典 bloom 近似);经拷贝画布避免自引用绘制
+  const glowCv=document.createElement('canvas'); glowCv.width=EW; glowCv.height=EH;
+  const glowCtx=glowCv.getContext('2d');
   const zip=new JSZip();
   for(let f=0;f<frames;f++){
     const g=f/P.fps;
-    const fr=sampleFrame(store.SEQ, store.states, g, g, P);
-    renderToImageData(ectx,EW,EH,fr.balls,fr.col,P); // 导出与预览共用 sampleFrame,所见即所得
+    const fr=sampleFrame(store.SEQ, store.states, g, g, P); // 导出与预览共用 sampleFrame
+    if(ss===2){ renderToImageData(bctx,EW*2,EH*2,fr.balls,fr.col,P); ectx.drawImage(big,0,0,EW,EH); }
+    else renderToImageData(ectx,EW,EH,fr.balls,fr.col,P);
+    if(P.glow>0){
+      glowCtx.clearRect(0,0,EW,EH); glowCtx.drawImage(ec,0,0);
+      ectx.save();
+      ectx.filter=`blur(${Math.max(2,Math.round(EW/160))}px)`;
+      ectx.globalCompositeOperation='lighter';
+      ectx.globalAlpha=P.glow;
+      ectx.drawImage(glowCv,0,0);
+      ectx.restore();
+    }
     zip.file(`frame_${String(f).padStart(4,'0')}.png`, await toBlobP(ec));
     if(f%5===0){ setHint(`导出中 ${f+1}/${frames}…`); await nextFrame(); }
   }

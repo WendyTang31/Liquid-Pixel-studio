@@ -8,7 +8,7 @@ import { renderStrip, syncStateUI } from './ui/filmstrip.js';
 import { syncUI, updateSelBox, initInspector } from './ui/inspector.js';
 import { initToolbar } from './ui/toolbar.js';
 import { initStage, setMode, startLoop } from './ui/stage.js';
-import { importImageFile } from './ui/imageImport.js';
+import { importImageFile, importImageSequence } from './ui/imageImport.js';
 
 // ── 顶栏:组操作 + 工程 ──
 function initTopbar(){
@@ -39,8 +39,9 @@ function initTopbar(){
   };
   $('importImgBtn').onclick=()=>$('importImgFile').click();
   $('importImgFile').addEventListener('change',e=>{
-    const f=e.target.files[0]; if(!f) return;
-    importImageFile(f); e.target.value='';
+    const fs=[...e.target.files]; e.target.value='';
+    if(fs.length===1) importImageFile(fs[0]);
+    else if(fs.length>1) importImageSequence(fs); // 多选 = 图像序列,每张一个状态
   });
 }
 

@@ -9,5 +9,6 @@ export const P = {
   ease:'smootherstep', stag:0.3, amp:0.003, freq:0.4, flow:0, stretch:0,
   thr:1.1, soft:0.12, match:'ot',
   tool:'rect', bool:'add', font:120,
-  fps:30, gamma:1.0, fit:'stretch', colBg:'#0a0a0a'
+  fps:30, gamma:1.0, fit:'stretch', colBg:'#0a0a0a',
+  ss2x:false, glow:0
 };

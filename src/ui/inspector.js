@@ -7,6 +7,7 @@ import { pushUndo, makeState } from '../state.js';
 import { rasterize, resample, resampleAll, updateThumb, tintGhost, shapesChanged } from '../pipeline.js';
 import { renderStrip, setActive, syncStateUI } from './filmstrip.js';
 import { exportPNG, toggleRecord } from '../export.js';
+import { applyShapeBBox } from '../shapes.js';
 
 // ── 选中对象小面板 ──
 export function updateSelBox(){
@@ -21,12 +22,30 @@ export function updateSelBox(){
       <label class="ck"><input type="checkbox" id="selInvert" ${sel.invert?'checked':''}> 反相</label>
       <label class="ck" title="按灰度控制点大小(r=R·√亮度),点阵呈现照片明暗"><input type="checkbox" id="selHalf" ${sel.halftone?'checked':''}> 半调</label>
     </div>` : '';
-  box.innerHTML=`<div>${name} · ${Math.round(sel.w)}×${Math.round(sel.h)}</div>
+  const num=(id,v)=>`<input type="text" id="${id}" value="${Math.round(v)}" style="width:44px">`;
+  box.innerHTML=`<div>${name}</div>
+    <div class="row" title="精确数值定位;方向键微移 1px,Shift=10px">
+      <label style="min-width:auto">X</label>${num('selX',sel.x)}
+      <label style="min-width:auto">Y</label>${num('selY',sel.y)}
+      <label style="min-width:auto">宽</label>${num('selW',sel.w)}
+      <label style="min-width:auto">高</label>${num('selH',sel.h)}
+    </div>
     ${imgCtrls}
     <div style="display:flex;gap:6px">
       <button id="selBool" style="flex:1">${sel.bool==='add'?'➕ 添加':'➖ 挖除'}</button>
       <button id="selDel" style="flex:1">删除 (Del)</button>
     </div>`;
+  for(const [id,apply] of [
+    ['selX',v=>applyShapeBBox(sel,v,sel.y,sel.w,sel.h)],
+    ['selY',v=>applyShapeBBox(sel,sel.x,v,sel.w,sel.h)],
+    ['selW',v=>applyShapeBBox(sel,sel.x,sel.y,v,sel.h)],
+    ['selH',v=>applyShapeBBox(sel,sel.x,sel.y,sel.w,v)],
+  ]){
+    $(id).addEventListener('change',e=>{
+      const v=parseFloat(e.target.value); if(!isFinite(v)) { updateSelBox(); return; }
+      pushUndo(); apply(v); shapesChanged(cur()); updateSelBox();
+    });
+  }
   $('selBool').onclick=()=>{ pushUndo(); sel.bool=sel.bool==='add'?'sub':'add';
     updateSelBox(); shapesChanged(cur()); };
   $('selDel').onclick=deleteSel;
@@ -55,8 +74,9 @@ export function syncUI(){
   set('pMatch',P.match); set('pEase',P.ease); set('pStag',P.stag); set('pAmp',P.amp);
   set('pThr',P.thr); set('pSoft',P.soft); set('pGamma',P.gamma); set('pFps',P.fps);
   set('pMatch',P.match); set('expFit',P.fit); set('colBg',P.colBg); set('pFont',P.font);
-  set('pFlow',P.flow); set('pStretch',P.stretch);
+  set('pFlow',P.flow); set('pStretch',P.stretch); set('pGlow',P.glow);
   $('vFlow').textContent=(+P.flow).toFixed(2); $('vStretch').textContent=(+P.stretch).toFixed(2);
+  $('vGlow').textContent=(+P.glow).toFixed(2); $('pSs2x').checked=!!P.ss2x;
   $('vSpace').textContent=P.spacing; $('vJit').textContent=(+P.jitter).toFixed(1);
   $('vDotR').textContent=(+P.dotR).toFixed(1); $('vStag').textContent=(+P.stag).toFixed(2);
   $('vAmp').textContent='.'+Math.round(P.amp*1000).toString().padStart(3,'0');
@@ -88,6 +108,8 @@ export function initInspector(){
   bind('pSoft','soft','vSoft',v=>v.toFixed(2));
   bind('pGamma','gamma','vGamma',v=>v.toFixed(2));
   bind('pFps','fps','vFps',v=>v);
+  bind('pGlow','glow','vGlow',v=>v.toFixed(2));
+  $('pSs2x').addEventListener('change',e=>{ P.ss2x=e.target.checked; });
   $('pSample').onchange=e=>{P.sample=e.target.value; resampleAll(); store.seqDirty=true;};
   $('pEase').onchange=e=>{P.ease=e.target.value; store.seqDirty=true;};
   $('pMatch').onchange=e=>{P.match=e.target.value; store.seqDirty=true;};
