@@ -75,6 +75,7 @@
   <button id="clearAll">🗑 全部</button>
   <button id="copyBtn">复制点集</button>
   <button id="importImgBtn">🖼 导入图片</button>
+  <button id="view3dBtn" title="把当前动画贴到 3D 车模上预览">🚗 3D 预览</button>
   <button id="saveBtn">💾 保存工程</button>
   <button id="openBtn">📂 打开工程</button>
   <input type="file" id="openFile" accept=".json" style="display:none">
@@ -151,6 +152,7 @@
         <option value="hex" selected>六角网格</option>
         <option value="poisson">泊松盘·蓝噪声</option>
         <option value="uniform">均匀填充·Lloyd 松弛</option>
+        <option value="smart">智能识别·结构圆</option>
         <option value="outline">仅轮廓</option>
       </select></div>
     <div class="row"><label>点间距</label><input type="range" id="pSpace" min="8" max="44" value="17"><div class="val" id="vSpace">17</div></div>

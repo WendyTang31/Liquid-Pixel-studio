@@ -53,6 +53,46 @@ export const SAMPLERS = {
     if(pts.length<2) return pts;
     return lloydRelax(on,pts,5);
   },
+  // 智能识别·结构圆(中轴/最大内切圆):不"铺满"蒙版,而是还原"这团形状本来由哪几个圆组成"。
+  // ① 两遍 chamfer 距离场:每个内部像素到最近边界的距离;② 距离峰值 = 天然圆心,峰值大小 = 半径;
+  // ③ 从大到小贪心接受"未被已选球覆盖"的候选 —— 大团块得到一个精确大球(如导入的 metaball 设计稿),
+  // 细笔画得到沿骨架的串珠。返回 [x,y,r] 三元组(逐点独立半径,引擎/渲染本就支持逐球 r)。
+  smart(on,sp){
+    const INF=1e9, D=new Float32Array(W*H);
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++) D[y*W+x]=on(x,y)?INF:0;
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){        // 前向遍历
+      const i=y*W+x; if(D[i]===0) continue; let d=D[i];
+      if(x>0)d=Math.min(d,D[i-1]+3);
+      if(y>0){ d=Math.min(d,D[i-W]+3);
+        if(x>0)d=Math.min(d,D[i-W-1]+4);
+        if(x<W-1)d=Math.min(d,D[i-W+1]+4); }
+      D[i]=d;
+    }
+    for(let y=H-1;y>=0;y--)for(let x=W-1;x>=0;x--){  // 后向遍历
+      const i=y*W+x; if(D[i]===0) continue; let d=D[i];
+      if(x<W-1)d=Math.min(d,D[i+1]+3);
+      if(y<H-1){ d=Math.min(d,D[i+W]+3);
+        if(x<W-1)d=Math.min(d,D[i+W+1]+4);
+        if(x>0)d=Math.min(d,D[i+W-1]+4); }
+      D[i]=d;
+    }
+    const minR=Math.max(3, sp*0.35);                  // 点间距滑块控制颗粒度:更小间距→更细的结构球
+    const cand=[];
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+      const r=D[y*W+x]/3;                             // chamfer 3/4 度量还原到像素
+      if(r>=minR) cand.push([x,y,r]);
+    }
+    cand.sort((a,b)=>b[2]-a[2]);
+    const balls=[];
+    for(const [x,y,r] of cand){
+      let covered=false;
+      for(const b of balls){ const dx=x-b[0],dy=y-b[1];
+        if(dx*dx+dy*dy < (b[2]*0.85)**2){ covered=true; break; } }
+      if(!covered){ balls.push([x,y,r*0.95]);         // 0.95:补偿渲染阈值,避免涨出原形状
+        if(balls.length>=400) break; }
+    }
+    return balls;
+  },
 };
 
 function lloydRelax(on,pts,iters){

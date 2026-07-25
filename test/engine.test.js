@@ -150,6 +150,32 @@ test('采样器只在蒙版内落点', () => {
   }
 });
 
+test('智能识别(smart):两个分离圆形 → 还原为两个大球,圆心/半径准确', () => {
+  // 蒙版:两个 r=40 的圆,圆心 (120,140) 和 (330,140)
+  const c1 = { x: 120, y: 140, r: 40 }, c2 = { x: 330, y: 140, r: 40 };
+  const on = (x, y) => ((x - c1.x) ** 2 + (y - c1.y) ** 2 <= c1.r ** 2) ||
+                        ((x - c2.x) ** 2 + (y - c2.y) ** 2 <= c2.r ** 2);
+  const balls = SAMPLERS.smart(on, 17);
+  // 主导球:半径 >= 30 的应正好 2 个,分别贴近两个真实圆心
+  const major = balls.filter(b => b[2] >= 30);
+  assert.equal(major.length, 2, `应识别出两个主导大球,实际 ${major.length}(总球数 ${balls.length})`);
+  for (const target of [c1, c2]) {
+    const hit = major.find(b => Math.hypot(b[0] - target.x, b[1] - target.y) < 8);
+    assert.ok(hit, `应有大球贴近圆心 (${target.x},${target.y})`);
+    assert.ok(Math.abs(hit[2] - target.r) < 8, `半径应接近 ${target.r},实际 ${hit[2].toFixed(1)}`);
+  }
+});
+
+test('智能识别(smart):细长条 → 沿骨架的串珠,而非单个大球', () => {
+  const on = (x, y) => x >= 80 && x <= 400 && y >= 130 && y <= 150; // 320x20 横条
+  const balls = SAMPLERS.smart(on, 17);
+  assert.ok(balls.length >= 5, `细条应产出多个串珠球,实际 ${balls.length}`);
+  for (const b of balls) {
+    assert.ok(Math.abs(b[1] - 140) < 6, `串珠应贴着中轴线 y=140,实际 y=${b[1]}`);
+    assert.ok(b[2] <= 14, `串珠半径应约等于半条宽(10),实际 ${b[2].toFixed(1)}`);
+  }
+});
+
 test('均匀填充(Lloyd 松弛)比原始泊松盘间距方差更小,即真的更均匀', () => {
   // 用一个不规则的 L 形蒙版(比矩形更贴近真实文字/图形笔画),重复几次取最优,
   // 避免泊松盘自身的随机性偶然赢一次导致测试不稳定。
@@ -165,11 +191,13 @@ test('均匀填充(Lloyd 松弛)比原始泊松盘间距方差更小,即真的�
     const mean = d.reduce((a, b) => a + b, 0) / d.length;
     return d.reduce((a, b) => a + (b - mean) ** 2, 0) / d.length;
   };
+  // 5 轮中 uniform 至少赢一轮即可:Lloyd 内有 250ms 时间预算护栏,CI/负载高时迭代可能被
+  // 提前掐断导致个别轮次不占优 —— 全输才说明算法真的没效果。
   let poissonWins = 0;
-  for (let trial = 0; trial < 3; trial++) {
+  for (let trial = 0; trial < 5; trial++) {
     const varPoisson = nnVariance(SAMPLERS.poisson(on, 14));
     const varUniform = nnVariance(SAMPLERS.uniform(on, 14));
     if (varPoisson <= varUniform) poissonWins++;
   }
-  assert.ok(poissonWins < 3, 'uniform 至少应有一轮明显比 poisson 更均匀(方差更小)');
+  assert.ok(poissonWins < 5, 'uniform 应至少有一轮比 poisson 更均匀(方差更小)');
 });

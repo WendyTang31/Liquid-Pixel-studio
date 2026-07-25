@@ -8,9 +8,10 @@ import { SAMPLERS } from './samplers.js';
 import { fillSmoothClosedPath } from './path.js';
 import { binarize } from './image.js';
 
-// 蒙版读取器:白(>127)= 形状内。
-export function readMask(s){ const d=s.mctx.getImageData(0,0,W,H).data;
-  return (x,y)=> x>=0&&y>=0&&x<W&&y<H && d[(y*W+x)*4]>127; }
+// 蒙版读取器:白(>127)= 形状内。maskReaderFor 接任意 2D 上下文(3D 预览器自建蒙版复用)。
+export const maskReaderFor=mctx=>{ const d=mctx.getImageData(0,0,W,H).data;
+  return (x,y)=> x>=0&&y>=0&&x<W&&y<H && d[(y*W+x)*4]>127; };
+export const readMask=s=>maskReaderFor(s.mctx);
 
 // 文字量度只依赖字体串,与具体画布无关 —— 用独立 scratch context,
 // 免得像 legacy 那样依赖 states[0](初始化时序列尚空,取 states[0] 会炸)。
@@ -18,10 +19,10 @@ const _measCtx=document.createElement('canvas').getContext('2d');
 export function measureText(txt,size){ _measCtx.font=FONT(size);
   return _measCtx.measureText(txt).width; }
 
-// 把形状列表烧进蒙版(add=白,sub=黑),再刷新幽灵与缩略图。
-export function rasterize(s){
-  const c=s.mctx; c.fillStyle='#000'; c.fillRect(0,0,W,H);
-  for(const sh of s.shapes){
+// 把形状列表画进任意蒙版上下文(add=白,sub=黑)。纯绘制,不碰 store —— 3D 预览器复用。
+export function paintShapes(c, shapes){
+  c.fillStyle='#000'; c.fillRect(0,0,W,H);
+  for(const sh of shapes){
     c.fillStyle=sh.bool==='add'?'#fff':'#000';
     if(sh.type==='rect') c.fillRect(sh.x,sh.y,sh.w,sh.h);
     else if(sh.type==='ellipse'){ c.beginPath();
@@ -41,6 +42,11 @@ export function rasterize(s){
     else { c.font=FONT(sh.h); c.textAlign='center'; c.textBaseline='middle';
       c.fillText(sh.text, sh.x+sh.w/2, sh.y+sh.h/2); }
   }
+}
+
+// 光栅化一个状态:形状 → 蒙版,并刷新幽灵与缩略图。
+export function rasterize(s){
+  paintShapes(s.mctx, s.shapes);
   tintGhost(s); updateThumb(s);
 }
 
@@ -67,14 +73,22 @@ export function updateThumb(s){
   c.globalCompositeOperation='source-over';
 }
 
-// 采样:蒙版 → 归一化点集(超 1500 抽稀),并入手动点。
-export function resample(s){
-  const on=readMask(s);
+// 采样核心:蒙版读取器 + 手动点 → 归一化点集(超 1500 抽稀)。纯函数(不碰 store/DOM),
+// 供主应用 resample 与 3D 预览器复用。采样器可返回 [x,y] 或 [x,y,r](逐点独立半径,
+// 如 smart 结构圆);无 r 的用全局 P.dotR。
+export function sampleDots(on, manual, P){
   let pts=SAMPLERS[P.sample](on,P.spacing,P.jitter);
   if(pts.length>1500){ const k=Math.ceil(pts.length/1500); pts=pts.filter((_,i)=>i%k===0); }
   const r=P.dotR/W;
-  s.dots=pts.map(p=>({x:p[0]/W,y:p[1]/H,r})).concat(s.manual.map(m=>({x:m.x,y:m.y,r})));
-  $('cnt').textContent=store.states.map(st=>`${st.name}: ${st.dots.length}`).join(' · ');
+  return pts.map(p=>({x:p[0]/W, y:p[1]/H, r:p[2]!==undefined?p[2]/W:r}))
+    .concat(manual.map(m=>({x:m.x,y:m.y,r})));
+}
+
+// 采样:蒙版 → dots,并刷新点数显示。
+export function resample(s){
+  s.dots=sampleDots(readMask(s), s.manual, P);
+  const cnt=$('cnt');
+  if(cnt) cnt.textContent=store.states.map(st=>`${st.name}: ${st.dots.length}`).join(' · ');
   store.seqDirty=true;
 }
 export const resampleAll=()=>store.states.forEach(resample);
