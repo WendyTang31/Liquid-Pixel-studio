@@ -3,9 +3,19 @@
 import { hex2rgb } from './utils.js';
 
 // 缓动:端点连续、速度/加速度在端点收敛(smootherstep 最柔)。
+// 物理组(backOut/elasticOut/bounceOut)刻意在中途越过 1 再回落 —— 过冲/弹跳/回弹的"手感"
+// 正来自这个越界;引擎的 lerp 对 e>1 天然外推,无需特判。
 export const EASE={ linear:t=>t, smoothstep:t=>t*t*(3-2*t),
   smootherstep:t=>t*t*t*(t*(t*6-15)+10),
-  cubic:t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2 };
+  cubic:t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2,
+  backOut:t=>{const c1=1.70158,c3=c1+1; return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2);},
+  elasticOut:t=>t<=0?0:t>=1?1:Math.pow(2,-10*t)*Math.sin((t*10-0.75)*(2*Math.PI/3))+1,
+  bounceOut:t=>{const n1=7.5625,d1=2.75;
+    if(t<1/d1)return n1*t*t;
+    if(t<2/d1)return n1*(t-=1.5/d1)*t+.75;
+    if(t<2.5/d1)return n1*(t-=2.25/d1)*t+.9375;
+    return n1*(t-=2.625/d1)*t+.984375;},
+};
 
 const centroid=a=>{let x=0,y=0;a.forEach(b=>{x+=b.x;y+=b.y;});return{x:x/a.length,y:y/a.length};};
 
@@ -114,16 +124,41 @@ export function drift(ph,time,P){return Math.sin(time*P.freq*6.283+ph)*.7+Math.s
 // 过渡帧:每个点独立按错峰相位 p.d 延迟进入缓动,叠加双轴漂移。
 // 漂移相位在 phaseA(=离开时的停留相位)与 phaseB(=到达时的停留相位)间按同一个 e 插值,
 // e=0/1 时分别精确退化为源/目标停留态的相位 —— 与相邻停留段严丝合缝,无跳变。
+// P.stretch>0 时,运动中的球沿速度反方向甩出两颗递减拖尾球 —— metaball 场把三球融成
+// 胶囊状,即 squash & stretch 的"拉伸"近似;速度由缓动的数值微分给出,错峰使各球
+// 拉伸时刻互不相同。头部球始终在结果数组前 N 位,与 pairs 下标对齐(轨迹叠加层依赖此约定)。
 export function transBalls(pairs,t,time,P){
-  const ease=EASE[P.ease], span=Math.max(1e-6,1-P.stag);
-  return pairs.map(p=>{
+  const ease=EASE[P.ease], span=Math.max(1e-6,1-P.stag), stretch=P.stretch||0, flow=P.flow||0;
+  const out=new Array(pairs.length); const trails=[];
+  for(let i=0;i<pairs.length;i++){
+    const p=pairs[i];
     const lt=Math.max(0,Math.min(1,(t-p.d*P.stag)/span)), e=ease(lt);
     const dxA=drift(p.phaseA,time,P), dxB=drift(p.phaseB,time,P);
     const dyA=drift(p.phaseA+3.1,time,P), dyB=drift(p.phaseB+3.1,time,P);
-    return{x:p.a.x+(p.b.x-p.a.x)*e+P.amp*(dxA+(dxB-dxA)*e),
-           y:p.a.y+(p.b.y-p.a.y)*e+P.amp*(dyA+(dyB-dyA)*e),
-           r:p.a.r+(p.b.r-p.a.r)*e};
-  });
+    const ball={x:p.a.x+(p.b.x-p.a.x)*e+P.amp*(dxA+(dxB-dxA)*e),
+                y:p.a.y+(p.b.y-p.a.y)*e+P.amp*(dyA+(dyB-dyA)*e),
+                r:p.a.r+(p.b.r-p.a.r)*e};
+    if(flow>0){
+      // 相干流场:方向角取决于行程中点位置(邻近的点弯向一致 → 群体如流体),
+      // 叠加少量每球个性(phaseA);sin(π·lt) 包络保证两端精确归零,不破坏与停留态的衔接。
+      const mx=(p.a.x+p.b.x)/2, my=(p.a.y+p.b.y)/2;
+      const th=2.4*Math.sin(5.1*mx+3.3*my)+1.9*Math.cos(3.7*mx-4.1*my)+0.6*Math.sin(p.phaseA);
+      const env=Math.sin(Math.PI*lt)*flow*0.08;
+      ball.x+=Math.cos(th)*env; ball.y+=Math.sin(th)*env;
+    }
+    out[i]=ball;
+    if(stretch>0 && lt>0 && lt<1 && ball.r>0){
+      const eps=0.02;
+      const v=(ease(Math.min(1,lt+eps))-ease(Math.max(0,lt-eps)))/(2*eps); // de/dlt
+      const vx=(p.b.x-p.a.x)*v, vy=(p.b.y-p.a.y)*v, sp=Math.hypot(vx,vy);
+      if(sp>0.05){
+        const k=Math.min(0.06, sp*0.04)*stretch, ux=vx/sp, uy=vy/sp;
+        trails.push({x:ball.x-ux*k*0.5, y:ball.y-uy*k*0.5, r:ball.r*0.85});
+        trails.push({x:ball.x-ux*k,     y:ball.y-uy*k,     r:ball.r*0.65});
+      }
+    }
+  }
+  return trails.length?out.concat(trails):out;
 }
 
 // 序列构建:[停留, 过渡, 停留, …(seamless 时补一段 尾→首 过渡)]。

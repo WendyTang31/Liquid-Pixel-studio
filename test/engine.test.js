@@ -1,7 +1,7 @@
 // 纯函数断言(node --test)。只测无 DOM 依赖的引擎/采样层。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EASE, buildSequence, makePairs, sampleFrame } from '../src/engine.js';
+import { EASE, buildSequence, makePairs, sampleFrame, transBalls } from '../src/engine.js';
 import { SAMPLERS } from '../src/samplers.js';
 import { P } from '../src/config.js';
 
@@ -36,8 +36,11 @@ test('缓动端点连续:每种 ease 都满足 f(0)=0, f(1)=1', () => {
   }
 });
 
-test('缓动单调不减(采样 0..1)', () => {
+const PHYSICS_EASES = ['backOut', 'elasticOut', 'bounceOut']; // 有意非单调(过冲/弹跳)
+
+test('缓动单调不减(采样 0..1;物理组除外——它们有意过冲/回落)', () => {
   for (const name of Object.keys(EASE)) {
+    if (PHYSICS_EASES.includes(name)) continue;
     let prev = -Infinity;
     for (let t = 0; t <= 1.0001; t += 0.05) {
       const v = EASE[name](t);
@@ -45,6 +48,44 @@ test('缓动单调不减(采样 0..1)', () => {
       prev = v;
     }
   }
+});
+
+test('物理缓动:过冲存在但有界(不飞出画面)', () => {
+  const maxOf = name => { let m = -Infinity;
+    for (let t = 0; t <= 1.0001; t += 0.002) m = Math.max(m, EASE[name](t)); return m; };
+  assert.ok(maxOf('backOut') > 1.02 && maxOf('backOut') < 1.35, 'backOut 应过冲且 <1.35');
+  assert.ok(maxOf('elasticOut') > 1.02 && maxOf('elasticOut') < 1.4, 'elasticOut 应过冲且 <1.4');
+  assert.ok(maxOf('bounceOut') <= 1 + 1e-9, 'bounceOut 不应越过 1(是回落式弹跳)');
+});
+
+test('拉伸:stretch=0 不加球不改位;中段加拖尾且拖在速度反方向;端点无拖尾', () => {
+  const A = [{ x: .1, y: .5, r: .02 }], B = [{ x: .9, y: .5, r: .02 }];
+  const P0 = { ease: 'smootherstep', stag: 0, amp: 0, freq: .4, match: 'sortXY', stretch: 0, flow: 0 };
+  const pairs = makePairs(A, B, P0);
+  const off = transBalls(pairs, 0.5, 0, P0);
+  assert.equal(off.length, 1, 'stretch=0 球数不变');
+  const on = transBalls(pairs, 0.5, 0, { ...P0, stretch: 1 });
+  assert.ok(on.length > 1, '中段应有拖尾球');
+  assert.ok(Math.abs(on[0].x - off[0].x) < 1e-12 && Math.abs(on[0].y - off[0].y) < 1e-12,
+    '头部球(前 N 位)位置不受拉伸影响,与 pairs 下标对齐');
+  for (let i = 1; i < on.length; i++) assert.ok(on[i].x < on[0].x, '向 +x 运动时拖尾应在头部 -x 侧');
+  assert.equal(transBalls(pairs, 0, 0, { ...P0, stretch: 1 }).length, 1, 'lt=0 无拖尾');
+  assert.equal(transBalls(pairs, 1, 0, { ...P0, stretch: 1 }).length, 1, 'lt=1 无拖尾');
+});
+
+test('流场:端点位移精确归零;中段生效;确定性(两次调用一致)', () => {
+  const A = [{ x: .2, y: .3, r: .02 }], B = [{ x: .8, y: .7, r: .02 }];
+  const P0 = { ease: 'linear', stag: 0, amp: 0, freq: .4, match: 'sortXY', stretch: 0, flow: 0 };
+  const pairs = makePairs(A, B, P0);
+  const PF = { ...P0, flow: 0.6 };
+  for (const t of [0, 1]) {
+    const a = transBalls(pairs, t, 0, P0)[0], b = transBalls(pairs, t, 0, PF)[0];
+    assert.ok(Math.abs(a.x - b.x) < 1e-12 && Math.abs(a.y - b.y) < 1e-12, `端点 t=${t} 流场应归零`);
+  }
+  const mid0 = transBalls(pairs, 0.5, 0, P0)[0], midF = transBalls(pairs, 0.5, 0, PF)[0];
+  assert.ok(Math.hypot(mid0.x - midF.x, mid0.y - midF.y) > 0.005, '中段流场应产生弧线偏移');
+  const midF2 = transBalls(pairs, 0.5, 0, PF)[0];
+  assert.ok(midF.x === midF2.x && midF.y === midF2.y, '流场必须确定性(预览=导出)');
 });
 
 test('序列总时长 == 各段时长之和,且末段收于 T', () => {

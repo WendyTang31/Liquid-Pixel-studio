@@ -6,7 +6,7 @@ export const W = 480, H = 280;
 // 从不整体重赋。这样各模块 `import { P }` 拿到的都是同一活引用,读写天然一致。
 export const P = {
   sample:'hex', spacing:17, jitter:0, dotR:4.5,
-  ease:'smootherstep', stag:0.3, amp:0.003, freq:0.4,
+  ease:'smootherstep', stag:0.3, amp:0.003, freq:0.4, flow:0, stretch:0,
   thr:1.1, soft:0.12, match:'ot',
   tool:'rect', bool:'add', font:120,
   fps:30, gamma:1.0, fit:'stretch', colBg:'#0a0a0a'

@@ -64,3 +64,9 @@ seedExample();
 renderStrip(); syncStateUI(); syncUI();
 setMode('play');
 startLoop();
+
+// 调试探针:把"应用实际使用的那份"store/P 暴露给控制台/自动化。
+// (Vite 对已编辑模块加 ?t= 时间戳,外部 import 会拿到另一份实例,读不到真实状态。)
+import('./store.js').then(m=>import('./config.js').then(c=>{
+  window.__morph={ store:m.store, P:c.P };
+}));

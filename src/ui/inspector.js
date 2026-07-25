@@ -48,6 +48,8 @@ export function syncUI(){
   set('pMatch',P.match); set('pEase',P.ease); set('pStag',P.stag); set('pAmp',P.amp);
   set('pThr',P.thr); set('pSoft',P.soft); set('pGamma',P.gamma); set('pFps',P.fps);
   set('pMatch',P.match); set('expFit',P.fit); set('colBg',P.colBg); set('pFont',P.font);
+  set('pFlow',P.flow); set('pStretch',P.stretch);
+  $('vFlow').textContent=(+P.flow).toFixed(2); $('vStretch').textContent=(+P.stretch).toFixed(2);
   $('vSpace').textContent=P.spacing; $('vJit').textContent=(+P.jitter).toFixed(1);
   $('vDotR').textContent=(+P.dotR).toFixed(1); $('vStag').textContent=(+P.stag).toFixed(2);
   $('vAmp').textContent='.'+Math.round(P.amp*1000).toString().padStart(3,'0');
@@ -72,6 +74,8 @@ export function initInspector(){
   bind('pFont','font','vFont',v=>v);
   // 引擎/渲染参数(只需置脏)
   bind('pStag','stag','vStag',v=>v.toFixed(2));
+  bind('pFlow','flow','vFlow',v=>v.toFixed(2));
+  bind('pStretch','stretch','vStretch',v=>v.toFixed(2));
   bind('pAmp','amp','vAmp',v=>'.'+Math.round(v*1000).toString().padStart(3,'0'));
   bind('pThr','thr','vThr',v=>v.toFixed(2));
   bind('pSoft','soft','vSoft',v=>v.toFixed(2));
