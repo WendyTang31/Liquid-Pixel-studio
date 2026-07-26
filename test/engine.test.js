@@ -2,7 +2,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EASE, buildSequence, makePairs, sampleFrame, transBalls } from '../src/engine.js';
-import { SAMPLERS, sampleDots } from '../src/samplers.js';
+import { SAMPLERS, sampleDots, setLloydBudget } from '../src/samplers.js';
+setLloydBudget(10000); // 测试并行抢 CPU 时别让 250ms 护栏掐掉迭代,否则断言的是降级路径
 import { P } from '../src/config.js';
 
 test('呼吸漂移在停留↔过渡边界连续,无相位跳变(回归:曾用 index/random 两套相位公式)', () => {
@@ -243,14 +244,35 @@ test('智能识别(smart):两个分离圆形 → 还原为两个大球,圆心/�
   }
 });
 
-test('智能识别(smart):细长条 → 沿骨架的串珠,而非单个大球', () => {
+test('智能识别(smart):细长条 → 主串珠贴中轴,全部球不出条带', () => {
   const on = (x, y) => x >= 80 && x <= 400 && y >= 130 && y <= 150; // 320x20 横条
   const balls = SAMPLERS.smart(on, 17);
   assert.ok(balls.length >= 5, `细条应产出多个串珠球,实际 ${balls.length}`);
   for (const b of balls) {
-    assert.ok(Math.abs(b[1] - 140) < 6, `串珠应贴着中轴线 y=140,实际 y=${b[1]}`);
-    assert.ok(b[2] <= 14, `串珠半径应约等于半条宽(10),实际 ${b[2].toFixed(1)}`);
+    if (b[2] >= 5) assert.ok(Math.abs(b[1] - 140) < 6, `主串珠应贴中轴 y=140,实际 y=${b[1]}`);
+    assert.ok(b[1] >= 128 && b[1] <= 152, `所有球应在条带内,实际 y=${b[1]}`);
+    assert.ok(b[2] <= 14, `半径应不超过半条宽(10)+容差,实际 ${b[2].toFixed(1)}`);
   }
+});
+
+test('智能识别(smart)边缘细化:锐角处有小球贴近,整体覆盖率高', () => {
+  // L 形:两条 60px 宽的臂,外凸直角在 (100,60);老版(minR 截断)会把角落削圆
+  const on = (x, y) => (x >= 100 && x <= 380 && y >= 60 && y <= 120) ||
+                        (x >= 100 && x <= 160 && y >= 60 && y <= 240);
+  const balls = SAMPLERS.smart(on, 17);
+  // ① 凸角内缩点 (106,66) 附近应有球(尖角特征被小球刻画,而非丢失)
+  let cornerDist = Infinity;
+  for (const b of balls) cornerDist = Math.min(cornerDist, Math.hypot(b[0] - 106, b[1] - 66));
+  assert.ok(cornerDist < 10, `尖角附近应有球,最近球距角 ${cornerDist.toFixed(1)}px`);
+  // ② 覆盖率:蒙版像素落在某球 1.15r 内的比例应 ≥ 90%
+  let inside = 0, covered = 0;
+  for (let y = 55; y <= 245; y += 2) for (let x = 95; x <= 385; x += 2) {
+    if (!on(x, y)) continue; inside++;
+    for (const b of balls) { const dx = x - b[0], dy = y - b[1];
+      if (dx * dx + dy * dy <= (b[2] * 1.15) ** 2) { covered++; break; } }
+  }
+  const frac = covered / inside;
+  assert.ok(frac >= 0.9, `覆盖率应≥90%,实际 ${(frac * 100).toFixed(1)}%(球数 ${balls.length})`);
 });
 
 test('均匀填充(Lloyd 松弛)比原始泊松盘间距方差更小,即真的更均匀', () => {

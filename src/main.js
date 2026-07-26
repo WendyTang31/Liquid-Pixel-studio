@@ -9,6 +9,7 @@ import { syncUI, updateSelBox, initInspector } from './ui/inspector.js';
 import { initToolbar } from './ui/toolbar.js';
 import { initStage, setMode, startLoop } from './ui/stage.js';
 import { importImageFile, importImageSequence } from './ui/imageImport.js';
+import { initAutosave, autosaveNow } from './autosave.js';
 
 // ── 顶栏:组操作 + 工程 ──
 function initTopbar(){
@@ -35,7 +36,9 @@ function initTopbar(){
     autosave();
     try{ localStorage.setItem('morph3d-project', JSON.stringify(
       {version:4, states:serializeStates(), active:store.active, params:P})); }catch(_){}
-    window.open('viewer.html','morph3d');
+    // 同窗切换(PS 式单窗口工作流):window.open 会造成两个编辑器实例
+    // 各自定时存档、互相覆盖 —— "回来发现改动被复原"正是这么来的。
+    location.href='viewer.html';
   };
   $('importImgBtn').onclick=()=>$('importImgFile').click();
   $('importImgFile').addEventListener('change',e=>{
@@ -58,11 +61,10 @@ function seedExample(){
   store.states.forEach(s=>{rasterize(s); resample(s);});
 }
 
-// ── 自动保存:15s 定时 + 页面隐藏/离开时即存;启动时若有存档则恢复而非种子示例 ──
-function autosave(){
-  try{ localStorage.setItem('morph-autosave', JSON.stringify(
-    {version:4, states:serializeStates(), active:store.active, params:P})); }catch(_){}
-}
+// ── PS 式会话:每次改动即时存档(autosave.js 挂在 pushUndo 上)+ 隐藏/离开兜底;
+//    启动时若有存档则恢复而非种子示例。参数滑块不走 pushUndo,由 15s 定时器兜住。──
+initAutosave(()=>({version:4, states:serializeStates(), active:store.active, params:P}));
+const autosave=autosaveNow;
 function tryRestoreAutosave(){
   try{
     const raw=localStorage.getItem('morph-autosave'); if(!raw) return false;

@@ -5,6 +5,7 @@ import { store, cur } from './store.js';
 import { setHint, downloadBlob } from './utils.js';
 import { rasterize, resample } from './pipeline.js';
 import { decodeImageShape } from './image.js';
+import { scheduleAutosave } from './autosave.js';
 import { renderStrip, syncStateUI } from './ui/filmstrip.js';
 import { updateSelBox, syncUI } from './ui/inspector.js';
 import { setMode } from './ui/stage.js';
@@ -26,7 +27,8 @@ export const serializeStates=()=>store.states.map(s=>({id:s.id,name:s.name,color
 const snapshot=()=>({states:serializeStates(), active:store.active});
 
 export function pushUndo(){ store.undoStack.push(snapshot());
-  if(store.undoStack.length>60) store.undoStack.shift(); store.redoStack.length=0; }
+  if(store.undoStack.length>60) store.undoStack.shift(); store.redoStack.length=0;
+  scheduleAutosave(); } // 每个可撤销动作都触发即时存档(PS 式:编辑不因切页丢失)
 
 // 从快照/工程重建全部状态(重新分配 id,重烧蒙版并采样)。
 export function hydrate(data){

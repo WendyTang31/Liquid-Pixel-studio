@@ -1,27 +1,29 @@
-// 3D 车模预览器:把 morph 序列实时渲到离屏画布,再以"贴花投影(Decal)"贴到车身表面。
-// 为何不用模型自带 UV:量产车模的 UV 是为车漆/贴图图集展开的(常整车合并成一个网格),
-// 直接把动画纹理交给它的 UV 会采到任意区域(之前"挡风玻璃整片白"就是这个原因)。
-// DecalGeometry 沿点击处法线把矩形投影到曲面上、自动生成正确 UV —— 与模型 UV 完全无关,
-// 天然就是"投到一个面",且支持大小/旋转/横纵移微调。引擎/数据层依旧零改动。
+// 3D 车模预览器:morph 序列实时渲到离屏画布 → 以"贴花投影(Decal)"贴到车身表面。
+// 多投影面:每块贴花共享同一张动画纹理与时间线,各自截取画面的一段(uv 窗口)——
+// 动画即可跨车头/车盖/侧身连续"跑动",且每块都是各自表面的正投影,互不拉伸
+// (学界正解是测地线参数化/离散指数映射 Schmidt 2006;分片窗口是其实用近似)。
+// 吸色把动画背景同步成车漆色;橡皮在动画空间擦 alpha 蒙版,所有投影面同步隐藏该区域。
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { W, H, P } from '../config.js';
 import { buildSequence, sampleFrame } from '../engine.js';
 import { createSizedRenderer } from '../render.js';
 import { paintShapes, maskReaderFor, lumReaderFor, sampleDots } from '../pipeline.js';
 import { decodeImageShape } from '../image.js';
+import { downloadBlob } from '../utils.js';
 
 const $=id=>document.getElementById(id);
 const hint=msg=>{ $('hint').textContent=msg; };
 
-/* ══════════════ 持久化:模型进 IndexedDB(glb 可达几十 MB,localStorage 放不下),
-   贴花/滑块/工程走 localStorage —— 切页/刷新回来全都还在 ══════════════ */
+/* ══════════════ 持久化 ══════════════ */
 function idbOpen(){ return new Promise((res,rej)=>{ const q=indexedDB.open('morph-studio',1);
   q.onupgradeneeded=()=>q.result.createObjectStore('files');
   q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); }
@@ -32,17 +34,19 @@ async function idbGet(key){ const db=await idbOpen(); return new Promise((res,re
   const rq=db.transaction('files').objectStore('files').get(key);
   rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); }); }
 
-const meshList=()=>{ const l=[]; carGroup.traverse(o=>{ if(o.isMesh&&o!==decal.obj) l.push(o); }); return l; };
 function saveViewState(){
   try{ localStorage.setItem('morph3d-view', JSON.stringify({
-    sz:+$('szSl').value, rot:+$('rotSl').value, du:+$('uSl').value, dv:+$('vSl').value,
     exp:+$('expSl').value, bloom:$('bloomCk').checked, spin:$('spinCk').checked,
-    decal: decal.localPoint ? { meshIdx:meshList().indexOf(decal.mesh),
-      p:decal.localPoint.toArray(), n:decal.localNormal.toArray() } : null,
+    colBgPick: pickedBg,
+    active: activeDecal,
+    decals: decals.map(d=>({ meshIdx:d.mesh?meshList().indexOf(d.mesh):-1,
+      p:d.localPoint?.toArray()||null, n:d.localNormal?.toArray()||null,
+      sz:d.sz, rot:d.rot, du:d.du, dv:d.dv, cx:d.cx, cw:d.cw })),
+    mask: maskDirty ? maskCanvas.toDataURL('image/png') : savedMaskURL,
   })); }catch(_){}
 }
 
-/* ══════════════ 动画纹理 ══════════════ */
+/* ══════════════ 动画纹理 + 橡皮蒙版 ══════════════ */
 const TEXW=960, TEXH=560;
 const texCanvas=document.createElement('canvas'); texCanvas.width=TEXW; texCanvas.height=TEXH;
 const texCtx=texCanvas.getContext('2d');
@@ -53,7 +57,14 @@ texCtx.fillText('等待工程 — 编辑器点「🚗 3D 预览」或此页 📂
 const screenTex=new THREE.CanvasTexture(texCanvas);
 screenTex.colorSpace=THREE.SRGBColorSpace;
 
-let states=null, SEQ=null, g=0, last=performance.now(), clock=0;
+// 橡皮蒙版:动画空间的 alpha(alphaMap 读绿通道;白=显示,黑=擦除)。
+const maskCanvas=document.createElement('canvas'); maskCanvas.width=TEXW; maskCanvas.height=TEXH;
+const maskCtx=maskCanvas.getContext('2d');
+maskCtx.fillStyle='#fff'; maskCtx.fillRect(0,0,TEXW,TEXH);
+const maskTex=new THREE.CanvasTexture(maskCanvas);
+let maskDirty=false, savedMaskURL=null;
+
+let states=null, SEQ=null, g=0, last=performance.now(), clock=0, pickedBg=null;
 
 async function loadProjectData(data){
   if(data.params) Object.assign(P, data.params);
@@ -75,10 +86,11 @@ async function loadProjectData(data){
   states=out;
   SEQ=buildSequence(states, true, P);
   g=0;
-  hint(`✓ 工程已载入:${states.length} 个状态 · 循环 ${SEQ.T.toFixed(1)}s — 点击车身投上动画`);
+  if(pickedBg) P.colBg=pickedBg; // 吸色结果优先于工程里的背景色
+  hint(`✓ 工程已载入:${states.length} 个状态 · 循环 ${SEQ.T.toFixed(1)}s`);
 }
 
-/* ══════════════ 场景 / 灯光 / 环境 ══════════════ */
+/* ══════════════ 场景 ══════════════ */
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x0a0a0a);
 scene.fog=new THREE.Fog(0x0a0a0a, 16, 34);
@@ -93,22 +105,19 @@ $('scene').appendChild(renderer.domElement);
 const controls=new OrbitControls(camera, renderer.domElement);
 controls.target.set(0,0.8,0); controls.enableDamping=true; controls.maxPolarAngle=Math.PI/2-0.03;
 
-// 室内环境贴图:车漆/玻璃得到真实反射,整车清晰可辨(解决"模型看不清")。
 const pmrem=new THREE.PMREMGenerator(renderer);
 scene.environment=pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 scene.add(new THREE.HemisphereLight(0x99aabb, 0x151515, 0.5));
 const key=new THREE.DirectionalLight(0xffffff, 1.4); key.position.set(4,7,3); scene.add(key);
 const fill=new THREE.DirectionalLight(0x8899ff, 0.4); fill.position.set(-5,3,-4); scene.add(fill);
-
 const ground=new THREE.Mesh(new THREE.CircleGeometry(26,48),
   new THREE.MeshStandardMaterial({color:0x101114, roughness:0.85, metalness:0.15}));
 ground.rotation.x=-Math.PI/2; scene.add(ground);
 
-// 屏幕材质:不受光照(自发光体观感),贴花专用防 z-fighting 设置。
-const screenMat=new THREE.MeshBasicMaterial({map:screenTex, toneMapped:false,
+const screenMat=new THREE.MeshBasicMaterial({map:screenTex, alphaMap:maskTex, toneMapped:false,
   transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-4});
 
-/* ── 车:内置示例车 / 载入 glb ── */
+/* ── 车 ── */
 let carGroup=new THREE.Group();
 function buildDemoCar(){
   const g0=new THREE.Group();
@@ -125,12 +134,14 @@ function buildDemoCar(){
 }
 carGroup=buildDemoCar(); scene.add(carGroup);
 
+const meshList=()=>{ const l=[]; carGroup.traverse(o=>{ if(o.isMesh&&!o.userData.isDecal) l.push(o); }); return l; };
+
 async function loadModelBlob(blob, persist){
   hint('载入模型中…');
   const url=URL.createObjectURL(blob);
   try{
     const gltf=await new GLTFLoader().loadAsync(url);
-    scene.remove(carGroup); clearDecal();
+    scene.remove(carGroup); clearAllDecals();
     carGroup=gltf.scene;
     const box=new THREE.Box3().setFromObject(carGroup);
     const size=box.getSize(new THREE.Vector3()), c=box.getCenter(new THREE.Vector3());
@@ -139,97 +150,186 @@ async function loadModelBlob(blob, persist){
     carGroup.position.set(-c.x*s, -box.min.y*s, -c.z*s);
     scene.add(carGroup);
     if(persist) idbPut('model', blob).catch(()=>{});
-    hint('✓ 模型已载入 — 点击车身任意位置,把动画投影上去');
+    hint('✓ 模型已载入 — 点击车身放置当前投影面');
     return true;
   }catch(err){ hint('⚠ 模型载入失败:'+err.message+'(建议自包含 .glb)'); return false; }
   finally{ URL.revokeObjectURL(url); }
 }
 
-/* ══════════════ 贴花投影(核心)══════════════ */
-// 记录以车组局部坐标,自动环绕/重投影都稳定;调滑块 = 重建贴花。
-const decal={ mesh:null, localPoint:null, localNormal:null, obj:null };
-function clearDecal(){
-  if(decal.obj){ decal.obj.removeFromParent(); decal.obj.geometry.dispose(); decal.obj=null; }
-  decal.mesh=null; decal.localPoint=null; decal.localNormal=null;
-}
-function projectDecal(){
-  if(!decal.mesh||!decal.localPoint) return;
-  if(decal.obj){ decal.obj.removeFromParent(); decal.obj.geometry.dispose(); decal.obj=null; }
+/* ══════════════ 多投影面(核心)══════════════ */
+const decals=[]; let activeDecal=0;
+function newDecal(){ return {mesh:null, localPoint:null, localNormal:null,
+  sz:1.2, rot:0, du:0, dv:0, cx:0, cw:1, obj:null}; }
+decals.push(newDecal());
+
+function removeObj(d){ if(d.obj){ d.obj.removeFromParent(); d.obj.geometry.dispose(); d.obj=null; } }
+function clearAllDecals(){ for(const d of decals) { removeObj(d); d.mesh=null; d.localPoint=null; } }
+
+function projectDecal(d){
+  if(!d.mesh||!d.localPoint) return;
+  removeObj(d);
   carGroup.updateMatrixWorld(true);
   const toWorld=carGroup.matrixWorld;
   const nrmMat=new THREE.Matrix3().getNormalMatrix(toWorld);
-  const point=decal.localPoint.clone().applyMatrix4(toWorld);
-  const n=decal.localNormal.clone().applyMatrix3(nrmMat).normalize();
-  // 表面切向基:世界 up 与法线构造,横移/纵移沿切向进行
+  const point=d.localPoint.clone().applyMatrix4(toWorld);
+  const n=d.localNormal.clone().applyMatrix3(nrmMat).normalize();
   const upRef=Math.abs(n.y)>0.94? new THREE.Vector3(1,0,0) : new THREE.Vector3(0,1,0);
   const tan=new THREE.Vector3().crossVectors(upRef,n).normalize();
   const bit=new THREE.Vector3().crossVectors(n,tan).normalize();
-  const w=+$('szSl').value, h=w*(TEXH/TEXW);
-  const du=+$('uSl').value, dv=+$('vSl').value;
-  point.add(tan.clone().multiplyScalar(du)).add(bit.clone().multiplyScalar(dv));
-  // 投影方向朝 -n(看向表面);再绕法线滚转
+  // 贴片保持画面像素纵横比:高 = 宽 × (纹理高/纹理宽) × (本面画面宽占比) 的反比修正
+  const w=d.sz, h=d.sz*(TEXH/TEXW)/Math.max(0.15,d.cw);
+  point.add(tan.clone().multiplyScalar(d.du)).add(bit.clone().multiplyScalar(d.dv));
   const helper=new THREE.Object3D();
   helper.position.copy(point);
   helper.lookAt(point.clone().add(n));
-  helper.rotateZ((+$('rotSl').value)*Math.PI/180);
-  const geo=new DecalGeometry(decal.mesh, point, helper.rotation, new THREE.Vector3(w,h,w*0.7));
+  helper.rotateZ(d.rot*Math.PI/180);
+  const geo=new DecalGeometry(d.mesh, point, helper.rotation, new THREE.Vector3(w,h,w*0.7));
+  // uv 窗口:本面只显示动画画面的 [cx, cx+cw] 横段 —— 多面各取一段,动画即可跨面连续跑
+  const uv=geo.attributes.uv;
+  for(let i=0;i<uv.count;i++) uv.setX(i, d.cx + uv.getX(i)*d.cw);
+  uv.needsUpdate=true;
   const obj=new THREE.Mesh(geo, screenMat);
-  obj.renderOrder=1;
-  // 几何是世界坐标 → 逆变换挂回车组,跟随环绕旋转
+  obj.renderOrder=1; obj.userData.isDecal=true;
   obj.applyMatrix4(toWorld.clone().invert());
   carGroup.add(obj);
-  decal.obj=obj;
+  d.obj=obj;
   saveViewState();
 }
+
 function placeDecalAt(hit){
-  decal.mesh=hit.object;
+  const d=decals[activeDecal];
+  d.mesh=hit.object;
   const toLocal=carGroup.matrixWorld.clone().invert();
-  decal.localPoint=hit.point.clone().applyMatrix4(toLocal);
+  d.localPoint=hit.point.clone().applyMatrix4(toLocal);
   const wn=hit.face.normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize();
-  decal.localNormal=wn.applyMatrix3(new THREE.Matrix3().getNormalMatrix(toLocal)).normalize();
-  projectDecal();
-  hint(`✓ 动画已投到「${hit.object.name||'表面'}」— 用 大小/旋转/横移/纵移 微调贴合`);
+  d.localNormal=wn.applyMatrix3(new THREE.Matrix3().getNormalMatrix(toLocal)).normalize();
+  projectDecal(d);
+  syncDecalSel();
+  hint(`✓ 投影面 ${activeDecal+1} 已放到「${hit.object.name||'表面'}」— 滑块微调,➕面 可加下一块`);
 }
 
-/* ── 交互 ── */
+/* ── 投影面 UI ── */
+function syncDecalSel(){
+  const sel=$('decSel'); sel.innerHTML='';
+  decals.forEach((d,i)=>{ const o=document.createElement('option');
+    o.value=i; o.textContent=`投影面 ${i+1}${d.obj?'':' (未放置)'}`; if(i===activeDecal) o.selected=true;
+    sel.appendChild(o); });
+}
+function syncDecalUI(){
+  const d=decals[activeDecal];
+  $('szSl').value=d.sz; $('szV').textContent=d.sz.toFixed(2);
+  $('rotSl').value=d.rot; $('rotV').textContent=d.rot+'°';
+  $('uSl').value=d.du; $('uV').textContent=d.du.toFixed(2);
+  $('vSl').value=d.dv; $('vV').textContent=d.dv.toFixed(2);
+  $('cxSl').value=d.cx; $('cxV').textContent=Math.round(d.cx*100)+'%';
+  $('cwSl').value=d.cw; $('cwV').textContent=Math.round(d.cw*100)+'%';
+  syncDecalSel();
+}
+$('decSel').onchange=e=>{ activeDecal=+e.target.value; syncDecalUI(); };
+$('addDec').onclick=()=>{ decals.push(newDecal()); activeDecal=decals.length-1;
+  syncDecalUI(); hint(`投影面 ${activeDecal+1}:点击车身放置(与其它面同一动画、时间线同步)`); };
+$('delDec').onclick=()=>{ if(decals.length<=1){ hint('至少保留一块投影面'); return; }
+  removeObj(decals[activeDecal]); decals.splice(activeDecal,1);
+  activeDecal=Math.min(activeDecal,decals.length-1); syncDecalUI(); saveViewState(); };
+const decalSliders={szSl:['sz',v=>v.toFixed(2)], rotSl:['rot',v=>v+'°'], uSl:['du',v=>v.toFixed(2)],
+  vSl:['dv',v=>v.toFixed(2)], cxSl:['cx',v=>Math.round(v*100)+'%'], cwSl:['cw',v=>Math.round(v*100)+'%']};
+for(const [id,[key,fmt]] of Object.entries(decalSliders)){
+  $(id).addEventListener('input',e=>{ const d=decals[activeDecal];
+    d[key]=+e.target.value; $(id.replace('Sl','V')).textContent=fmt(+e.target.value);
+    projectDecal(d); });
+}
+
+/* ══════════════ 交互模式:放置 / 吸色 / 橡皮 ══════════════ */
+let mode='place';
+function setViewMode(m){ mode=m;
+  $('pickBtn').classList.toggle('on',m==='pick');
+  $('eraseBtn').classList.toggle('on',m==='erase');
+  controls.enabled=(m!=='erase'); // 擦除要拖动,得让出旋转
+  hint(m==='pick'?'🎨 点击车漆取色 → 动画背景同步为该颜色':
+       m==='erase'?'🧽 在投影面上拖动擦除;再点🧽退出':'点击车身放置当前投影面');
+}
+$('pickBtn').onclick=()=>setViewMode(mode==='pick'?'place':'pick');
+$('eraseBtn').onclick=()=>setViewMode(mode==='erase'?'place':'erase');
+$('eraSl').addEventListener('input',e=>{ $('eraV').textContent=e.target.value; });
+$('clearErase').onclick=()=>{ maskCtx.fillStyle='#fff'; maskCtx.fillRect(0,0,TEXW,TEXH);
+  maskTex.needsUpdate=true; maskDirty=true; saveViewState(); hint('↺ 擦除已全部恢复'); };
+
 const ray=new THREE.Raycaster(), ptr=new THREE.Vector2();
-let downAt=null;
-renderer.domElement.addEventListener('pointerdown',e=>{ downAt=[e.clientX,e.clientY]; });
-renderer.domElement.addEventListener('pointerup',e=>{
-  if(!downAt || Math.hypot(e.clientX-downAt[0], e.clientY-downAt[1])>5) return;
+function rayFromEvent(e){
   ptr.x=(e.clientX/innerWidth)*2-1; ptr.y=-(e.clientY/innerHeight)*2+1;
-  camera.updateMatrixWorld(); carGroup.updateMatrixWorld(true); // 首帧渲染前点击也能正确拾取
+  camera.updateMatrixWorld(); carGroup.updateMatrixWorld(true);
   ray.setFromCamera(ptr,camera);
-  const hit=ray.intersectObject(carGroup,true).find(h=>h.object.isMesh && h.object!==decal.obj && h.face);
+}
+function eraseAt(e){
+  rayFromEvent(e);
+  const objs=decals.filter(d=>d.obj).map(d=>d.obj);
+  const hit=ray.intersectObjects(objs,false)[0];
+  if(!hit?.uv) return;
+  const R=+$('eraSl').value;
+  maskCtx.fillStyle='#000'; maskCtx.beginPath();
+  maskCtx.arc(hit.uv.x*TEXW, (1-hit.uv.y)*TEXH, R, 0, 7); maskCtx.fill();
+  maskTex.needsUpdate=true; maskDirty=true;
+}
+async function pickColorAt(e){
+  frame(performance.now()); // 先渲一帧,同任务内读帧缓冲才有内容
+  const gl=renderer.getContext();
+  const px=new Uint8Array(4);
+  const dpr=renderer.getPixelRatio();
+  gl.readPixels(Math.round(e.clientX*dpr), Math.round(gl.drawingBufferHeight-e.clientY*dpr),
+    1,1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const hex='#'+[px[0],px[1],px[2]].map(v=>v.toString(16).padStart(2,'0')).join('');
+  pickedBg=hex; P.colBg=hex;
+  saveViewState(); setViewMode('place');
+  hint(`🎨 已取色 ${hex} — 动画背景已同步为车漆色`);
+}
+
+let downAt=null, erasing=false;
+renderer.domElement.addEventListener('pointerdown',e=>{
+  downAt=[e.clientX,e.clientY];
+  if(mode==='erase'){ erasing=true; eraseAt(e); }
+});
+renderer.domElement.addEventListener('pointermove',e=>{ if(erasing) eraseAt(e); });
+addEventListener('pointerup',e=>{
+  if(erasing){ erasing=false; saveViewState(); return; }
+  if(!downAt || Math.hypot(e.clientX-downAt[0], e.clientY-downAt[1])>5) return;
+  if(e.target!==renderer.domElement) return;
+  if(mode==='pick'){ pickColorAt(e); return; }
+  rayFromEvent(e);
+  const hit=ray.intersectObject(carGroup,true).find(h=>h.object.isMesh && !h.object.userData.isDecal && h.face);
   if(hit) placeDecalAt(hit);
 });
-const fmt={szSl:v=>(+v).toFixed(2), rotSl:v=>v+'°', uSl:v=>(+v).toFixed(2), vSl:v=>(+v).toFixed(2)};
-for(const id of ['szSl','rotSl','uSl','vSl']){
-  $(id).addEventListener('input',e=>{ $(id.replace('Sl','V')).textContent=fmt[id](e.target.value); projectDecal(); });
-}
-$('expSl').addEventListener('input',e=>{ renderer.toneMappingExposure=+e.target.value;
-  $('expV').textContent=(+e.target.value).toFixed(2); saveViewState(); });
-$('spinCk').addEventListener('change',saveViewState);
 
-/* ── Bloom ── */
+/* ── Bloom(OutputPass 修复:少了它,合成链不做色调映射/sRGB 输出,画面近乎全黑)── */
 const composer=new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene,camera));
-const bloom=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight), 0.65, 0.4, 0.72);
+const bloom=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight), 0.55, 0.4, 0.85);
 composer.addPass(bloom);
+composer.addPass(new OutputPass());
 $('bloomCk').onchange=e=>{ bloom.enabled=e.target.checked; saveViewState(); };
+$('spinCk').addEventListener('change',saveViewState);
+$('expSl').addEventListener('input',e=>{ renderer.toneMappingExposure=+e.target.value;
+  $('expV').textContent=(+e.target.value).toFixed(2); saveViewState(); });
 
 addEventListener('resize',()=>{
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight); composer.setSize(innerWidth,innerHeight);
 });
 
-/* ── 文件入口 ── */
+/* ── Blender 导出:车 + 投影面(带 uv 与当前帧纹理)打包 .glb ── */
+$('expGlb').onclick=()=>{
+  new GLTFExporter().parse(carGroup, gltf=>{
+    downloadBlob(new Blob([gltf],{type:'model/gltf-binary'}), 'morph-car-decals.glb');
+    hint('✓ 已导出 .glb — Blender:导入后选投影面网格,把材质贴图换成 ⑤导出 的 PNG 序列(勾选 Image Sequence),接 Emission 即可正片渲染');
+  }, err=>hint('⚠ 导出失败:'+err.message), {binary:true});
+};
+
+/* ── 文件入口 + 启动恢复 ── */
 $('loadProj').onclick=()=>$('projFile').click();
 $('projFile').addEventListener('change',e=>{
   const f=e.target.files[0]; if(!f) return;
   const rd=new FileReader();
   rd.onload=()=>loadProjectData(JSON.parse(rd.result))
-    .then(()=>{ try{ localStorage.setItem('morph3d-project', rd.result); }catch(_){} }) // 手动载入的工程同样留档
+    .then(()=>{ try{ localStorage.setItem('morph3d-project', rd.result); }catch(_){} })
     .catch(err=>hint('⚠ '+err.message));
   rd.readAsText(f); e.target.value='';
 });
@@ -238,7 +338,6 @@ $('modelFile').addEventListener('change',e=>{
   const f=e.target.files[0]; if(f) loadModelBlob(f, true); e.target.value='';
 });
 
-// 启动恢复:工程(localStorage)→ 模型(IndexedDB)→ 贴花与滑块(localStorage),按序等待。
 (async()=>{
   try{
     const stored=localStorage.getItem('morph3d-project');
@@ -247,26 +346,35 @@ $('modelFile').addEventListener('change',e=>{
   let vs=null;
   try{ vs=JSON.parse(localStorage.getItem('morph3d-view')||'null'); }catch(_){}
   if(vs){
-    $('szSl').value=vs.sz; $('szV').textContent=(+vs.sz).toFixed(2);
-    $('rotSl').value=vs.rot; $('rotV').textContent=vs.rot+'°';
-    $('uSl').value=vs.du; $('uV').textContent=(+vs.du).toFixed(2);
-    $('vSl').value=vs.dv; $('vV').textContent=(+vs.dv).toFixed(2);
     $('expSl').value=vs.exp; $('expV').textContent=(+vs.exp).toFixed(2);
     renderer.toneMappingExposure=vs.exp;
     $('bloomCk').checked=vs.bloom; bloom.enabled=vs.bloom;
     $('spinCk').checked=vs.spin;
+    if(vs.colBgPick){ pickedBg=vs.colBgPick; P.colBg=pickedBg; }
+    if(vs.mask){ savedMaskURL=vs.mask;
+      const img=new Image(); img.onload=()=>{ maskCtx.drawImage(img,0,0); maskTex.needsUpdate=true; };
+      img.src=vs.mask; }
   }
   const blob=await idbGet('model').catch(()=>null);
   if(blob) await loadModelBlob(blob, false);
-  if(vs?.decal){
-    const m=meshList()[vs.decal.meshIdx];
-    if(m){ decal.mesh=m;
-      decal.localPoint=new THREE.Vector3().fromArray(vs.decal.p);
-      decal.localNormal=new THREE.Vector3().fromArray(vs.decal.n);
-      projectDecal();
-      hint('✓ 已恢复上次的模型与投影位置');
+  if(vs?.decals?.length){
+    decals.length=0;
+    for(const sd of vs.decals){
+      const d=newDecal();
+      Object.assign(d,{sz:sd.sz,rot:sd.rot,du:sd.du,dv:sd.dv,cx:sd.cx??0,cw:sd.cw??1});
+      const m=meshList()[sd.meshIdx];
+      if(m && sd.p && sd.n){ d.mesh=m;
+        d.localPoint=new THREE.Vector3().fromArray(sd.p);
+        d.localNormal=new THREE.Vector3().fromArray(sd.n);
+      }
+      decals.push(d);
     }
+    if(!decals.length) decals.push(newDecal());
+    activeDecal=Math.min(vs.active??0, decals.length-1);
+    for(const d of decals) projectDecal(d);
+    hint('✓ 已恢复上次的模型与投影布局');
   }
+  syncDecalUI();
 })();
 
 /* ══════════════ 主循环 ══════════════ */
@@ -287,14 +395,14 @@ function frame(now){
 function tick(now){ frame(now); requestAnimationFrame(tick); }
 requestAnimationFrame(tick);
 
-// 调试探针:状态查询 + 手动单步(隐藏标签页 rAF 不触发)+ NDC 投放 + 纹理活性检查。
+// 调试探针(隐藏标签页 rAF 不触发,自动化验证靠 step 驱动)。
 window.__morph3d={
   status:()=>({ g:+g.toFixed(2), T:SEQ?+SEQ.T.toFixed(1):null,
-    states:states?states.length:0, frames, decal:!!decal.obj }),
+    states:states?states.length:0, frames, decals:decals.filter(d=>d.obj).length, active:activeDecal, mode }),
   step:(ms=33)=>{ frame(last+ms); },
   place:(nx,ny)=>{ camera.updateMatrixWorld(); carGroup.updateMatrixWorld(true);
     ray.setFromCamera(new THREE.Vector2(nx,ny),camera);
-    const hit=ray.intersectObject(carGroup,true).find(h=>h.object.isMesh && h.object!==decal.obj && h.face);
+    const hit=ray.intersectObject(carGroup,true).find(h=>h.object.isMesh && !h.object.userData.isDecal && h.face);
     if(hit) placeDecalAt(hit); return !!hit; },
   loadProject:data=>loadProjectData(data),
   texLit:()=>{ const d=texCtx.getImageData(0,0,TEXW,TEXH).data; let n=0;

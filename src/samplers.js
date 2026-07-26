@@ -76,20 +76,29 @@ export const SAMPLERS = {
         if(x>0)d=Math.min(d,D[i+W-1]+4); }
       D[i]=d;
     }
-    const minR=Math.max(3, sp*0.35);                  // 点间距滑块控制颗粒度:更小间距→更细的结构球
+    // 两级覆盖(自适应中轴球树思路):主结构球(≥minR)先占大块,再用"残差细化"
+    // 补小球到未覆盖处 —— 尖角/锐边/细节曲线的内切圆都小于 minR,老版直接丢弃导致
+    // 边缘定义流失;细化允许小到 refMin 的球,专门刻画这些特征。覆盖判定用位图印章
+    // (O(蒙版面积)),避免逐候选 × 逐球的平方级比较。
+    const minR=Math.max(3, sp*0.35);                  // 主结构颗粒度(点间距滑块控制)
+    const refMin=Math.max(1.3, sp*0.1);               // 细化下限:更小间距→更细的边缘珠
     const cand=[];
     for(let y=0;y<H;y++)for(let x=0;x<W;x++){
       const r=D[y*W+x]/3;                             // chamfer 3/4 度量还原到像素
-      if(r>=minR) cand.push([x,y,r]);
+      if(r>=refMin) cand.push([x,y,r]);
     }
     cand.sort((a,b)=>b[2]-a[2]);
+    const cov=new Uint8Array(W*H);
+    const stamp=(bx,by,br)=>{ const R=Math.ceil(br), r2=br*br;
+      for(let dy=-R;dy<=R;dy++){ const yy=by+dy; if(yy<0||yy>=H) continue;
+        for(let dx=-R;dx<=R;dx++){ const xx=bx+dx; if(xx<0||xx>=W) continue;
+          if(dx*dx+dy*dy<=r2) cov[yy*W+xx]=1; } } };
     const balls=[];
     for(const [x,y,r] of cand){
-      let covered=false;
-      for(const b of balls){ const dx=x-b[0],dy=y-b[1];
-        if(dx*dx+dy*dy < (b[2]*0.85)**2){ covered=true; break; } }
-      if(!covered){ balls.push([x,y,r*0.95]);         // 0.95:补偿渲染阈值,避免涨出原形状
-        if(balls.length>=400) break; }
+      if(cov[y*W+x]) continue;
+      if(r>=minR){ balls.push([x,y,r*0.95]); stamp(x,y,r*0.85); }
+      else       { balls.push([x,y,Math.max(r*0.95,refMin)]); stamp(x,y,Math.max(r*0.9,1.5)); }
+      if(balls.length>=700) break;
     }
     return balls;
   },
@@ -109,12 +118,17 @@ export function sampleDots(on, manual, P, lum){
   }).concat(manual.map(m=>({x:m.x,y:m.y,r:base})));
 }
 
+// Lloyd 时间预算(ms)。UI 交互用默认 250ms 护栏;测试环境并行跑多个文件抢 CPU,
+// 可临时调大以免迭代被掐、断言测到的是"被降级的算法"。
+let LLOYD_BUDGET=250;
+export function setLloydBudget(ms){ LLOYD_BUDGET=ms; }
+
 function lloydRelax(on,pts,iters){
   const n=pts.length;
   const cell=Math.max(4,Math.sqrt((W*H)/n)); // 网格边长按点密度取,平均每格约一个点
   // 硬性时间预算:无论蒙版多病态(文字这类多连通块、细笔画、大片空白最容易触发退化到
   // O(n) 兜底查找的情形),都不可能拖垮交互 —— 超时就停在已完成的迭代上优雅退化。
-  const deadline=performance.now()+250;
+  const deadline=performance.now()+LLOYD_BUDGET;
   for(let it=0;it<iters;it++){
     if(performance.now()>deadline) break;
     const gc=Math.max(1,Math.ceil(W/cell)), gr=Math.max(1,Math.ceil(H/cell));
