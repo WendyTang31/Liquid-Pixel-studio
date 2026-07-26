@@ -1,9 +1,8 @@
-// 3D 车模预览器 · Rhino 式交互:
-//   选择工具点投影面 → 出现操纵球(gumball):拖箭头沿表面切向移动、拖圆环绕法线旋转、
-//   拖中心方块缩放;双击车身重新放置。放置/画笔/橡皮/上色为独立工具模式。
-//   右侧面板 = 投影面图层列表 + 属性 + "画面分区"切割编辑器(把同一动画切给各面,
-//   分区相邻 → 球跨面连续跑动;每面都是自身表面的正投影,无斜投影拉伸)。
-//   Ctrl+Z 撤销视图操作;Delete 删当前投影面。
+// 3D 车模预览器 · Rhino 式交互 + 动画组(节点):
+//   同一动画组内的投影面天然"连接"—— 共享一张实时动画纹理与时间线,各自用取景框
+//   截取画面分区(🔗横向均分 一键切成相邻区段,球即可跨面连续跑动)。
+//   ➕新动画 载入第二个工程 .json 成为节点 2,与节点 1 并行播放(全局时钟同步起跑,
+//   各按自身时长循环)。笔刷/橡皮蒙版、背景色、参数均按组隔离。
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
@@ -14,16 +13,17 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { W, H, P } from '../config.js';
+import { W, H, P as P_DEFAULT } from '../config.js';
 import { buildSequence, sampleFrame } from '../engine.js';
 import { createSizedRenderer } from '../render.js';
 import { paintShapes, maskReaderFor, lumReaderFor, sampleDots } from '../pipeline.js';
 import { decodeImageShape } from '../image.js';
-import { downloadBlob, hex2rgb } from '../utils.js';
+import { downloadBlob } from '../utils.js';
 
 const $=id=>document.getElementById(id);
 const hint=msg=>{ $('hint').textContent=msg; };
 const DEC_COLORS=['#98f5d0','#7ab4ff','#ffd479','#ff9a9a','#d59aff','#9affe2'];
+const GRP_COLORS=['#98f5d0','#ffb347','#7ab4ff','#ff9a9a'];
 
 /* ══════════════ IndexedDB ══════════════ */
 function idbOpen(){ return new Promise((res,rej)=>{ const q=indexedDB.open('morph-studio',1);
@@ -35,27 +35,36 @@ async function idbPut(key,val){ const db=await idbOpen(); return new Promise((re
 async function idbGet(key){ const db=await idbOpen(); return new Promise((res,rej)=>{
   const rq=db.transaction('files').objectStore('files').get(key);
   rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); }); }
+async function idbDel(key){ const db=await idbOpen(); return new Promise((res,rej)=>{
+  const tx=db.transaction('files','readwrite'); tx.objectStore('files').delete(key);
+  tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
 
-/* ══════════════ 动画纹理 + 笔刷蒙版 ══════════════ */
+/* ══════════════ 动画组 ══════════════ */
 const TEXW=960, TEXH=560;
-const texCanvas=document.createElement('canvas'); texCanvas.width=TEXW; texCanvas.height=TEXH;
-const texCtx=texCanvas.getContext('2d');
-const renderTex=createSizedRenderer(texCtx, TEXW, TEXH);
-texCtx.fillStyle='#0a0a0a'; texCtx.fillRect(0,0,TEXW,TEXH);
-texCtx.fillStyle='#98f5d0'; texCtx.font='30px system-ui'; texCtx.textAlign='center';
-texCtx.fillText('等待工程 — 编辑器点「🚗 3D 预览」或 📂 载入', TEXW/2, TEXH/2);
-const screenTex=new THREE.CanvasTexture(texCanvas);
-screenTex.colorSpace=THREE.SRGBColorSpace;
+function makeGroup(name){
+  const texCanvas=document.createElement('canvas'); texCanvas.width=TEXW; texCanvas.height=TEXH;
+  const texCtx=texCanvas.getContext('2d');
+  texCtx.fillStyle='#0a0a0a'; texCtx.fillRect(0,0,TEXW,TEXH);
+  texCtx.fillStyle='#98f5d0'; texCtx.font='30px system-ui'; texCtx.textAlign='center';
+  texCtx.fillText('等待工程…', TEXW/2, TEXH/2);
+  const screenTex=new THREE.CanvasTexture(texCanvas);
+  screenTex.colorSpace=THREE.SRGBColorSpace;
+  const maskCanvas=document.createElement('canvas'); maskCanvas.width=TEXW; maskCanvas.height=TEXH;
+  const maskCtx=maskCanvas.getContext('2d');
+  maskCtx.fillStyle='#fff'; maskCtx.fillRect(0,0,TEXW,TEXH);
+  const maskTex=new THREE.CanvasTexture(maskCanvas);
+  const mat=new THREE.MeshBasicMaterial({map:screenTex, alphaMap:maskTex, toneMapped:false,
+    transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-4});
+  return {name, states:null, SEQ:null, P:{...P_DEFAULT},
+    texCanvas, texCtx, renderTex:createSizedRenderer(texCtx,TEXW,TEXH),
+    screenTex, maskCanvas, maskCtx, maskTex, mat};
+}
+const groups=[makeGroup('动画 1')];
+let activeGroup=0;
 
-const maskCanvas=document.createElement('canvas'); maskCanvas.width=TEXW; maskCanvas.height=TEXH;
-const maskCtx=maskCanvas.getContext('2d');
-maskCtx.fillStyle='#fff'; maskCtx.fillRect(0,0,TEXW,TEXH);
-const maskTex=new THREE.CanvasTexture(maskCanvas);
-
-let states=null, SEQ=null, g=0, last=performance.now(), clock=0;
-
-async function loadProjectData(data){
-  if(data.params) Object.assign(P, data.params);
+async function loadProjectData(data, gi=0){
+  const gr=groups[gi];
+  gr.P={...P_DEFAULT, ...(data.params||{})}; // 每组用自己工程的参数,互不串味
   let raw=data.states;
   if(!raw && (data.A||data.B)){
     raw=[{name:'状态 1',color:data.params?.colA||'#98f5d0',hold:1,dur:3,shapes:data.A?.shapes||[],manual:data.A?.manual||[]},
@@ -69,10 +78,10 @@ async function loadProjectData(data){
     for(const sh of d.shapes) if(sh.type==='image') await decodeImageShape(sh);
     paintShapes(mctx, d.shapes);
     out.push({name:d.name, color:d.color, hold:d.hold, dur:d.dur, trans:d.trans||{},
-      dots:sampleDots(maskReaderFor(mctx), d.manual||[], P, lumReaderFor(mctx))});
+      dots:sampleDots(maskReaderFor(mctx), d.manual||[], gr.P, lumReaderFor(mctx))});
   }
-  states=out; SEQ=buildSequence(states, true, P); g=0;
-  hint(`✓ 工程已载入:${states.length} 个状态 · 循环 ${SEQ.T.toFixed(1)}s`);
+  gr.states=out; gr.SEQ=buildSequence(out, true, gr.P);
+  hint(`✓ 「${gr.name}」已载入:${out.length} 个状态 · 循环 ${gr.SEQ.T.toFixed(1)}s`);
 }
 
 /* ══════════════ 场景 ══════════════ */
@@ -98,9 +107,6 @@ const fill=new THREE.DirectionalLight(0x8899ff, 0.4); fill.position.set(-5,3,-4)
 const ground=new THREE.Mesh(new THREE.CircleGeometry(26,48),
   new THREE.MeshStandardMaterial({color:0x101114, roughness:0.85, metalness:0.15}));
 ground.rotation.x=-Math.PI/2; scene.add(ground);
-
-const screenMat=new THREE.MeshBasicMaterial({map:screenTex, alphaMap:maskTex, toneMapped:false,
-  transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-4});
 
 let carGroup=new THREE.Group();
 function buildDemoCar(){
@@ -139,18 +145,17 @@ async function loadModelBlob(blob, persist){
   finally{ URL.revokeObjectURL(url); }
 }
 
-/* ══════════════ 投影面数据 ══════════════ */
+/* ══════════════ 投影面 ══════════════ */
 const decals=[]; let activeDecal=0, selected=false;
-function newDecal(){ return {mesh:null, localPoint:null, localNormal:null,
+function newDecal(gi=activeGroup){ return {group:gi, mesh:null, localPoint:null, localNormal:null,
   sz:1.2, rot:0, du:0, dv:0, cx:0, cy:0, cw:1, ch:1, obj:null}; }
-decals.push(newDecal());
-const serializeDecal=d=>({ meshIdx:d.mesh?meshList().indexOf(d.mesh):-1,
+decals.push(newDecal(0));
+const serializeDecal=d=>({ group:d.group, meshIdx:d.mesh?meshList().indexOf(d.mesh):-1,
   p:d.localPoint?.toArray()||null, n:d.localNormal?.toArray()||null,
   sz:d.sz, rot:d.rot, du:d.du, dv:d.dv, cx:d.cx, cy:d.cy, cw:d.cw, ch:d.ch });
 function removeObj(d){ if(d.obj){ d.obj.removeFromParent(); d.obj.geometry.dispose(); d.obj=null; } }
 function clearAllDecals(){ for(const d of decals){ removeObj(d); d.mesh=null; d.localPoint=null; } }
 
-// 表面局部坐标系(世界):锚点(含切向偏移)、法线、切向、副切向。gumball 与投影共用。
 function decalFrame(d){
   carGroup.updateMatrixWorld(true);
   const toWorld=carGroup.matrixWorld;
@@ -167,28 +172,25 @@ function decalFrame(d){
 function projectDecal(d){
   if(!d.mesh||!d.localPoint) return;
   removeObj(d);
-  const {point,n,bit,toWorld}=decalFrame(d);
-  // 贴片纵横比 = 分区实际像素比,分区怎么切贴片就怎么长
+  const {point,n,toWorld}=decalFrame(d);
   const w=d.sz, h=d.sz*(TEXH*d.ch)/(TEXW*d.cw);
   const helper=new THREE.Object3D();
   helper.position.copy(point);
   helper.lookAt(point.clone().add(n));
   helper.rotateZ(d.rot*Math.PI/180);
   const geo=new DecalGeometry(d.mesh, point, helper.rotation, new THREE.Vector3(w,h,w*0.7));
-  // uv 窗口(双轴):本面只显示动画画面的分区矩形(flipY:v=1 对应画布顶部)
   const uv=geo.attributes.uv;
   for(let i=0;i<uv.count;i++){
     uv.setX(i, d.cx + uv.getX(i)*d.cw);
     uv.setY(i, (1-d.cy-d.ch) + uv.getY(i)*d.ch);
   }
   uv.needsUpdate=true;
-  const obj=new THREE.Mesh(geo, screenMat);
+  const obj=new THREE.Mesh(geo, groups[d.group].mat);
   obj.renderOrder=1; obj.userData.isDecal=true;
   obj.applyMatrix4(toWorld.clone().invert());
   carGroup.add(obj);
   d.obj=obj;
 }
-
 function placeDecalAt(hit){
   const d=decals[activeDecal];
   d.mesh=hit.object;
@@ -198,21 +200,22 @@ function placeDecalAt(hit){
   d.localNormal=wn.applyMatrix3(new THREE.Matrix3().getNormalMatrix(toLocal)).normalize();
   d.du=0; d.dv=0;
   projectDecal(d);
-  selected=true; syncPanel(); saveViewState();
-  hint(`✓ 投影面 ${activeDecal+1} 已放置 — 🖱选择工具拖操纵球微调`);
+  selected=true; activeGroup=d.group; syncPanel(); saveViewState();
+  hint(`✓ 投影面已放置(${groups[d.group].name})— 🖱选择工具拖操纵球微调`);
 }
 
-/* ══════════════ 视图撤销(Ctrl+Z)══════════════ */
+/* ══════════════ 视图撤销 ══════════════ */
 const viewUndoStack=[];
 function viewSnapshot(){ return { decals:decals.map(serializeDecal), active:activeDecal,
-  mask:maskCanvas.toDataURL('image/png'), carColors:carColors.map(c=>({...c})) }; }
+  masks:groups.map(gr=>gr.maskCanvas.toDataURL('image/png')),
+  carColors:carColors.map(c=>({...c})) }; }
 function pushViewUndo(){ viewUndoStack.push(viewSnapshot());
   if(viewUndoStack.length>30) viewUndoStack.shift(); }
 async function restoreView(s){
   for(const d of decals) removeObj(d);
   decals.length=0;
   for(const sd of s.decals){
-    const d=newDecal();
+    const d=newDecal(Math.min(sd.group||0, groups.length-1));
     Object.assign(d,{sz:sd.sz,rot:sd.rot,du:sd.du,dv:sd.dv,cx:sd.cx,cy:sd.cy,cw:sd.cw,ch:sd.ch});
     const m=meshList()[sd.meshIdx];
     if(m&&sd.p&&sd.n){ d.mesh=m;
@@ -220,13 +223,15 @@ async function restoreView(s){
       d.localNormal=new THREE.Vector3().fromArray(sd.n); }
     decals.push(d);
   }
-  if(!decals.length) decals.push(newDecal());
+  if(!decals.length) decals.push(newDecal(0));
   activeDecal=Math.min(s.active,decals.length-1);
-  await new Promise(res=>{ const img=new Image();
-    img.onload=()=>{ maskCtx.clearRect(0,0,TEXW,TEXH); maskCtx.drawImage(img,0,0);
-      maskTex.needsUpdate=true; res(); };
-    img.onerror=res; img.src=s.mask; });
-  for(const [mesh,mat] of origMats) mesh.material=mat; // 车色还原再重放
+  await Promise.all((s.masks||[]).map((murl,i)=>new Promise(res=>{
+    if(!groups[i]||!murl) return res();
+    const img=new Image();
+    img.onload=()=>{ groups[i].maskCtx.clearRect(0,0,TEXW,TEXH);
+      groups[i].maskCtx.drawImage(img,0,0); groups[i].maskTex.needsUpdate=true; res(); };
+    img.onerror=res; img.src=murl; })));
+  for(const [mesh,mat] of origMats) mesh.material=mat;
   origMats.clear(); carColors.length=0;
   for(const c of s.carColors) applyCarColor(c.meshIdx, c.hex, false);
   for(const d of decals) projectDecal(d);
@@ -250,7 +255,7 @@ function applyCarColor(meshIdx, hex, record=true){
     if(ex) ex.hex=hex; else carColors.push({meshIdx,hex}); }
 }
 
-/* ══════════════ Gumball 操纵球 ══════════════ */
+/* ══════════════ Gumball ══════════════ */
 const gumball=new THREE.Group(); gumball.visible=false; scene.add(gumball);
 {
   const mat=c=>new THREE.MeshBasicMaterial({color:c, depthTest:false, transparent:true, opacity:0.92});
@@ -264,10 +269,10 @@ const gumball=new THREE.Group(); gumball.visible=false; scene.add(gumball);
     grp.traverse(o=>{ o.userData.gizmo=axis; o.renderOrder=999; });
     return grp;
   };
-  const aU=mkArrow(0xff6666,'u'); aU.rotation.z=-Math.PI/2; gumball.add(aU);   // +X = 切向
-  const aV=mkArrow(0x66ff88,'v'); gumball.add(aV);                              // +Y = 副切向
+  const aU=mkArrow(0xff6666,'u'); aU.rotation.z=-Math.PI/2; gumball.add(aU);
+  const aV=mkArrow(0x66ff88,'v'); gumball.add(aV);
   const ring=new THREE.Mesh(new THREE.TorusGeometry(0.34,0.016,8,48), mat(0x66aaff));
-  ring.userData.gizmo='rot'; ring.renderOrder=999; gumball.add(ring);           // XY 面 = 绕法线
+  ring.userData.gizmo='rot'; ring.renderOrder=999; gumball.add(ring);
   const cube=new THREE.Mesh(new THREE.BoxGeometry(0.09,0.09,0.09), mat(0xffd479));
   cube.userData.gizmo='scale'; cube.renderOrder=999; gumball.add(cube);
 }
@@ -290,42 +295,42 @@ const MODE_BTN={sel:'tSel',place:'tPlace',brush:'tBrush',erase:'tErase',paint:'t
 function setMode3(m){ mode=m;
   for(const [k,id] of Object.entries(MODE_BTN)) $(id).classList.toggle('on',k===m);
   controls.enabled=(m!=='brush'&&m!=='erase');
-  hint({sel:'🖱 点投影面选中出现操纵球;拖箭头移动/圆环旋转/方块缩放;双击车身重新放置',
-        place:'📍 点击车身,放置当前投影面',
-        brush:'🖌 拖动把被擦掉的区域涂回来(粗细/羽化在右侧)',
+  hint({sel:'🖱 点投影面选中出现操纵球;箭头移动/圆环旋转/方块缩放;双击车身重新放置',
+        place:'📍 点击车身,放置当前投影面(加入当前动画组)',
+        brush:'🖌 拖动把被擦掉的区域涂回来',
         erase:'🧽 拖动擦除不想显示动画的区域',
-        paint:'🎨 点击车身部件,涂成动画背景色'}[m]);
+        paint:'🎨 点击车身部件,涂成当前动画组的背景色'}[m]);
 }
 for(const [k,id] of Object.entries(MODE_BTN)) $(id).onclick=()=>setMode3(k);
 
-/* ══════════════ 笔刷(软边 + 连续描边)══════════════ */
+/* ══════════════ 笔刷(按组隔离蒙版)══════════════ */
 let lastStamp=null;
-function stampBrush(x,y,white){
+function stampBrush(gr,x,y,white){
   const R=+$('eraSl').value, feather=+$('featherSl').value;
   const inner=Math.max(0.5, R*(1-feather));
-  const grad=maskCtx.createRadialGradient(x,y,inner,x,y,R);
+  const grad=gr.maskCtx.createRadialGradient(x,y,inner,x,y,R);
   const col=white?'255,255,255':'0,0,0';
   grad.addColorStop(0,`rgba(${col},1)`);
   grad.addColorStop(1,`rgba(${col},0)`);
-  maskCtx.fillStyle=grad;
-  maskCtx.beginPath(); maskCtx.arc(x,y,R,0,7); maskCtx.fill();
+  gr.maskCtx.fillStyle=grad;
+  gr.maskCtx.beginPath(); gr.maskCtx.arc(x,y,R,0,7); gr.maskCtx.fill();
 }
-function strokeTo(x,y,white){
-  // 沿运动轨迹按 0.35R 步进补章 —— 消除快速拖动时的扇贝状锯齿边
+function strokeTo(gr,x,y,white){
   const R=+$('eraSl').value, step=Math.max(2,R*0.35);
-  if(lastStamp){
+  if(lastStamp&&lastStamp.gr===gr){
     const dx=x-lastStamp.x, dy=y-lastStamp.y, dist=Math.hypot(dx,dy);
-    for(let t=step;t<dist;t+=step) stampBrush(lastStamp.x+dx*t/dist, lastStamp.y+dy*t/dist, white);
+    for(let t=step;t<dist;t+=step) stampBrush(gr, lastStamp.x+dx*t/dist, lastStamp.y+dy*t/dist, white);
   }
-  stampBrush(x,y,white);
-  lastStamp={x,y};
-  maskTex.needsUpdate=true;
+  stampBrush(gr,x,y,white);
+  lastStamp={gr,x,y};
+  gr.maskTex.needsUpdate=true;
 }
 $('eraSl').addEventListener('input',e=>{ $('eraV').textContent=e.target.value; });
 $('featherSl').addEventListener('input',e=>{ $('featherV').textContent=(+e.target.value).toFixed(2); });
 $('clearErase').onclick=()=>{ pushViewUndo();
-  maskCtx.fillStyle='#fff'; maskCtx.fillRect(0,0,TEXW,TEXH);
-  maskTex.needsUpdate=true; saveViewState(); hint('↺ 已恢复全部被擦区域'); };
+  const gr=groups[activeGroup];
+  gr.maskCtx.fillStyle='#fff'; gr.maskCtx.fillRect(0,0,TEXW,TEXH);
+  gr.maskTex.needsUpdate=true; saveViewState(); hint(`↺ 「${gr.name}」被擦区域已恢复`); };
 
 /* ══════════════ 指针交互 ══════════════ */
 const ray=new THREE.Raycaster(), ptr=new THREE.Vector2();
@@ -334,18 +339,20 @@ function rayFromEvent(e){
   camera.updateMatrixWorld(); carGroup.updateMatrixWorld(true);
   ray.setFromCamera(ptr,camera);
 }
-function brushHitUV(e){
+function brushHit(e){
   rayFromEvent(e);
   const objs=decals.filter(d=>d.obj).map(d=>d.obj);
   const hit=ray.intersectObjects(objs,false)[0];
-  return hit?.uv||null;
+  if(!hit?.uv) return null;
+  const d=decals.find(dd=>dd.obj===hit.object);
+  return {gr:groups[d.group], uv:hit.uv};
 }
 let downAt=null, painting=false, gizmoDrag=null, projThrottle=0;
 renderer.domElement.addEventListener('pointerdown',e=>{
   downAt=[e.clientX,e.clientY];
   if(mode==='brush'||mode==='erase'){
     pushViewUndo(); painting=true; lastStamp=null;
-    const uv=brushHitUV(e); if(uv) strokeTo(uv.x*TEXW,(1-uv.y)*TEXH, mode==='brush');
+    const h=brushHit(e); if(h) strokeTo(h.gr, h.uv.x*TEXW,(1-h.uv.y)*TEXH, mode==='brush');
     return;
   }
   if(mode==='sel'&&selected&&gumball.visible){
@@ -367,14 +374,14 @@ renderer.domElement.addEventListener('pointerdown',e=>{
   }
 });
 renderer.domElement.addEventListener('pointermove',e=>{
-  if(painting){ const uv=brushHitUV(e); if(uv) strokeTo(uv.x*TEXW,(1-uv.y)*TEXH, mode==='brush'); return; }
+  if(painting){ const h=brushHit(e); if(h) strokeTo(h.gr, h.uv.x*TEXW,(1-h.uv.y)*TEXH, mode==='brush'); return; }
   if(gizmoDrag){
     const d=decals[activeDecal], gd=gizmoDrag;
     const dx=e.clientX-gd.sx, dy=e.clientY-gd.sy;
     if(gd.type==='u'||gd.type==='v'){
       const dir=gd.type==='u'?gd.uDir:gd.vDir;
       const len2=dir.x*dir.x+dir.y*dir.y;
-      const worldDelta=len2>1e-6 ? (dx*dir.x+dy*dir.y)/len2*0.5 : 0; // dir 对应 0.5 世界单位
+      const worldDelta=len2>1e-6 ? (dx*dir.x+dy*dir.y)/len2*0.5 : 0;
       if(gd.type==='u') d.du=gd.du0+worldDelta; else d.dv=gd.dv0+worldDelta;
     } else if(gd.type==='rot'){
       const a1=Math.atan2(e.clientY-gd.cy, e.clientX-gd.cx);
@@ -384,7 +391,7 @@ renderer.domElement.addEventListener('pointermove',e=>{
       d.sz=Math.min(3,Math.max(0.3, gd.sz0*(1-(dy)*0.005)));
     }
     const now=performance.now();
-    if(now-projThrottle>90){ projThrottle=now; projectDecal(d); } // 大网格贴花重建有成本,拖动中限频
+    if(now-projThrottle>90){ projThrottle=now; projectDecal(d); }
     syncSliders();
   }
 });
@@ -403,14 +410,15 @@ addEventListener('pointerup',e=>{
   if(mode==='paint'){
     const hit=ray.intersectObject(carGroup,true).find(h=>h.object.isMesh && !h.object.userData.isDecal);
     if(hit){ pushViewUndo();
-      applyCarColor(meshList().indexOf(hit.object), P.colBg);
-      saveViewState(); hint(`🎨 「${hit.object.name||'部件'}」已涂成动画背景色 ${P.colBg}`); }
+      const col=groups[activeGroup].P.colBg||'#0a0a0a';
+      applyCarColor(meshList().indexOf(hit.object), col);
+      saveViewState(); hint(`🎨 「${hit.object.name||'部件'}」已涂成 ${col}`); }
     return;
   }
   if(mode==='sel'){
-    // 点投影面 = 选中;点空白/车身 = 取消选中(移动只走操纵球,杜绝误拖)
     const dHit=ray.intersectObjects(decals.filter(d=>d.obj).map(d=>d.obj),false)[0];
-    if(dHit){ activeDecal=decals.findIndex(d=>d.obj===dHit.object); selected=true; syncPanel(); }
+    if(dHit){ activeDecal=decals.findIndex(d=>d.obj===dHit.object);
+      activeGroup=decals[activeDecal].group; selected=true; syncPanel(); }
     else { selected=false; syncPanel(); }
   }
 });
@@ -433,7 +441,7 @@ addEventListener('keydown',e=>{
   else if(e.key==='Escape'){ selected=false; syncPanel(); }
 });
 
-/* ══════════════ 右面板:图层列表 + 属性 + 分区切割器 ══════════════ */
+/* ══════════════ 面板:动画组节点 + 图层 + 属性 + 分区 ══════════════ */
 function syncSliders(){
   const d=decals[activeDecal];
   $('szSl').value=d.sz; $('szV').textContent=d.sz.toFixed(2);
@@ -441,19 +449,68 @@ function syncSliders(){
   $('uSl').value=d.du; $('uV').textContent=d.du.toFixed(2);
   $('vSl').value=d.dv; $('vV').textContent=d.dv.toFixed(2);
 }
+// 🔗 横向均分:把本组各投影面的取景框按顺序切成相邻等宽区段,并统一像素密度 —— 一键"跨面跑动"
+function autoSlice(gi){
+  const members=decals.filter(d=>d.group===gi&&d.obj);
+  if(members.length<2){ hint('本组需要至少 2 块已放置的投影面才能均分'); return; }
+  pushViewUndo();
+  const ref=members.includes(decals[activeDecal])?decals[activeDecal]:members[0];
+  const k=ref.sz/ref.cw; // 像素密度基准(世界宽/取景宽):切完各面 sz=k·cw,缝两侧内容等大
+  members.sort((a,b)=>a.cx-b.cx);
+  members.forEach((d,i)=>{ d.cx=i/members.length; d.cw=1/members.length; d.cy=0; d.ch=1;
+    d.sz=Math.min(3,Math.max(0.3,k*d.cw)); projectDecal(d); });
+  saveViewState(); syncPanel();
+  hint(`🔗 「${groups[gi].name}」已均分成 ${members.length} 段并统一密度 — 把面挪到相邻位置即无缝`);
+}
+
+// 🧲 衔接:以当前面为基准,组内所有面按各自取景宽等密度换算尺寸,纵向窗口/旋转对齐 ——
+// 解决手动衔接时"缝两侧内容大小不一、高度错位"的问题。
+function matchSeams(gi){
+  const members=decals.filter(d=>d.group===gi&&d.obj);
+  if(members.length<2){ hint('本组需要至少 2 块已放置的投影面才能衔接'); return; }
+  const ref=members.includes(decals[activeDecal])?decals[activeDecal]:members[0];
+  pushViewUndo();
+  const k=ref.sz/ref.cw;
+  for(const d of members){
+    if(d===ref) continue;
+    d.sz=Math.min(3,Math.max(0.3,k*d.cw));
+    d.cy=ref.cy; d.ch=ref.ch; d.rot=ref.rot;
+    projectDecal(d);
+  }
+  saveViewState(); syncPanel();
+  hint(`🧲 已按「投影面 ${decals.indexOf(ref)+1}」对齐组内密度/纵窗/旋转 — 微调位置即可无缝`);
+}
 function syncPanel(){
   syncSliders();
   const list=$('decList'); list.innerHTML='';
-  decals.forEach((d,i)=>{
-    const row=document.createElement('div');
-    row.className='lay'+(i===activeDecal?' on':'');
-    row.innerHTML=`<span class="sw" style="background:${DEC_COLORS[i%DEC_COLORS.length]}"></span>
-      <span class="nm">投影面 ${i+1}</span><span class="st">${d.obj?'已放置':'未放置'}</span>`;
-    row.onclick=()=>{ activeDecal=i; selected=!!d.obj; syncPanel(); };
-    list.appendChild(row);
+  groups.forEach((gr,gi)=>{
+    const head=document.createElement('div');
+    head.className='lay'+(gi===activeGroup?' on':'');
+    head.style.background='#0d1412';
+    head.innerHTML=`<span class="sw" style="background:${GRP_COLORS[gi%GRP_COLORS.length]};border-radius:50%"></span>
+      <span class="nm" style="font-weight:600">${gr.name}</span>
+      <span class="st">${gr.SEQ?gr.SEQ.T.toFixed(1)+'s':'空'}</span>
+      <button data-slice="${gi}" title="把本组各面的取景框切成相邻等宽区段并统一密度,动画跨面连续跑动" style="padding:2px 6px;font-size:11px">🔗均分</button>
+      <button data-seam="${gi}" title="以当前面为基准统一组内像素密度/纵向窗口/旋转,消除接缝处大小与高度差" style="padding:2px 6px;font-size:11px">🧲衔接</button>`;
+    head.onclick=e=>{ if(e.target.dataset.slice!==undefined||e.target.dataset.seam!==undefined) return;
+      activeGroup=gi; syncPanel(); };
+    head.querySelector('[data-slice]').onclick=()=>autoSlice(gi);
+    head.querySelector('[data-seam]').onclick=()=>matchSeams(gi);
+    list.appendChild(head);
+    decals.forEach((d,i)=>{
+      if(d.group!==gi) return;
+      const row=document.createElement('div');
+      row.className='lay'+(i===activeDecal?' on':'');
+      row.style.marginLeft='14px';
+      row.innerHTML=`<span class="sw" style="background:${DEC_COLORS[i%DEC_COLORS.length]}"></span>
+        <span class="nm">投影面 ${i+1}</span>
+        <span class="st">${d.obj?`${Math.round(d.cx*100)}-${Math.round((d.cx+d.cw)*100)}%`:'未放置'}</span>`;
+      row.onclick=()=>{ activeDecal=i; activeGroup=gi; selected=!!d.obj; syncPanel(); };
+      list.appendChild(row);
+    });
   });
 }
-$('addDec').onclick=()=>{ pushViewUndo(); decals.push(newDecal()); activeDecal=decals.length-1;
+$('addDec').onclick=()=>{ pushViewUndo(); decals.push(newDecal(activeGroup)); activeDecal=decals.length-1;
   selected=false; syncPanel(); setMode3('place'); saveViewState(); };
 function delActiveDecal(){
   if(decals.length<=1){ hint('至少保留一块投影面'); return; }
@@ -463,6 +520,23 @@ function delActiveDecal(){
   syncPanel(); saveViewState();
 }
 $('delDec').onclick=delActiveDecal;
+$('addGroup').onclick=()=>$('groupFile').click();
+$('groupFile').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=async()=>{
+    try{
+      const gi=groups.length;
+      groups.push(makeGroup(`动画 ${gi+1}`));
+      await loadProjectData(JSON.parse(rd.result), gi);
+      idbPut(`groupproj-${gi}`, rd.result).catch(()=>{});
+      activeGroup=gi; syncPanel(); saveViewState();
+      hint(`✓ 「动画 ${gi+1}」节点已建立 — ➕投影面 放它的画面,与动画 1 同时播放`);
+    }catch(err){ hint('⚠ '+err.message); }
+  };
+  rd.readAsText(f); e.target.value='';
+});
+
 const sliderKeys={szSl:'sz',rotSl:'rot',uSl:'du',vSl:'dv'};
 for(const [id,keyName] of Object.entries(sliderKeys)){
   $(id).addEventListener('pointerdown',pushViewUndo);
@@ -471,13 +545,14 @@ for(const [id,keyName] of Object.entries(sliderKeys)){
   $(id).addEventListener('change',saveViewState);
 }
 
-/* ── 分区切割器:动画缩略图上拖矩形,把画面切给各投影面 ── */
+/* ── 分区切割器(显示当前动画组)── */
 const cutCv=$('cutCv'), cutCtx=cutCv.getContext('2d');
 const CUTW=cutCv.width, CUTH=cutCv.height;
 let cutDrag=null;
 function drawCut(){
-  cutCtx.drawImage(texCanvas,0,0,CUTW,CUTH);
+  cutCtx.drawImage(groups[activeGroup].texCanvas,0,0,CUTW,CUTH);
   decals.forEach((d,i)=>{
+    if(d.group!==activeGroup) return;
     const x=d.cx*CUTW, y=d.cy*CUTH, w=d.cw*CUTW, h=d.ch*CUTH;
     cutCtx.strokeStyle=DEC_COLORS[i%DEC_COLORS.length];
     cutCtx.lineWidth=i===activeDecal?2:1;
@@ -485,7 +560,7 @@ function drawCut(){
     cutCtx.strokeRect(x+0.5,y+0.5,w-1,h-1);
     cutCtx.setLineDash([]);
     if(i===activeDecal){ cutCtx.fillStyle=DEC_COLORS[i%DEC_COLORS.length];
-      cutCtx.fillRect(x+w-7,y+h-7,7,7); } // 右下角缩放柄
+      cutCtx.fillRect(x+w-7,y+h-7,7,7); }
     cutCtx.font='10px system-ui'; cutCtx.fillStyle=DEC_COLORS[i%DEC_COLORS.length];
     cutCtx.fillText(String(i+1), x+4, y+12);
   });
@@ -493,14 +568,17 @@ function drawCut(){
 cutCv.addEventListener('pointerdown',e=>{
   const r=cutCv.getBoundingClientRect();
   const mx=(e.clientX-r.left)/r.width*CUTW, my=(e.clientY-r.top)/r.height*CUTH;
-  // 优先当前面的缩放柄,再命中任意面矩形(选中之)
   const a=decals[activeDecal];
-  const ax=a.cx*CUTW, ay=a.cy*CUTH, aw=a.cw*CUTW, ah=a.ch*CUTH;
-  if(Math.abs(mx-(ax+aw))<9 && Math.abs(my-(ay+ah))<9){
-    pushViewUndo(); cutDrag={type:'resize'}; cutCv.setPointerCapture(e.pointerId); return;
+  if(a.group===activeGroup){
+    const ax=a.cx*CUTW, ay=a.cy*CUTH, aw=a.cw*CUTW, ah=a.ch*CUTH;
+    if(Math.abs(mx-(ax+aw))<9 && Math.abs(my-(ay+ah))<9){
+      pushViewUndo(); cutDrag={type:'resize'}; cutCv.setPointerCapture(e.pointerId); return;
+    }
   }
   for(let i=decals.length-1;i>=0;i--){
-    const d=decals[i], x=d.cx*CUTW, y=d.cy*CUTH, w=d.cw*CUTW, h=d.ch*CUTH;
+    const d=decals[i];
+    if(d.group!==activeGroup) continue;
+    const x=d.cx*CUTW, y=d.cy*CUTH, w=d.cw*CUTW, h=d.ch*CUTH;
     if(mx>=x&&mx<=x+w&&my>=y&&my<=y+h){
       activeDecal=i; selected=!!d.obj; syncPanel();
       pushViewUndo();
@@ -527,7 +605,7 @@ cutCv.addEventListener('pointermove',e=>{
 cutCv.addEventListener('pointerup',()=>{ if(cutDrag){ projectDecal(decals[activeDecal]);
   cutDrag=null; saveViewState(); } });
 
-/* ══════════════ 视图设置 / Bloom(OutputPass 修黑屏)══════════════ */
+/* ══════════════ Bloom / 视图 ══════════════ */
 const composer=new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene,camera));
 const bloom=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight), 0.55, 0.4, 0.85);
@@ -546,16 +624,17 @@ addEventListener('resize',()=>{
 function saveViewState(){
   try{ localStorage.setItem('morph3d-view', JSON.stringify({
     exp:+$('expSl').value, bloom:$('bloomCk').checked, spin:$('spinCk').checked,
-    active:activeDecal, decals:decals.map(serializeDecal),
+    active:activeDecal, activeGroup, groupCount:groups.length,
+    decals:decals.map(serializeDecal),
     carColors:carColors.map(c=>({...c})),
-    mask:maskCanvas.toDataURL('image/png'),
+    masks:groups.map(gr=>gr.maskCanvas.toDataURL('image/png')),
   })); }catch(_){}
 }
 $('loadProj').onclick=()=>$('projFile').click();
 $('projFile').addEventListener('change',e=>{
   const f=e.target.files[0]; if(!f) return;
   const rd=new FileReader();
-  rd.onload=()=>loadProjectData(JSON.parse(rd.result))
+  rd.onload=()=>loadProjectData(JSON.parse(rd.result), 0)
     .then(()=>{ try{ localStorage.setItem('morph3d-project', rd.result); }catch(_){} })
     .catch(err=>hint('⚠ '+err.message));
   rd.readAsText(f); e.target.value='';
@@ -567,14 +646,14 @@ $('modelFile').addEventListener('change',e=>{
 $('expGlb').onclick=()=>{
   new GLTFExporter().parse(carGroup, gltf=>{
     downloadBlob(new Blob([gltf],{type:'model/gltf-binary'}), 'morph-car-decals.glb');
-    hint('✓ 已导出 .glb — Blender:导入后选投影面网格,材质贴图换成 ⑤导出 的 PNG 序列(Image Sequence)接 Emission');
+    hint('✓ 已导出 .glb — Blender:选各投影面网格,贴图换成对应动画的 PNG 序列(Image Sequence)接 Emission');
   }, err=>hint('⚠ 导出失败:'+err.message), {binary:true});
 };
 
 (async()=>{
   try{
     const stored=localStorage.getItem('morph3d-project');
-    if(stored) await loadProjectData(JSON.parse(stored)).catch(err=>hint('⚠ '+err.message));
+    if(stored) await loadProjectData(JSON.parse(stored), 0).catch(err=>hint('⚠ '+err.message));
   }catch(_){}
   let vs=null;
   try{ vs=JSON.parse(localStorage.getItem('morph3d-view')||'null'); }catch(_){}
@@ -583,24 +662,40 @@ $('expGlb').onclick=()=>{
     renderer.toneMappingExposure=vs.exp;
     $('bloomCk').checked=vs.bloom; bloom.enabled=vs.bloom;
     $('spinCk').checked=vs.spin;
+    // 额外动画组:从 IDB 取回工程并重建节点
+    for(let gi=1; gi<(vs.groupCount||1); gi++){
+      const txt=await idbGet(`groupproj-${gi}`).catch(()=>null);
+      groups.push(makeGroup(`动画 ${gi+1}`));
+      if(txt){ try{ await loadProjectData(JSON.parse(txt), gi); }catch(_){} }
+    }
   }
   const blob=await idbGet('model').catch(()=>null);
   if(blob) await loadModelBlob(blob, false);
   if(vs) await restoreView({decals:vs.decals||[], active:vs.active||0,
-    mask:vs.mask||maskCanvas.toDataURL(), carColors:vs.carColors||[]});
+    masks:vs.masks||[], carColors:vs.carColors||[]});
+  activeGroup=Math.min(vs?.activeGroup||0, groups.length-1);
   selected=false; syncPanel();
   if(vs?.decals?.some(d=>d.p)) hint('✓ 已恢复上次的模型与投影布局');
 })();
 
-/* ══════════════ 主循环 ══════════════ */
-let frames=0;
+/* ══════════════ 主循环(⏯ 暂停:冻结时间线与呼吸,便于跨面对齐)══════════════ */
+let g=0, last=performance.now(), clock=0, frames=0, paused=false;
+function setPaused(p){ paused=p;
+  $('pauseBtn').textContent=paused?'▶ 播放':'⏸ 暂停';
+  $('pauseBtn').classList.toggle('on',paused); }
+$('pauseBtn').onclick=()=>setPaused(!paused);
+addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+  if(e.key===' '){ setPaused(!paused); e.preventDefault(); }
+});
 function frame(now){
-  const dt=(now-last)/1000; last=now; clock+=dt;
-  if(SEQ){
-    g+=dt; if(g>=SEQ.T) g-=SEQ.T;
-    const fr=sampleFrame(SEQ, states, g, clock, P);
-    renderTex(fr.balls, fr.col, P);
-    screenTex.needsUpdate=true;
+  const dt=(now-last)/1000; last=now;
+  if(!paused){ clock+=dt; g+=dt; }
+  for(const gr of groups){
+    if(!gr.SEQ) continue;
+    const fr=sampleFrame(gr.SEQ, gr.states, g%gr.SEQ.T, clock, gr.P);
+    gr.renderTex(fr.balls, fr.col, gr.P);
+    gr.screenTex.needsUpdate=true;
   }
   if($('spinCk').checked && !gizmoDrag && !painting) carGroup.rotation.y+=dt*0.12;
   updateGumball();
@@ -612,18 +707,19 @@ function frame(now){
 function tick(now){ frame(now); requestAnimationFrame(tick); }
 requestAnimationFrame(tick);
 
-// 调试探针(隐藏标签页 rAF 不触发,自动化验证靠 step 驱动)。
 window.__morph3d={
-  status:()=>({ g:+g.toFixed(2), T:SEQ?+SEQ.T.toFixed(1):null,
-    states:states?states.length:0, frames, decals:decals.filter(d=>d.obj).length,
-    active:activeDecal, mode, selected, undoDepth:viewUndoStack.length }),
+  status:()=>({ g:+g.toFixed(2), groups:groups.map(gr=>({name:gr.name, T:gr.SEQ?+gr.SEQ.T.toFixed(1):null, states:gr.states?.length||0})),
+    frames, decals:decals.filter(d=>d.obj).length, active:activeDecal, activeGroup, mode, selected,
+    undoDepth:viewUndoStack.length }),
   step:(ms=33)=>{ frame(last+ms); },
   place:(nx,ny)=>{ camera.updateMatrixWorld(); carGroup.updateMatrixWorld(true);
     ray.setFromCamera(new THREE.Vector2(nx,ny),camera);
     const hit=ray.intersectObject(carGroup,true).find(h=>h.object.isMesh && !h.object.userData.isDecal && h.face);
     if(hit){ pushViewUndo(); placeDecalAt(hit); } return !!hit; },
-  setMode:setMode3, undo:undoView,
-  loadProject:data=>loadProjectData(data),
-  texLit:()=>{ const d=texCtx.getImageData(0,0,TEXW,TEXH).data; let n=0;
+  setMode:setMode3, undo:undoView, autoSlice,
+  addGroupFromData:async data=>{ const gi=groups.length; groups.push(makeGroup(`动画 ${gi+1}`));
+    await loadProjectData(data, gi); activeGroup=gi; syncPanel(); saveViewState(); return gi; },
+  loadProject:data=>loadProjectData(data, 0),
+  texLit:(gi=0)=>{ const d=groups[gi].texCtx.getImageData(0,0,TEXW,TEXH).data; let n=0;
     for(let i=0;i<d.length;i+=16) if(d[i]>30||d[i+1]>30||d[i+2]>30) n++; return n; },
 };

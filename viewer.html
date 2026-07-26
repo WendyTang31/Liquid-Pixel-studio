@@ -66,6 +66,7 @@
   <button id="loadModel">🚗 车模</button>
   <button id="expGlb" title="车+投影面导出 .glb 供 Blender 渲染">📤 Blender</button>
   <div class="spacer"></div>
+  <button id="pauseBtn" title="暂停/播放 (空格) — 定住画面对齐各投影面">⏸ 暂停</button>
   <span class="sl">亮度 <input type="range" id="expSl" min="0.2" max="2.4" step="0.05" value="1.15"><span class="val" id="expV">1.15</span></span>
   <label class="ck"><input type="checkbox" id="bloomCk" checked> 辉光</label>
   <label class="ck"><input type="checkbox" id="spinCk"> 环绕</label>
@@ -83,12 +84,16 @@
 </div>
 
 <div class="panel">
-  <div class="sec">投影面(图层)</div>
+  <div class="sec">动画组(节点)与投影面</div>
   <div id="decList"></div>
   <div class="row">
-    <button id="addDec" style="flex:1">➕ 新投影面</button>
+    <button id="addDec" style="flex:1" title="加进当前动画组,与同组的面共享动画">➕ 投影面</button>
     <button id="delDec" style="flex:1" title="Delete 键同效">🗑 删除</button>
   </div>
+  <div class="row">
+    <button id="addGroup" style="flex:1" title="载入另一个工程 .json 作为动画 2,与动画 1 同时播放">➕ 新动画(节点)</button>
+  </div>
+  <input type="file" id="groupFile" accept=".json" style="display:none">
 
   <div class="divider"></div>
   <div class="sec">属性 · 当前投影面</div>
