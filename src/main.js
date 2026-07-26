@@ -10,6 +10,7 @@ import { initToolbar } from './ui/toolbar.js';
 import { initStage, setMode, startLoop } from './ui/stage.js';
 import { importImageFile, importImageSequence } from './ui/imageImport.js';
 import { initAutosave, autosaveNow } from './autosave.js';
+import { initSkinRef } from './ui/skinRef.js';
 
 // ── 顶栏:组操作 + 工程 ──
 function initTopbar(){
@@ -79,6 +80,7 @@ initToolbar();
 initInspector();
 initStage();
 initTopbar();
+initSkinRef();
 const restored=tryRestoreAutosave();
 if(!restored) seedExample();
 renderStrip(); syncStateUI(); syncUI();

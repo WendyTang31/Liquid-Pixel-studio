@@ -13,6 +13,7 @@ import { renderStrip } from './filmstrip.js';
 import { setTool } from './toolbar.js';
 import { rdpSimplify, pathBBox, fillSmoothClosedPath } from '../path.js';
 import { applyShapeBBox } from '../shapes.js';
+import { drawSkinRef } from './skinRef.js';
 
 let cv, ctx, previewRender;
 
@@ -131,6 +132,7 @@ function tick(now){
       hex2rgb(s.color), P);
     ctx.drawImage(s.ghost,0,0);
     overlayOnion();
+    if(!store.hideOverlays && $('showSkin')?.checked) drawSkinRef(ctx); // 车面参考(UV 皮肤式)
     if(store.dragAct==='draw'&&store.dragStart&&store.dragNow){
       ctx.strokeStyle='rgba(152,245,208,0.8)'; ctx.setLineDash([4,3]); ctx.lineWidth=1;
       const x0=store.dragStart.x,y0=store.dragStart.y,x1=store.dragNow.x,y1=store.dragNow.y;

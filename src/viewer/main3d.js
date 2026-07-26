@@ -98,6 +98,8 @@ renderer.toneMappingExposure=1.15;
 $('scene').appendChild(renderer.domElement);
 const controls=new OrbitControls(camera, renderer.domElement);
 controls.target.set(0,0.8,0); controls.enableDamping=true; controls.maxPolarAngle=Math.PI/2-0.03;
+// Fusion 式导航:按住鼠标中键拖动 = 平移视角(右键同效,左键旋转,滚轮缩放)
+controls.mouseButtons={LEFT:THREE.MOUSE.ROTATE, MIDDLE:THREE.MOUSE.PAN, RIGHT:THREE.MOUSE.PAN};
 
 const pmrem=new THREE.PMREMGenerator(renderer);
 scene.environment=pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -650,6 +652,74 @@ $('expGlb').onclick=()=>{
   }, err=>hint('⚠ 导出失败:'+err.message), {binary:true});
 };
 
+/* ── 🗺 同步布局到编辑器(UV 皮肤式工作流):沿每块面的法线正交"烘焙"车身表面快照,
+   连同取景框布局写入 localStorage —— 编辑器画布叠加显示,创作时即知哪块画面落在哪个面。── */
+function bakePatchSnapshot(d){
+  const {point,n,tan,bit}=decalFrame(d);
+  const w=d.sz, h=d.sz*(TEXH*d.ch)/(TEXW*d.cw);
+  const sw=256, sh=Math.max(32,Math.round(256*h/w));
+  const cam=new THREE.OrthographicCamera(-w/2,w/2,h/2,-h/2,0.01,20);
+  cam.position.copy(point.clone().add(n.clone().multiplyScalar(3)));
+  cam.up.copy(bit.clone().applyAxisAngle(n, d.rot*Math.PI/180)); // 跟随贴片滚转
+  cam.lookAt(point);
+  cam.updateMatrixWorld(true); cam.updateProjectionMatrix();
+  const rt=new THREE.WebGLRenderTarget(sw,sh);
+  renderer.setRenderTarget(rt);
+  renderer.render(scene,cam);
+  const buf=new Uint8Array(sw*sh*4);
+  renderer.readRenderTargetPixels(rt,0,0,sw,sh,buf);
+  renderer.setRenderTarget(null); rt.dispose();
+  const c=document.createElement('canvas'); c.width=sw; c.height=sh;
+  const id=c.getContext('2d').createImageData(sw,sh);
+  for(let y=0;y<sh;y++) id.data.set(buf.subarray((sh-1-y)*sw*4,(sh-y)*sw*4), y*sw*4); // GL 行序上下翻转
+  c.getContext('2d').putImageData(id,0,0);
+  return c.toDataURL('image/jpeg',0.7);
+}
+$('bakeBtn').onclick=()=>{
+  const placed=decals.filter(d=>d.obj);
+  if(!placed.length){ hint('先放置至少一块投影面再同步'); return; }
+  const hidden=[gumball,...placed.map(d=>d.obj)];
+  hidden.forEach(o=>o.visible=false); // 快照只拍车身表面,不含动画/操纵球
+  const patches=placed.map(d=>({ i:decals.indexOf(d), group:d.group,
+    groupName:groups[d.group].name,
+    cx:d.cx, cy:d.cy, cw:d.cw, ch:d.ch,
+    color:DEC_COLORS[decals.indexOf(d)%DEC_COLORS.length],
+    name:`投影面 ${decals.indexOf(d)+1}`, meshName:d.mesh?.name||'',
+    snap:bakePatchSnapshot(d) }));
+  hidden.forEach(o=>o.visible=true);
+  try{ localStorage.setItem('morph-uvlayout', JSON.stringify({ts:Date.now(), patches})); }catch(_){}
+  hint(`🗺 已同步 ${patches.length} 块面的布局与表面快照 — 编辑器勾选「车面」即可对着画`);
+};
+
+/* ── 视图控件(前/后/左/右/顶/透视):相机平滑飞到标准视角,距离保持当前 ── */
+let camTween=null;
+const VIEW_DIRS={ front:[1,0.12,0], back:[-1,0.12,0], left:[0,0.12,1], right:[0,0.12,-1],
+  top:[0.001,1,0], persp:[-0.66,0.31,0.68] };
+document.querySelectorAll('#viewcube [data-view]').forEach(btn=>{
+  btn.onclick=()=>{
+    const dir=new THREE.Vector3(...VIEW_DIRS[btn.dataset.view]).normalize();
+    const dist=camera.position.distanceTo(controls.target);
+    camTween={ t:0, fromPos:camera.position.clone(),
+      toPos:controls.target.clone().add(dir.multiplyScalar(dist)) };
+  };
+});
+function stepCamTween(dt){
+  if(!camTween) return;
+  camTween.t=Math.min(1, camTween.t+dt*3.2);
+  const e=camTween.t*camTween.t*(3-2*camTween.t); // smoothstep
+  camera.position.lerpVectors(camTween.fromPos, camTween.toPos, e);
+  if(camTween.t>=1) camTween=null;
+}
+
+// 双向实时:编辑器每次改动即时存档(morph-autosave),此处监听即刻重载 ——
+// 两个窗口并排开,2D 画、3D 秒见(Substance 式)。
+addEventListener('storage',e=>{
+  if(e.key==='morph-autosave'&&e.newValue){
+    try{ loadProjectData(JSON.parse(e.newValue),0)
+      .then(()=>hint('🔄 已同步编辑器最新动画')); }catch(_){}
+  }
+});
+
 (async()=>{
   try{
     const stored=localStorage.getItem('morph3d-project');
@@ -698,6 +768,7 @@ function frame(now){
     gr.screenTex.needsUpdate=true;
   }
   if($('spinCk').checked && !gizmoDrag && !painting) carGroup.rotation.y+=dt*0.12;
+  stepCamTween(dt);
   updateGumball();
   drawCut();
   controls.update();

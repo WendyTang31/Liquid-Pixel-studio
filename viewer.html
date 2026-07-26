@@ -65,6 +65,7 @@
   <button id="loadProj">📂 工程</button>
   <button id="loadModel">🚗 车模</button>
   <button id="expGlb" title="车+投影面导出 .glb 供 Blender 渲染">📤 Blender</button>
+  <button id="bakeBtn" title="把投影面布局+车身表面快照同步给 2D 编辑器,画布上即可看到'哪块画面对应车的哪个面'">🗺 同步到编辑器</button>
   <div class="spacer"></div>
   <button id="pauseBtn" title="暂停/播放 (空格) — 定住画面对齐各投影面">⏸ 暂停</button>
   <span class="sl">亮度 <input type="range" id="expSl" min="0.2" max="2.4" step="0.05" value="1.15"><span class="val" id="expV">1.15</span></span>
@@ -118,6 +119,15 @@
 </div>
 
 <div id="scene"></div>
+<div id="viewcube" style="position:fixed; right:266px; bottom:12px; z-index:2; display:flex; gap:4px;
+  background:rgba(22,22,22,.9); border:1px solid var(--line); border-radius:8px; padding:6px;">
+  <button data-view="front" title="正视(车头)">前</button>
+  <button data-view="back" title="车尾">后</button>
+  <button data-view="left" title="左侧视">左</button>
+  <button data-view="right" title="右侧视">右</button>
+  <button data-view="top" title="顶视">顶</button>
+  <button data-view="persp" title="默认三维视角">⟲</button>
+</div>
 <div id="hint">📍 放置工具点击车身,放上第一块投影面;或 📂 载入工程</div>
 <script type="module" src="/src/viewer/main3d.js"></script>
 </body>
