@@ -10,55 +10,110 @@
   body{ background:var(--bg); color:var(--ink); overflow:hidden;
         font-family:"IBM Plex Sans","Helvetica Neue",system-ui,sans-serif; }
   #scene{position:fixed; inset:0;}
-  .bar{ position:fixed; top:10px; left:10px; right:10px; z-index:2;
-        display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-        background:rgba(22,22,22,.9); border:1px solid var(--line); border-radius:8px;
-        padding:8px 10px; backdrop-filter:blur(6px);}
-  .bar h1{font-size:13px; font-weight:600; letter-spacing:.05em;}
-  .spacer{flex:1}
-  select,button{ background:#1e1e1e; color:var(--ink); border:1px solid var(--line);
-                 border-radius:6px; padding:5px 8px; font-size:12px; cursor:pointer; font-family:inherit;}
+  select,button,input[type=text]{ background:#1e1e1e; color:var(--ink); border:1px solid var(--line);
+        border-radius:6px; padding:5px 8px; font-size:12px; cursor:pointer; font-family:inherit;}
   button:hover{border-color:var(--mint); color:var(--mint);}
   button.on{background:var(--mint); color:#000; border-color:var(--mint);}
-  .ck{font-size:11.5px; color:var(--ink); display:flex; gap:4px; align-items:center;}
+  input[type=range]{accent-color:var(--mint); height:16px;}
   input[type=checkbox]{accent-color:var(--mint)}
+  .ck{font-size:11.5px; display:flex; gap:4px; align-items:center;}
+  /* ── 顶栏:文件与视图 ── */
+  .topbar{ position:fixed; top:10px; left:10px; right:266px; z-index:2;
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    background:rgba(22,22,22,.9); border:1px solid var(--line); border-radius:8px;
+    padding:7px 10px; backdrop-filter:blur(6px);}
+  .topbar h1{font-size:13px; font-weight:600;}
+  .spacer{flex:1}
   .sl{display:flex; align-items:center; gap:4px; font-size:11.5px; color:var(--dim);}
-  .sl input[type=range]{width:76px; accent-color:var(--mint); height:16px;}
-  .sl .val{font-size:10.5px; color:var(--mint); min-width:28px; text-align:right; font-variant-numeric:tabular-nums;}
-  #hint{ position:fixed; left:12px; bottom:10px; z-index:2; font-size:11.5px; color:var(--dim);
-         background:rgba(10,10,10,.6); padding:4px 8px; border-radius:6px; max-width:92vw;}
+  .sl input[type=range]{width:80px;}
+  .sl .val{font-size:10.5px; color:var(--mint); min-width:26px; text-align:right; font-variant-numeric:tabular-nums;}
   a{color:var(--mint); text-decoration:none;}
+  /* ── 左工具条 ── */
+  .tools{ position:fixed; left:10px; top:64px; z-index:2; display:flex; flex-direction:column; gap:6px;
+    background:rgba(22,22,22,.9); border:1px solid var(--line); border-radius:8px; padding:8px 6px;
+    backdrop-filter:blur(6px);}
+  .tools button{width:40px; height:36px; font-size:15px; padding:0;}
+  /* ── 右属性面板 ── */
+  .panel{ position:fixed; right:10px; top:10px; bottom:10px; width:248px; z-index:2;
+    background:rgba(22,22,22,.92); border:1px solid var(--line); border-radius:8px;
+    padding:10px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;
+    backdrop-filter:blur(6px);}
+  .panel::-webkit-scrollbar{width:6px} .panel::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+  .sec{font-size:10.5px; color:var(--dim); letter-spacing:.12em; margin-top:2px;}
+  .row{display:flex; align-items:center; gap:6px;}
+  .row label{font-size:11.5px; color:var(--dim); min-width:40px;}
+  .row input[type=range]{flex:1; min-width:40px;}
+  .row .val{font-size:10.5px; color:var(--mint); min-width:32px; text-align:right; font-variant-numeric:tabular-nums;}
+  .divider{height:1px; background:var(--line); margin:2px 0;}
+  #decList{display:flex; flex-direction:column; gap:4px;}
+  #decList .lay{ display:flex; align-items:center; gap:6px; padding:5px 8px; border:1px solid var(--line);
+    border-radius:6px; cursor:pointer; font-size:12px; background:#111;}
+  #decList .lay.on{border-color:var(--mint);}
+  #decList .lay .sw{width:10px; height:10px; border-radius:2px; flex:0 0 auto;}
+  #decList .lay .nm{flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;}
+  #decList .lay .st{font-size:10px; color:var(--dim);}
+  #cutCv{width:100%; border:1px solid var(--line); border-radius:6px; background:#000; cursor:crosshair;
+    display:block; touch-action:none;}
+  .small{font-size:10.5px; color:var(--dim); line-height:1.5;}
+  #hint{ position:fixed; left:60px; bottom:10px; right:266px; z-index:2; font-size:11.5px; color:var(--dim);
+    background:rgba(10,10,10,.6); padding:4px 8px; border-radius:6px;}
 </style>
 </head>
 <body>
-<div class="bar">
+<div class="topbar">
   <h1>3D 车模预览</h1>
   <button id="loadProj">📂 工程</button>
-  <button id="loadModel">🚗 车模 (.glb)</button>
-  <select id="decSel" title="当前编辑哪块投影面(点击车身移动它)"></select>
-  <button id="addDec" title="新增一块投影面(共享同一动画与时间线,可各取画面的不同区段)">➕面</button>
-  <button id="delDec" title="删除当前投影面">🗑面</button>
-  <span class="sl" title="投影贴片宽度">大小 <input type="range" id="szSl" min="0.3" max="3" step="0.05" value="1.2"><span class="val" id="szV">1.20</span></span>
-  <span class="sl" title="绕表面法线旋转">旋转 <input type="range" id="rotSl" min="-180" max="180" step="1" value="0"><span class="val" id="rotV">0°</span></span>
-  <span class="sl" title="沿表面横向微移">横移 <input type="range" id="uSl" min="-0.8" max="0.8" step="0.01" value="0"><span class="val" id="uV">0.00</span></span>
-  <span class="sl" title="沿表面纵向微移">纵移 <input type="range" id="vSl" min="-0.8" max="0.8" step="0.01" value="0"><span class="val" id="vV">0.00</span></span>
-  <span class="sl" title="本面取动画画面的哪一段(起点%);多面各取一段=动画跨面连续跑动">画面起 <input type="range" id="cxSl" min="0" max="0.9" step="0.01" value="0"><span class="val" id="cxV">0%</span></span>
-  <span class="sl" title="本面取画面的宽度%">画面宽 <input type="range" id="cwSl" min="0.1" max="1" step="0.01" value="1"><span class="val" id="cwV">100%</span></span>
-  <button id="pickBtn" title="吸管:点击车漆,把动画背景色同步成该颜色,贴片与车身融为一体">🎨吸色</button>
-  <button id="eraseBtn" title="橡皮:在投影面上拖动,擦掉不想显示动画的区域">🧽橡皮</button>
-  <span class="sl">粗细 <input type="range" id="eraSl" min="8" max="80" step="2" value="30"><span class="val" id="eraV">30</span></span>
-  <button id="clearErase" title="恢复被擦除的区域">↺擦除</button>
-  <span class="sl" title="环境曝光">亮度 <input type="range" id="expSl" min="0.2" max="2.4" step="0.05" value="1.15"><span class="val" id="expV">1.15</span></span>
+  <button id="loadModel">🚗 车模</button>
+  <button id="expGlb" title="车+投影面导出 .glb 供 Blender 渲染">📤 Blender</button>
+  <div class="spacer"></div>
+  <span class="sl">亮度 <input type="range" id="expSl" min="0.2" max="2.4" step="0.05" value="1.15"><span class="val" id="expV">1.15</span></span>
   <label class="ck"><input type="checkbox" id="bloomCk" checked> 辉光</label>
   <label class="ck"><input type="checkbox" id="spinCk"> 环绕</label>
-  <button id="expGlb" title="把车+投影面导出为 .glb,进 Blender 配合 PNG 序列做正片渲染">📤Blender</button>
-  <div class="spacer"></div>
-  <a href="./index.html">← 返回编辑器</a>
+  <a href="./index.html">← 编辑器</a>
   <input type="file" id="projFile" accept=".json" style="display:none">
   <input type="file" id="modelFile" accept=".glb,.gltf" style="display:none">
 </div>
+
+<div class="tools">
+  <button id="tSel" class="on" title="选择/操作 (Q):点投影面选中出现操纵球;拖箭头移动、拖圆环旋转、拖中心方块缩放;双击车身重新放置">🖱</button>
+  <button id="tPlace" title="放置 (W):点击车身把当前投影面放上去">📍</button>
+  <button id="tBrush" title="画笔 (B):把被擦掉的区域涂回来(软边)">🖌</button>
+  <button id="tErase" title="橡皮 (E):擦掉不想显示动画的区域(软边)">🧽</button>
+  <button id="tPaint" title="车身上色 (C):点击车身部件,把它涂成动画背景色,与画面融为一体">🎨</button>
+</div>
+
+<div class="panel">
+  <div class="sec">投影面(图层)</div>
+  <div id="decList"></div>
+  <div class="row">
+    <button id="addDec" style="flex:1">➕ 新投影面</button>
+    <button id="delDec" style="flex:1" title="Delete 键同效">🗑 删除</button>
+  </div>
+
+  <div class="divider"></div>
+  <div class="sec">属性 · 当前投影面</div>
+  <div class="row"><label>大小</label><input type="range" id="szSl" min="0.3" max="3" step="0.05" value="1.2"><div class="val" id="szV">1.20</div></div>
+  <div class="row"><label>旋转</label><input type="range" id="rotSl" min="-180" max="180" step="1" value="0"><div class="val" id="rotV">0°</div></div>
+  <div class="row"><label>横移</label><input type="range" id="uSl" min="-0.8" max="0.8" step="0.01" value="0"><div class="val" id="uV">0.00</div></div>
+  <div class="row"><label>纵移</label><input type="range" id="vSl" min="-0.8" max="0.8" step="0.01" value="0"><div class="val" id="vV">0.00</div></div>
+
+  <div class="divider"></div>
+  <div class="sec">画面分区(把动画切给各投影面)</div>
+  <canvas id="cutCv" width="226" height="132"></canvas>
+  <div class="small">拖动 = 移动本面的取景框;拖右下角 = 缩放;点别的框 = 选中那个投影面。各面共享同一动画与时间线 —— 分区相邻,球就能跨面"跑过去"。</div>
+
+  <div class="divider"></div>
+  <div class="sec">笔刷(画笔/橡皮共用)</div>
+  <div class="row"><label>粗细</label><input type="range" id="eraSl" min="8" max="100" step="2" value="30"><div class="val" id="eraV">30</div></div>
+  <div class="row"><label>羽化</label><input type="range" id="featherSl" min="0" max="0.9" step="0.05" value="0.5"><div class="val" id="featherV">0.50</div></div>
+  <div class="row"><button id="clearErase" style="flex:1">↺ 恢复全部被擦区域</button></div>
+
+  <div class="divider"></div>
+  <div class="small">快捷键:Q 选择 · W 放置 · B 画笔 · E 橡皮 · C 上色 · Ctrl+Z 撤销 · Delete 删投影面 · Esc 取消选中</div>
+</div>
+
 <div id="scene"></div>
-<div id="hint">点击车身放置当前投影面 · ➕面 增加投影面(同一动画,时间线同步)· 拖动旋转 · 滚轮缩放</div>
+<div id="hint">📍 放置工具点击车身,放上第一块投影面;或 📂 载入工程</div>
 <script type="module" src="/src/viewer/main3d.js"></script>
 </body>
 </html>
