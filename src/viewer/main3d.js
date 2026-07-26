@@ -149,12 +149,17 @@ async function loadModelBlob(blob, persist){
 
 /* ══════════════ 投影面 ══════════════ */
 const decals=[]; let activeDecal=0, selected=false;
-function newDecal(gi=activeGroup){ return {group:gi, mesh:null, localPoint:null, localNormal:null,
+function newDecal(gi=activeGroup){ return {kind:'patch', group:gi, mesh:null, localPoint:null, localNormal:null,
+  sz:1.2, rot:0, du:0, dv:0, cx:0, cy:0, cw:1, ch:1, obj:null}; }
+// 环绕面:圆柱投影"贴膜"—— 空间投影而非表面行走,天然跨部件/跨缝隙连续。
+function newWrap(gi=activeGroup){ return {kind:'wrap', group:gi, mesh:null, localPoint:null, localNormal:null,
+  axis:'y', a0:-90, span:360, lo:0.15, hi:0.75,
   sz:1.2, rot:0, du:0, dv:0, cx:0, cy:0, cw:1, ch:1, obj:null}; }
 decals.push(newDecal(0));
-const serializeDecal=d=>({ group:d.group, meshIdx:d.mesh?meshList().indexOf(d.mesh):-1,
+const serializeDecal=d=>({ kind:d.kind||'patch', group:d.group, meshIdx:d.mesh?meshList().indexOf(d.mesh):-1,
   p:d.localPoint?.toArray()||null, n:d.localNormal?.toArray()||null,
-  sz:d.sz, rot:d.rot, du:d.du, dv:d.dv, cx:d.cx, cy:d.cy, cw:d.cw, ch:d.ch });
+  sz:d.sz, rot:d.rot, du:d.du, dv:d.dv, cx:d.cx, cy:d.cy, cw:d.cw, ch:d.ch,
+  axis:d.axis, a0:d.a0, span:d.span, lo:d.lo, hi:d.hi });
 function removeObj(d){ if(d.obj){ d.obj.removeFromParent(); d.obj.geometry.dispose(); d.obj=null; } }
 function clearAllDecals(){ for(const d of decals){ removeObj(d); d.mesh=null; d.localPoint=null; } }
 
@@ -171,7 +176,69 @@ function decalFrame(d){
   return {point,n,tan,bit,toWorld};
 }
 
+// 圆柱环绕投影:遍历车身全部三角形(世界坐标),按"绕轴角度 × 轴向高度"计算 UV,
+// 只保留窗口内且面朝外的三角形,合成一张连续"皮肤"网格。跨缝三角形(u 突变>0.5)
+// 跳过 —— 接缝处缺一条细缝,把起始角设在车尾/底部即可藏住。
+function buildWrap(d){
+  removeObj(d);
+  carGroup.updateMatrixWorld(true);
+  const box=new THREE.Box3().setFromObject(carGroup);
+  const c=box.getCenter(new THREE.Vector3());
+  const a0=d.a0*Math.PI/180, span=Math.max(0.2,d.span*Math.PI/180);
+  const positions=[], uvs=[];
+  const v=new THREE.Vector3();
+  for(const mesh of meshList()){
+    const geo=mesh.geometry; if(!geo?.attributes?.position) continue;
+    const pos=geo.attributes.position, idx=geo.index;
+    const mw=mesh.matrixWorld;
+    const triCount=idx?idx.count/3:Math.floor(pos.count/3);
+    const getI=k=>idx?idx.getX(k):k;
+    for(let t=0;t<triCount;t++){
+      const pts=[], uvT=[]; let ok=true, prevU=null, cross=false;
+      for(let j=0;j<3;j++){
+        v.fromBufferAttribute(pos,getI(t*3+j)).applyMatrix4(mw);
+        let ang,h;
+        if(d.axis==='y'){ ang=Math.atan2(v.z-c.z, v.x-c.x);
+          h=(v.y-box.min.y)/Math.max(1e-6,box.max.y-box.min.y); }
+        else { ang=Math.atan2(v.y-c.y, v.z-c.z);
+          h=(v.x-box.min.x)/Math.max(1e-6,box.max.x-box.min.x); }
+        let da=ang-a0; da-=Math.floor(da/(2*Math.PI))*(2*Math.PI);
+        if(da>span){ ok=false; break; }
+        const u=da/span;
+        if(prevU!==null && Math.abs(u-prevU)>0.5) cross=true;
+        prevU=u;
+        if(h<d.lo||h>d.hi){ ok=false; break; }
+        pts.push(v.clone());
+        uvT.push([u,(h-d.lo)/Math.max(1e-6,d.hi-d.lo)]);
+      }
+      if(!ok||cross) continue;
+      const e1=pts[1].clone().sub(pts[0]), e2=pts[2].clone().sub(pts[0]);
+      const tn=e1.cross(e2).normalize();
+      const cen=pts[0].clone().add(pts[1]).add(pts[2]).multiplyScalar(1/3);
+      const radial=d.axis==='y'
+        ? new THREE.Vector3(cen.x-c.x,0,cen.z-c.z).normalize()
+        : new THREE.Vector3(0,cen.y-c.y,cen.z-c.z).normalize();
+      if(tn.dot(radial)<0.05) continue; // 只包朝外的表面(内饰/底盘剔除)
+      for(let j=0;j<3;j++){
+        positions.push(pts[j].x,pts[j].y,pts[j].z);
+        // 取景窗口与分区切割器兼容:u/v 再经窗口重映射
+        uvs.push(d.cx+uvT[j][0]*d.cw, (1-d.cy-d.ch)+uvT[j][1]*d.ch);
+      }
+    }
+  }
+  if(!positions.length){ hint('⚠ 窗口范围内没有可包的表面,调整上下沿/跨度'); return; }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs,2));
+  const obj=new THREE.Mesh(geo, groups[d.group].mat);
+  obj.renderOrder=1; obj.userData.isDecal=true;
+  obj.applyMatrix4(carGroup.matrixWorld.clone().invert());
+  carGroup.add(obj);
+  d.obj=obj;
+}
+
 function projectDecal(d){
+  if(d.kind==='wrap'){ buildWrap(d); return; }
   if(!d.mesh||!d.localPoint) return;
   removeObj(d);
   const {point,n,toWorld}=decalFrame(d);
@@ -195,6 +262,7 @@ function projectDecal(d){
 }
 function placeDecalAt(hit){
   const d=decals[activeDecal];
+  if(d.kind==='wrap'){ hint('🌀 环绕面无需放置 — 用右侧"环绕参数"调整包裹范围'); return; }
   d.mesh=hit.object;
   const toLocal=carGroup.matrixWorld.clone().invert();
   d.localPoint=hit.point.clone().applyMatrix4(toLocal);
@@ -217,8 +285,10 @@ async function restoreView(s){
   for(const d of decals) removeObj(d);
   decals.length=0;
   for(const sd of s.decals){
-    const d=newDecal(Math.min(sd.group||0, groups.length-1));
+    const gi=Math.min(sd.group||0, groups.length-1);
+    const d=sd.kind==='wrap'?newWrap(gi):newDecal(gi);
     Object.assign(d,{sz:sd.sz,rot:sd.rot,du:sd.du,dv:sd.dv,cx:sd.cx,cy:sd.cy,cw:sd.cw,ch:sd.ch});
+    if(sd.kind==='wrap') Object.assign(d,{axis:sd.axis||'y',a0:sd.a0??-90,span:sd.span??360,lo:sd.lo??0.15,hi:sd.hi??0.75});
     const m=meshList()[sd.meshIdx];
     if(m&&sd.p&&sd.n){ d.mesh=m;
       d.localPoint=new THREE.Vector3().fromArray(sd.p);
@@ -280,7 +350,7 @@ const gumball=new THREE.Group(); gumball.visible=false; scene.add(gumball);
 }
 function updateGumball(){
   const d=decals[activeDecal];
-  if(!selected||!d?.obj){ gumball.visible=false; return; }
+  if(!selected||!d?.obj||d.kind==='wrap'){ gumball.visible=false; return; } // 环绕面用参数滑块,无操纵球
   const {point,n,tan,bit}=decalFrame(d);
   gumball.position.copy(point.clone().add(n.clone().multiplyScalar(0.05)));
   const m=new THREE.Matrix4().makeBasis(tan,bit,n);
@@ -450,10 +520,19 @@ function syncSliders(){
   $('rotSl').value=d.rot; $('rotV').textContent=d.rot+'°';
   $('uSl').value=d.du; $('uV').textContent=d.du.toFixed(2);
   $('vSl').value=d.dv; $('vV').textContent=d.dv.toFixed(2);
+  const isWrap=d.kind==='wrap';
+  $('wrapProps').style.display=isWrap?'block':'none';
+  if(isWrap){
+    $('wrapAxis').textContent=d.axis==='y'?'纵轴 · 绕车一圈':'横轴 · 跨盖过顶';
+    $('wa0').value=d.a0; $('wa0V').textContent=d.a0+'°';
+    $('wspan').value=d.span; $('wspanV').textContent=d.span+'°';
+    $('wlo').value=d.lo; $('wloV').textContent=(+d.lo).toFixed(2);
+    $('whi').value=d.hi; $('whiV').textContent=(+d.hi).toFixed(2);
+  }
 }
 // 🔗 横向均分:把本组各投影面的取景框按顺序切成相邻等宽区段,并统一像素密度 —— 一键"跨面跑动"
 function autoSlice(gi){
-  const members=decals.filter(d=>d.group===gi&&d.obj);
+  const members=decals.filter(d=>d.group===gi&&d.obj&&d.kind!=='wrap'); // 环绕面自成连续皮肤,不参与切分
   if(members.length<2){ hint('本组需要至少 2 块已放置的投影面才能均分'); return; }
   pushViewUndo();
   const ref=members.includes(decals[activeDecal])?decals[activeDecal]:members[0];
@@ -468,7 +547,7 @@ function autoSlice(gi){
 // 🧲 衔接:以当前面为基准,组内所有面按各自取景宽等密度换算尺寸,纵向窗口/旋转对齐 ——
 // 解决手动衔接时"缝两侧内容大小不一、高度错位"的问题。
 function matchSeams(gi){
-  const members=decals.filter(d=>d.group===gi&&d.obj);
+  const members=decals.filter(d=>d.group===gi&&d.obj&&d.kind!=='wrap');
   if(members.length<2){ hint('本组需要至少 2 块已放置的投影面才能衔接'); return; }
   const ref=members.includes(decals[activeDecal])?decals[activeDecal]:members[0];
   pushViewUndo();
@@ -504,9 +583,12 @@ function syncPanel(){
       const row=document.createElement('div');
       row.className='lay'+(i===activeDecal?' on':'');
       row.style.marginLeft='14px';
+      const label=d.kind==='wrap'?`🌀 环绕 ${i+1}`:`投影面 ${i+1}`;
+      const status=d.kind==='wrap'?(d.obj?`${d.span}°`:'待生成')
+        :(d.obj?`${Math.round(d.cx*100)}-${Math.round((d.cx+d.cw)*100)}%`:'未放置');
       row.innerHTML=`<span class="sw" style="background:${DEC_COLORS[i%DEC_COLORS.length]}"></span>
-        <span class="nm">投影面 ${i+1}</span>
-        <span class="st">${d.obj?`${Math.round(d.cx*100)}-${Math.round((d.cx+d.cw)*100)}%`:'未放置'}</span>`;
+        <span class="nm">${label}</span>
+        <span class="st">${status}</span>`;
       row.onclick=()=>{ activeDecal=i; activeGroup=gi; selected=!!d.obj; syncPanel(); };
       list.appendChild(row);
     });
@@ -514,6 +596,29 @@ function syncPanel(){
 }
 $('addDec').onclick=()=>{ pushViewUndo(); decals.push(newDecal(activeGroup)); activeDecal=decals.length-1;
   selected=false; syncPanel(); setMode3('place'); saveViewState(); };
+$('addWrap').onclick=()=>{ pushViewUndo();
+  decals.push(newWrap(activeGroup)); activeDecal=decals.length-1;
+  projectDecal(decals[activeDecal]); // 立即按默认参数包上车身
+  selected=true; syncPanel(); saveViewState();
+  hint('🌀 连续皮肤已包上车身 — 右侧"环绕参数"调轴向/角度/上下沿;笔刷可直接跨面画'); };
+// 环绕参数滑块:input 时限频重建(全车三角形扫描有成本),change 落定存档
+const wrapSliders={wa0:['a0',v=>v+'°'], wspan:['span',v=>v+'°'],
+  wlo:['lo',v=>(+v).toFixed(2)], whi:['hi',v=>(+v).toFixed(2)]};
+for(const [id,[keyName,fmt]] of Object.entries(wrapSliders)){
+  $(id).addEventListener('pointerdown',pushViewUndo);
+  $(id).addEventListener('input',e=>{
+    const d=decals[activeDecal]; if(d.kind!=='wrap') return;
+    d[keyName]=+e.target.value;
+    $(id+'V').textContent=fmt(+e.target.value);
+    const now=performance.now();
+    if(now-projThrottle>200){ projThrottle=now; projectDecal(d); }
+  });
+  $(id).addEventListener('change',()=>{ const d=decals[activeDecal];
+    if(d.kind==='wrap'){ projectDecal(d); syncPanel(); saveViewState(); } });
+}
+$('wrapAxis').onclick=()=>{ const d=decals[activeDecal]; if(d.kind!=='wrap') return;
+  pushViewUndo(); d.axis=d.axis==='y'?'x':'y';
+  projectDecal(d); syncSliders(); saveViewState(); };
 function delActiveDecal(){
   if(decals.length<=1){ hint('至少保留一块投影面'); return; }
   pushViewUndo();
@@ -684,8 +789,9 @@ $('bakeBtn').onclick=()=>{
     groupName:groups[d.group].name,
     cx:d.cx, cy:d.cy, cw:d.cw, ch:d.ch,
     color:DEC_COLORS[decals.indexOf(d)%DEC_COLORS.length],
-    name:`投影面 ${decals.indexOf(d)+1}`, meshName:d.mesh?.name||'',
-    snap:bakePatchSnapshot(d) }));
+    name:d.kind==='wrap'?`🌀 环绕 ${decals.indexOf(d)+1}(${d.span}°)`:`投影面 ${decals.indexOf(d)+1}`,
+    meshName:d.mesh?.name||'',
+    snap:d.kind==='wrap'?null:bakePatchSnapshot(d) })); // 环绕面无单一视角,只送框与标签
   hidden.forEach(o=>o.visible=true);
   try{ localStorage.setItem('morph-uvlayout', JSON.stringify({ts:Date.now(), patches})); }catch(_){}
   hint(`🗺 已同步 ${patches.length} 块面的布局与表面快照 — 编辑器勾选「车面」即可对着画`);
