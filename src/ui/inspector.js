@@ -35,6 +35,8 @@ export function updateSelBox(){
       </select>
       <label style="min-width:auto" title="本形状的目标点数;留空=按间距自动">点数</label>
       <input type="text" id="selCount" value="${sel.count||''}" style="width:44px" placeholder="自动">
+      <label style="min-width:auto" title="本形状点半径缩放:笔画/智能采样按系数缩放自带半径(0.7=更细更清晰),普通采样按系数缩放全局点半径;留空=1.0">半径×</label>
+      <input type="text" id="selRScale" value="${sel.rscale||''}" style="width:40px" placeholder="1.0">
     </div>`;
   const num=(id,v)=>`<input type="text" id="${id}" value="${Math.round(v)}" style="width:44px">`;
   box.innerHTML=`<div>${name}</div>
@@ -83,6 +85,10 @@ export function updateSelBox(){
   $('selCount').addEventListener('change',e=>{ pushUndo();
     const v=parseInt(e.target.value);
     if(isFinite(v)&&v>0) sel.count=Math.min(1500,v); else delete sel.count;
+    shapesChanged(cur()); updateSelBox(); });
+  $('selRScale').addEventListener('change',e=>{ pushUndo();
+    const v=parseFloat(e.target.value);
+    if(isFinite(v)&&v>0.05&&Math.abs(v-1)>0.01) sel.rscale=Math.min(4,v); else delete sel.rscale;
     shapesChanged(cur()); updateSelBox(); });
 }
 export function deleteSel(){

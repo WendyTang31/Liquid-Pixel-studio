@@ -146,9 +146,10 @@ const _scActx=_scA.getContext('2d',{willReadFrequently:true});
 // 覆盖形状各自单独光栅化(带全部 sub 形状)后用自己的采样器/点数取点;其余走全局设置。
 // 编辑器 resample 与 3D 预览器共用,保证两端 dots 一致。
 export function stateDots(shapes, manual, Pp){
+  const hasOv=sh=>sh.sampler||sh.count||(sh.rscale&&Math.abs(sh.rscale-1)>0.01);
   const subs=shapes.filter(sh=>sh.bool==='sub');
-  const overridden=shapes.filter(sh=>sh.bool!=='sub' && (sh.sampler||sh.count));
-  const defaults=shapes.filter(sh=>sh.bool!=='sub' && !(sh.sampler||sh.count));
+  const overridden=shapes.filter(sh=>sh.bool!=='sub' && hasOv(sh));
+  const defaults=shapes.filter(sh=>sh.bool!=='sub' && !hasOv(sh));
   let dots=[];
   // 默认组
   paintShapes(_smActx, [...defaults, ...subs], _scActx);
@@ -159,12 +160,12 @@ export function stateDots(shapes, manual, Pp){
     paintShapes(_smActx, [sh, ...subs], _scActx);
     const on=maskReaderFor(_smActx), lum=lumReaderFor(_smActx), colR=colorReaderFor(_scActx);
     const pts=samplePtsFit(sh.sampler||Pp.sample, on, Pp.spacing, Pp.jitter, sh.count||null);
-    const base=Pp.dotR/W;
+    const base=Pp.dotR/W, rs=sh.rscale||1; // 半径×:笔画/智能缩放自带半径,普通采样缩放全局半径
     for(const p of pts){
       const d = p[2]!==undefined
-        ? {x:p[0]/W, y:p[1]/H, r:p[2]/W}
+        ? {x:p[0]/W, y:p[1]/H, r:p[2]*rs/W}
         : {x:p[0]/W, y:p[1]/H,
-           r:base*Math.sqrt(Math.max(0.06,lum(Math.round(p[0]),Math.round(p[1]))))};
+           r:base*rs*Math.sqrt(Math.max(0.06,lum(Math.round(p[0]),Math.round(p[1]))))};
       const c=colR(Math.round(p[0]),Math.round(p[1])); if(c) d.c=c;
       dots.push(d);
     }
