@@ -61,7 +61,9 @@ function makeGroup(name){
   // 无顶点色/无深度偏移 —— 它就是该网格的"正式材质",不是叠加贴花。
   const screenTexUV=new THREE.CanvasTexture(texCanvas);
   screenTexUV.colorSpace=THREE.SRGBColorSpace; screenTexUV.flipY=false;
+  screenTexUV.wrapS=THREE.RepeatWrapping; screenTexUV.wrapT=THREE.RepeatWrapping; // UV 越界时平铺而非拉丝
   const maskTexUV=new THREE.CanvasTexture(maskCanvas); maskTexUV.flipY=false;
+  maskTexUV.wrapS=THREE.RepeatWrapping; maskTexUV.wrapT=THREE.RepeatWrapping;
   const matUV=new THREE.MeshBasicMaterial({map:screenTexUV, alphaMap:maskTexUV,
     toneMapped:false, transparent:true});
   return {name, states:null, SEQ:null, P:{...P_DEFAULT},
@@ -139,6 +141,10 @@ async function loadModelBlob(blob, persist){
   try{
     const gltf=await new GLTFLoader().loadAsync(url);
     scene.remove(carGroup); clearAllDecals(); origMats.clear(); carColors.length=0; uvOrig.clear();
+    // UV 直贴层绑定旧模型的网格,换模型即失去意义 —— 直接清除,不留"失效"死行
+    for(let i=decals.length-1;i>=0;i--) if(decals[i].kind==='uv') decals.splice(i,1);
+    if(!decals.length) decals.push(newDecal(0));
+    activeDecal=Math.min(activeDecal,decals.length-1);
     carGroup=gltf.scene;
     const box=new THREE.Box3().setFromObject(carGroup);
     const size=box.getSize(new THREE.Vector3()), c=box.getCenter(new THREE.Vector3());
@@ -278,6 +284,35 @@ function uvWireframe(mesh){
   return c.toDataURL('image/png');
 }
 
+// 创建 UV 直贴图层(交互点击与探针共用):校验 UV → 建层 → 应用材质 → 线框同步编辑器。
+function createUvLayer(mesh){
+  if(!mesh?.geometry?.attributes?.uv){ hint('⚠ 该网格没有 UV — 请在 Blender 展开后重新导出 .glb'); return false; }
+  // UV 越界检查:没打包进 0-1 方格的展开会平铺动画(RepeatWrapping),线框也会出画布 —— 提醒去 Pack Islands
+  let uvWarn=null;
+  { const uv=mesh.geometry.attributes.uv; let mn=9, mx=-9;
+    for(let k=0;k<uv.count;k++){ const u=uv.getX(k), v=uv.getY(k);
+      mn=Math.min(mn,u,v); mx=Math.max(mx,u,v); }
+    if(mn<-0.02||mx>1.02)
+      uvWarn=`⚠ 「${mesh.name||'mesh'}」UV 超出 0-1(${mn.toFixed(2)}~${mx.toFixed(2)})— 画面将平铺;建议 Blender 里全选 → Pack Islands 后重导出`;
+  }
+  pushViewUndo();
+  const d={kind:'uv', group:activeGroup, mesh, localPoint:null, localNormal:null,
+    sz:1.2, rot:0, du:0, dv:0, cx:0, cy:0, cw:1, ch:1, obj:null};
+  decals.push(d); activeDecal=decals.length-1;
+  applyUvLayer(d);
+  try{
+    const layout=JSON.parse(localStorage.getItem('morph-uvlayout')||'{"patches":[]}');
+    layout.ts=performance.now();
+    layout.patches=layout.patches.filter(p=>p.name!==`🧩 UV · ${mesh.name||'mesh'}`);
+    layout.patches.push({cx:0,cy:0,cw:1,ch:1, color:'#9affe2',
+      name:`🧩 UV · ${mesh.name||'mesh'}`, meshName:'', snap:uvWireframe(mesh)});
+    localStorage.setItem('morph-uvlayout', JSON.stringify(layout));
+  }catch(_){}
+  selected=true; syncPanel(); saveViewState(); setMode3('sel');
+  hint(uvWarn || `🧩 「${mesh.name||'部件'}」已按自带 UV 直贴 — 2D 编辑器勾「车面」即见 UV 线框底图`);
+  return true;
+}
+
 function projectDecal(d){
   if(d.kind==='uv'){ applyUvLayer(d); return; }
   if(d.kind==='wrap'){ buildWrap(d); return; }
@@ -342,7 +377,10 @@ async function restoreView(s){
     Object.assign(d,{sz:sd.sz,rot:sd.rot,du:sd.du,dv:sd.dv,cx:sd.cx,cy:sd.cy,cw:sd.cw,ch:sd.ch});
     if(sd.kind==='wrap') Object.assign(d,{axis:sd.axis||'y',a0:sd.a0??-90,span:sd.span??360,lo:sd.lo??0.15,hi:sd.hi??0.75});
     const m=meshList()[sd.meshIdx];
-    if(m&&sd.kind==='uv'){ d.mesh=m; }
+    if(sd.kind==='uv'){
+      if(!m?.geometry?.attributes?.uv) continue; // 换模型后失效的 UV 图层直接剔除,不留死行
+      d.mesh=m;
+    }
     else if(m&&sd.p&&sd.n){ d.mesh=m;
       d.localPoint=new THREE.Vector3().fromArray(sd.p);
       d.localNormal=new THREE.Vector3().fromArray(sd.n); }
@@ -531,25 +569,7 @@ addEventListener('pointerup',e=>{
   rayFromEvent(e);
   if(mode==='uvpick'){
     const hit=ray.intersectObject(carGroup,true).find(h=>h.object.isMesh && !h.object.userData.isDecal);
-    if(hit){
-      if(!hit.object.geometry?.attributes?.uv){ hint('⚠ 该网格没有 UV — 请在 Blender 展开后重新导出 .glb'); return; }
-      pushViewUndo();
-      const d={kind:'uv', group:activeGroup, mesh:hit.object, localPoint:null, localNormal:null,
-        sz:1.2, rot:0, du:0, dv:0, cx:0, cy:0, cw:1, ch:1, obj:null};
-      decals.push(d); activeDecal=decals.length-1;
-      applyUvLayer(d);
-      // UV 线框立即同步给 2D 编辑器(沿用车面参考通道)
-      try{
-        const layout=JSON.parse(localStorage.getItem('morph-uvlayout')||'{"patches":[]}');
-        layout.ts=performance.now();
-        layout.patches=layout.patches.filter(p=>p.name!==`🧩 UV · ${hit.object.name||'mesh'}`);
-        layout.patches.push({cx:0,cy:0,cw:1,ch:1, color:'#9affe2',
-          name:`🧩 UV · ${hit.object.name||'mesh'}`, meshName:'', snap:uvWireframe(hit.object)});
-        localStorage.setItem('morph-uvlayout', JSON.stringify(layout));
-      }catch(_){}
-      selected=true; syncPanel(); saveViewState(); setMode3('sel');
-      hint(`🧩 「${hit.object.name||'部件'}」已按自带 UV 直贴 — 2D 编辑器勾「车面」即见 UV 线框底图`);
-    }
+    if(hit) createUvLayer(hit.object);
     return;
   }
   if(mode==='place'){
@@ -997,6 +1017,14 @@ window.__morph3d={
     const hit=ray.intersectObject(carGroup,true).find(h=>h.object.isMesh && !h.object.userData.isDecal && h.face);
     if(hit){ pushViewUndo(); placeDecalAt(hit); } return !!hit; },
   setMode:setMode3, undo:undoView, autoSlice,
+  loadModel:blob=>loadModelBlob(blob,false),
+  meshInfo:()=>meshList().map((m,i)=>{ const uv=m.geometry?.attributes?.uv;
+    let mn=[9,9], mx=[-9,-9];
+    if(uv) for(let k=0;k<uv.count;k++){ const u=uv.getX(k), v=uv.getY(k);
+      mn=[Math.min(mn[0],u),Math.min(mn[1],v)]; mx=[Math.max(mx[0],u),Math.max(mx[1],v)]; }
+    return {i, name:m.name, tris:(m.geometry.index?m.geometry.index.count:m.geometry.attributes.position.count)/3,
+      hasUV:!!uv, uvMin:uv?mn.map(v=>+v.toFixed(3)):null, uvMax:uv?mx.map(v=>+v.toFixed(3)):null}; }),
+  uvLayer:i=>createUvLayer(meshList()[i]),
   addGroupFromData:async data=>{ const gi=groups.length; groups.push(makeGroup(`动画 ${gi+1}`));
     await loadProjectData(data, gi); activeGroup=gi; syncPanel(); saveViewState(); return gi; },
   loadProject:data=>loadProjectData(data, 0),
