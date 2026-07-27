@@ -3,6 +3,29 @@
 // 单状态点数上限由上层(pipeline.resample)统一抽稀,这里只管铺点。
 import { W, H } from './config.js';
 
+// 两遍 chamfer 3/4 距离场:每个内部像素到最近边界的距离(×3 存储)。smart/strokes 共用。
+function distanceField(on){
+  const INF=1e9, D=new Float32Array(W*H);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++) D[y*W+x]=on(x,y)?INF:0;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){        // 前向遍历
+    const i=y*W+x; if(D[i]===0) continue; let d=D[i];
+    if(x>0)d=Math.min(d,D[i-1]+3);
+    if(y>0){ d=Math.min(d,D[i-W]+3);
+      if(x>0)d=Math.min(d,D[i-W-1]+4);
+      if(x<W-1)d=Math.min(d,D[i-W+1]+4); }
+    D[i]=d;
+  }
+  for(let y=H-1;y>=0;y--)for(let x=W-1;x>=0;x--){  // 后向遍历
+    const i=y*W+x; if(D[i]===0) continue; let d=D[i];
+    if(x<W-1)d=Math.min(d,D[i+1]+3);
+    if(y<H-1){ d=Math.min(d,D[i+W]+3);
+      if(x<W-1)d=Math.min(d,D[i+W+1]+4);
+      if(x>0)d=Math.min(d,D[i+W-1]+4); }
+    D[i]=d;
+  }
+  return D;
+}
+
 // 蒙版质心(vogel/rings 的螺旋/环中心)。稀疏步进扫描,够准且快。
 function maskCentroid(on){
   let sx=0, sy=0, n=0;
@@ -92,29 +115,37 @@ export const SAMPLERS = {
     }
     return pts;
   },
+  // 笔画·文字:专为字形/线稿设计的骨架串珠 —— 沿笔画中轴密排小珠,
+  // 珠半径 = 局部笔画半宽 × 0.8(刻意收 20%:保住字腔 a/o 的洞与字母间隙,不跨沟融合),
+  // 沿笔画印章收紧到 0.75r(珠子首尾相接 → 线条连续可读)。自适应笔画粗细,不依赖全局间距。
+  strokes(on,sp){
+    const D=distanceField(on);
+    const cand=[];
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+      const r=D[y*W+x]/3;
+      if(r>=1.2) cand.push([x,y,r]);
+    }
+    cand.sort((a,b)=>b[2]-a[2]);
+    const cov=new Uint8Array(W*H);
+    const stamp=(bx,by,br)=>{ const R=Math.ceil(br), r2=br*br;
+      for(let dy=-R;dy<=R;dy++){ const yy=by+dy; if(yy<0||yy>=H) continue;
+        for(let dx=-R;dx<=R;dx++){ const xx=bx+dx; if(xx<0||xx>=W) continue;
+          if(dx*dx+dy*dy<=r2) cov[yy*W+xx]=1; } } };
+    const balls=[];
+    for(const [x,y,r] of cand){
+      if(cov[y*W+x]) continue;
+      balls.push([x,y,Math.max(1.2,r*0.8)]);
+      stamp(x,y,Math.max(1.5,r*0.75));
+      if(balls.length>=900) break;
+    }
+    return balls;
+  },
   // 智能识别·结构圆(中轴/最大内切圆):不"铺满"蒙版,而是还原"这团形状本来由哪几个圆组成"。
   // ① 两遍 chamfer 距离场:每个内部像素到最近边界的距离;② 距离峰值 = 天然圆心,峰值大小 = 半径;
   // ③ 从大到小贪心接受"未被已选球覆盖"的候选 —— 大团块得到一个精确大球(如导入的 metaball 设计稿),
   // 细笔画得到沿骨架的串珠。返回 [x,y,r] 三元组(逐点独立半径,引擎/渲染本就支持逐球 r)。
   smart(on,sp){
-    const INF=1e9, D=new Float32Array(W*H);
-    for(let y=0;y<H;y++)for(let x=0;x<W;x++) D[y*W+x]=on(x,y)?INF:0;
-    for(let y=0;y<H;y++)for(let x=0;x<W;x++){        // 前向遍历
-      const i=y*W+x; if(D[i]===0) continue; let d=D[i];
-      if(x>0)d=Math.min(d,D[i-1]+3);
-      if(y>0){ d=Math.min(d,D[i-W]+3);
-        if(x>0)d=Math.min(d,D[i-W-1]+4);
-        if(x<W-1)d=Math.min(d,D[i-W+1]+4); }
-      D[i]=d;
-    }
-    for(let y=H-1;y>=0;y--)for(let x=W-1;x>=0;x--){  // 后向遍历
-      const i=y*W+x; if(D[i]===0) continue; let d=D[i];
-      if(x<W-1)d=Math.min(d,D[i+1]+3);
-      if(y<H-1){ d=Math.min(d,D[i+W]+3);
-        if(x<W-1)d=Math.min(d,D[i+W+1]+4);
-        if(x>0)d=Math.min(d,D[i+W-1]+4); }
-      D[i]=d;
-    }
+    const D=distanceField(on);
     // 两级覆盖(自适应中轴球树思路):主结构球(≥minR)先占大块,再用"残差细化"
     // 补小球到未覆盖处 —— 尖角/锐边/细节曲线的内切圆都小于 minR,老版直接丢弃导致
     // 边缘定义流失;细化允许小到 refMin 的球,专门刻画这些特征。覆盖判定用位图印章

@@ -214,7 +214,8 @@ function onPointerDown(e){
   else if(P.tool==='text'){
     pushUndo();
     const txt=$('txtWord').value||'GO', h=P.font, w=measureText(txt,h);
-    const sh={id:store.shapeId++, type:'text', text:txt, x:p.x-w/2, y:p.y-h/2, w, h, bool:P.bool};
+    // 新文字默认用"笔画"采样 —— 沿字形骨架布珠,自适应笔画粗细,小字号也可读
+    const sh={id:store.shapeId++, type:'text', text:txt, x:p.x-w/2, y:p.y-h/2, w, h, bool:P.bool, sampler:'strokes'};
     s.shapes.push(sh); store.sel=sh; updateSelBox(); shapesChanged(s);
   }
   else if(P.tool==='dot'){

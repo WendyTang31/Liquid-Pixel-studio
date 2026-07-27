@@ -263,6 +263,34 @@ test('彩色采样:colR 命中处 dot 带 c,未命中处无 c;颜色插值端点
     `中点颜色应为半红半蓝,实际 ${mid.c}`);
 });
 
+test('笔画采样(strokes):圆环沿环布珠、洞保持干净(字母 O 的类比)', () => {
+  // 圆环:外径 80 内径 50 → 笔画宽 30(半宽 15)
+  const on = (x, y) => { const d = Math.hypot(x - 240, y - 140); return d >= 50 && d <= 80; };
+  const balls = SAMPLERS.strokes(on, 17);
+  assert.ok(balls.length >= 10, `圆环应产出足量串珠,实际 ${balls.length}`);
+  for (const [x, y, r] of balls) {
+    const d = Math.hypot(x - 240, y - 140);
+    assert.ok(d >= 48 && d <= 82, `珠心应在环带内,实际距心 ${d.toFixed(1)}`);
+    assert.ok(r <= 15 * 0.8 + 1.5, `珠半径应 ≤ 半宽×0.8,实际 ${r.toFixed(1)}`);
+    // 洞保护:珠体不得侵入内径 50 之内超过一点点
+    assert.ok(d - r >= 46, `珠体不应吞掉字腔(洞),d-r=${(d - r).toFixed(1)}`);
+  }
+});
+
+test('笔画采样(strokes):两条平行笔画,间隙无珠且珠体不越沟(字距的类比)', () => {
+  // 两条 16px 宽横条,中间隔 14px(类似紧凑字距)
+  const on = (x, y) => (x >= 80 && x <= 400) && ((y >= 100 && y <= 116) || (y >= 130 && y <= 146));
+  const balls = SAMPLERS.strokes(on, 17);
+  assert.ok(balls.length >= 10, `应产出串珠,实际 ${balls.length}`);
+  for (const [x, y, r] of balls) {
+    assert.ok((y >= 100 && y <= 116) || (y >= 130 && y <= 146), `珠心应在条内,y=${y}`);
+    // 珠体(含半径)不得伸进 116..130 的沟里超过 2px
+    const inTop = y <= 116;
+    const gapIntrusion = inTop ? (y + r) - 116 : 130 - (y - r);
+    assert.ok(gapIntrusion <= 2, `珠体越沟 ${gapIntrusion.toFixed(1)}px(会导致跨字融合)`);
+  }
+});
+
 test('智能识别(smart):两个分离圆形 → 还原为两个大球,圆心/半径准确', () => {
   // 蒙版:两个 r=40 的圆,圆心 (120,140) 和 (330,140)
   const c1 = { x: 120, y: 140, r: 40 }, c2 = { x: 330, y: 140, r: 40 };

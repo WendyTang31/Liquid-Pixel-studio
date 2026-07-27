@@ -29,7 +29,8 @@ export function updateSelBox(){
         <option value="">(跟随全局)</option>
         <option value="grid">方格网格</option><option value="hex">六角网格</option>
         <option value="poisson">泊松盘</option><option value="uniform">均匀·Lloyd</option>
-        <option value="smart">智能·结构圆</option><option value="vogel">向日葵螺旋</option>
+        <option value="smart">智能·结构圆</option><option value="strokes">笔画·文字</option>
+        <option value="vogel">向日葵螺旋</option>
         <option value="rings">同心环</option><option value="outline">仅轮廓</option>
       </select>
       <label style="min-width:auto" title="本形状的目标点数;留空=按间距自动">点数</label>
