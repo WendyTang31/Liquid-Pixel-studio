@@ -4,6 +4,7 @@ import { W, H, P } from '../config.js';
 import { store, cur } from '../store.js';
 import { $, hex2rgb, setHint, getExpSize } from '../utils.js';
 import { createPreviewRenderer } from '../render.js';
+import { createGLRenderer } from '../render-gl.js';
 import { sampleFrame, drift } from '../engine.js';
 import { rebuildSequence } from '../sequence.js';
 import { resampleAll, resample, updateThumb, shapesChanged, measureText } from '../pipeline.js';
@@ -15,7 +16,10 @@ import { rdpSimplify, pathBBox, fillSmoothClosedPath } from '../path.js';
 import { applyShapeBBox } from '../shapes.js';
 import { drawSkinRef } from './skinRef.js';
 
-let cv, ctx, previewRender;
+let cv, ctx, previewRender, glRender=null, glCv=null;
+// 双画布:#cvgl(WebGL 高分辨率场渲染,垫底)+ #cv(2D,GPU 模式下只画叠加层)。
+// gpuOn 时 2D 画布每帧 clearRect 保持透明,场画面从下层透出;CPU 回退时行为与旧版一致。
+const gpuOn=()=> glRender && $('useGpu')?.checked && !store.forceCpu; // 录制 WebM 时强制 CPU(captureStream 抓 2D 画布)
 
 const HANDLE=5;
 const handlePts=s=>[[s.x,s.y],[s.x+s.w,s.y],[s.x,s.y+s.h],[s.x+s.w,s.y+s.h]];
@@ -124,12 +128,14 @@ function tick(now){
       $('timeline').value=Math.round(store.g/store.SEQ.T*1000); }
     $('tVal').textContent=store.g.toFixed(1)+'s';
     const fr=sampleFrame(store.SEQ, store.states, store.g, store.clock, P);
-    previewRender(fr.balls, fr.col, P);
+    if(gpuOn()){ glCv.style.display='block'; glRender(fr.balls, fr.col, P); ctx.clearRect(0,0,W,H); }
+    else { if(glCv) glCv.style.display='none'; previewRender(fr.balls, fr.col, P); }
     overlayTraj(fr.balls, fr.seg); overlayFrameGuide();
   } else {
     const s=cur();
-    previewRender(s.dots.map((b,i)=>({x:b.x+P.amp*drift(i*2.3,store.clock,P),y:b.y+P.amp*drift(i*2.3+3,store.clock,P),r:b.r})),
-      hex2rgb(s.color), P);
+    const editBalls=s.dots.map((b,i)=>({x:b.x+P.amp*drift(i*2.3,store.clock,P),y:b.y+P.amp*drift(i*2.3+3,store.clock,P),r:b.r,c:b.c}));
+    if(gpuOn()){ glCv.style.display='block'; glRender(editBalls, hex2rgb(s.color), P); ctx.clearRect(0,0,W,H); }
+    else { if(glCv) glCv.style.display='none'; previewRender(editBalls, hex2rgb(s.color), P); }
     ctx.drawImage(s.ghost,0,0);
     overlayOnion();
     if(!store.hideOverlays && $('showSkin')?.checked) drawSkinRef(ctx); // 车面参考(UV 皮肤式)
@@ -331,6 +337,9 @@ function onDblClick(e){
 export function initStage(){
   cv=$('cv'); ctx=cv.getContext('2d');
   previewRender=createPreviewRenderer(ctx);
+  glCv=$('cvgl');
+  if(glCv){ glRender=createGLRenderer(glCv);
+    if(!glRender){ const ck=$('useGpu'); if(ck){ ck.checked=false; ck.disabled=true; ck.parentElement.title='此浏览器不支持 WebGL2,已回退 CPU 渲染'; } } }
   cv.addEventListener('pointerdown',onPointerDown);
   cv.addEventListener('pointermove',onPointerMove);
   cv.addEventListener('dblclick',onDblClick);

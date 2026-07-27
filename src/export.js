@@ -56,12 +56,12 @@ export function toggleRecord(){
   if(store.recorder){ store.recorder.stop(); return; }
   const cv=$('cv');
   setMode('play'); store.g=0; store.playing=true; $('playBtn').textContent='⏸ 暂停';
-  store.hideOverlays=true; store.chunks=[];
+  store.hideOverlays=true; store.forceCpu=true; store.chunks=[]; // captureStream 抓 2D 画布,录制期强制 CPU 渲染
   store.recorder=new MediaRecorder(cv.captureStream(30),{mimeType:'video/webm'});
   store.recorder.ondataavailable=e=>{ if(e.data.size) store.chunks.push(e.data); };
   store.recorder.onstop=()=>{
     downloadBlob(new Blob(store.chunks,{type:'video/webm'}),'morph_seq.webm');
-    store.recorder=null; store.hideOverlays=false;
+    store.recorder=null; store.hideOverlays=false; store.forceCpu=false;
     $('recBtn').textContent='⏺ 录 WebM'; setHint('✓ WebM 已保存'); };
   store.recorder.start();
   $('recBtn').textContent='⏹ 停止保存'; setHint('● 录制中…');

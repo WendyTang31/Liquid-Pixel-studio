@@ -2,7 +2,7 @@
 // Image/DOM,不在此测,靠浏览器端到端验证)。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { luminanceHistogram, alphaHistogram, hasMeaningfulAlpha, otsuThreshold, binarize, grayscaleize } from '../src/image.js';
+import { luminanceHistogram, alphaHistogram, hasMeaningfulAlpha, otsuThreshold, binarize, grayscaleize, quantizeColors } from '../src/image.js';
 
 // 造一张合成的 RGBA 像素数组:一半深色像素、一半浅色像素(双峰分布,Otsu 的经典场景)。
 function makeBimodalPixels(n, darkV, lightV){
@@ -69,6 +69,29 @@ test('半调灰度化:R=放置(255) G=亮度,黑场之下全透明', () => {
   assert.equal(data[2*4], 255, '内部 R 应为 255(放置通道)');
   assert.equal(data[2*4+1], 200, '内部 G 应保留亮度值');
   assert.equal(data[2*4+3], 255, '内部应不透明');
+});
+
+test('k-means 量化:主色收敛、白背景剔除为透明', () => {
+  // 20x20 合成图:白底,左半近似红(带噪),右半近似蓝
+  const w = 20, h = 20, data = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    if (y < 3 || y >= h - 3) { data.set([255, 255, 255, 255], i); continue; } // 上下白边=背景
+    const noise = ((x * 7 + y * 13) % 5) - 2;
+    if (x < w / 2) data.set([220 + noise, 30, 30, 255], i);
+    else data.set([30, 30, 220 + noise, 255], i);
+  }
+  const cents = quantizeColors(data, w, h, 3);
+  assert.ok(cents.length >= 2, '应识别出至少 2 个主色');
+  const uniq = new Set();
+  let bgCleared = true;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    if (y < 3 || y >= h - 3) { if (data[i + 3] !== 0) bgCleared = false; }
+    else uniq.add(data[i] + ',' + data[i + 1] + ',' + data[i + 2]);
+  }
+  assert.ok(bgCleared, '白背景应被置为透明');
+  assert.ok(uniq.size <= 3, `前景应只剩 ≤3 个主色,实际 ${uniq.size}`);
 });
 
 test('二值化:invert 翻转内外判定', () => {

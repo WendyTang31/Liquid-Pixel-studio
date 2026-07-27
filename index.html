@@ -102,7 +102,8 @@
   <!-- 中:画布 + 时间轴 -->
   <div class="center">
     <div class="stage">
-      <canvas id="cv" width="480" height="280"></canvas>
+      <canvas id="cvgl" width="1440" height="840" style="position:absolute;left:0;top:0;width:100%;height:100%;"></canvas>
+      <canvas id="cv" width="480" height="280" style="position:relative;"></canvas>
       <div class="hint" id="hint">点上方缩略图选状态编辑;▶ 预览整条序列</div>
     </div>
     <div class="tlbar">
@@ -173,6 +174,8 @@
         <option value="poisson">泊松盘·蓝噪声</option>
         <option value="uniform">均匀填充·Lloyd 松弛</option>
         <option value="smart">智能识别·结构圆</option>
+        <option value="vogel">向日葵螺旋·Vogel</option>
+        <option value="rings">同心环</option>
         <option value="outline">仅轮廓</option>
       </select></div>
     <div class="row"><label>点间距</label><input type="range" id="pSpace" min="8" max="44" value="17"><div class="val" id="vSpace">17</div></div>
@@ -215,6 +218,7 @@
       <label class="ck"><input type="checkbox" id="showOnion" checked> 洋葱皮</label>
       <label class="ck"><input type="checkbox" id="showFrame" checked> 画幅线</label>
       <label class="ck" title="显示 3D 预览器 🗺同步 过来的投影面布局与车身表面快照 — 画的时候知道哪块区域落在车的哪个面"><input type="checkbox" id="showSkin" checked> 车面</label>
+      <label class="ck" title="WebGL2 高分辨率实时预览(3× 内部分辨率,不占主线程);导出始终走 CPU 保确定性"><input type="checkbox" id="useGpu" checked> GPU</label>
     </div>
 
     <div class="divider"></div>

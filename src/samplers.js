@@ -3,6 +3,14 @@
 // 单状态点数上限由上层(pipeline.resample)统一抽稀,这里只管铺点。
 import { W, H } from './config.js';
 
+// 蒙版质心(vogel/rings 的螺旋/环中心)。稀疏步进扫描,够准且快。
+function maskCentroid(on){
+  let sx=0, sy=0, n=0;
+  for(let y=0;y<H;y+=3) for(let x=0;x<W;x+=3)
+    if(on(x,y)){ sx+=x; sy+=y; n++; }
+  return n? {cx:sx/n, cy:sy/n} : {cx:W/2, cy:H/2};
+}
+
 export const SAMPLERS = {
   // 方格网格:最规整,行列感最强。
   grid(on,sp,jit){ const pts=[];
@@ -51,7 +59,38 @@ export const SAMPLERS = {
   uniform(on,sp,jit){
     const pts=SAMPLERS.poisson(on,sp).map(p=>[...p]);
     if(pts.length<2) return pts;
-    return lloydRelax(on,pts,5);
+    // 24 轮:实测 Lloyd 头几轮会先破坏泊松盘的最小间距保证(nn 方差先升后降),
+    // ≈8 轮才回到种子水平、~20 轮后稳定优于种子 —— 5 轮恰好停在"更差"区间(曾是 bug)。
+    // 时间预算护栏仍在,病态蒙版会提前止损。
+    return lloydRelax(on,pts,24);
+  },
+  // Vogel 向日葵螺旋(CLAUDE.md §6):r=c·√n, θ=n·137.508°(黄金角)。
+  // 确定性、无行列感、有中心韵律 —— 替代"太随机"的泊松盘的结构化实心填充。
+  vogel(on,sp){
+    const {cx,cy}=maskCentroid(on);
+    const c=sp*0.55, maxR=Math.hypot(W,H), pts=[];
+    for(let k2=0;k2<6000;k2++){
+      const r=c*Math.sqrt(k2), th=k2*2.399963229;
+      if(r>maxR) break;
+      const x=cx+r*Math.cos(th), y=cy+r*Math.sin(th);
+      if(on(Math.round(x),Math.round(y))) pts.push([x,y]);
+    }
+    return pts;
+  },
+  // 同心环:第 k 环半径 k·sp,放 round(2πk) 个点 —— 雷达/涟漪式韵律。
+  rings(on,sp){
+    const {cx,cy}=maskCentroid(on);
+    const pts=[]; if(on(Math.round(cx),Math.round(cy))) pts.push([cx,cy]);
+    const maxR=Math.hypot(W,H);
+    for(let k2=1;k2*sp<maxR;k2++){
+      const r=k2*sp, n=Math.max(4,Math.round(2*Math.PI*k2));
+      for(let i=0;i<n;i++){
+        const th=i/n*2*Math.PI;
+        const x=cx+r*Math.cos(th), y=cy+r*Math.sin(th);
+        if(on(Math.round(x),Math.round(y))) pts.push([x,y]);
+      }
+    }
+    return pts;
   },
   // 智能识别·结构圆(中轴/最大内切圆):不"铺满"蒙版,而是还原"这团形状本来由哪几个圆组成"。
   // ① 两遍 chamfer 距离场:每个内部像素到最近边界的距离;② 距离峰值 = 天然圆心,峰值大小 = 半径;
@@ -104,17 +143,36 @@ export const SAMPLERS = {
   },
 };
 
+// 按目标点数拟合:间距二分逼近(∝1/√n),超出均匀抽稀 —— "每个图形单独控制点数"的底层。
+export function samplePtsFit(sampler, on, spacing, jitter, target){
+  let sp=spacing, pts=SAMPLERS[sampler](on,sp,jitter);
+  if(target){
+    for(let t=0;t<3 && pts.length && Math.abs(pts.length-target)/target>0.15;t++){
+      sp=Math.max(3, Math.min(60, sp*Math.sqrt(pts.length/target)));
+      pts=SAMPLERS[sampler](on,sp,jitter);
+    }
+    if(pts.length>target){ const k=pts.length/target;
+      pts=pts.filter((_,i)=>Math.floor(i*k)!==Math.floor((i-1)*k) ? true : false)
+        .slice(0,target); }
+  }
+  return pts;
+}
+
 // 采样核心:蒙版读取器 + 手动点 → 归一化点集(超 1500 抽稀)。纯函数,主应用/3D 预览器共用。
 // 采样器可返回 [x,y] 或 [x,y,r](逐点独立半径,如 smart);无 r 的用全局 P.dotR,
-// 且若给了亮度读取器 lum(半调),半径按 r=dotR·√B 随亮度缩放(感知墨量∝面积,见 CLAUDE.md §6)。
-export function sampleDots(on, manual, P, lum){
+// 半调亮度 lum → r=dotR·√B;彩色读取器 colR(x,y)=>[r,g,b]|null → 逐点颜色(dot.c),
+// 引擎会在过渡中逐点插值颜色、渲染层按加权场混色 —— 彩色图标(如 emoji)的可识别性来自这里。
+export function sampleDots(on, manual, P, lum, colR){
   let pts=SAMPLERS[P.sample](on,P.spacing,P.jitter);
   if(pts.length>1500){ const k=Math.ceil(pts.length/1500); pts=pts.filter((_,i)=>i%k===0); }
   const base=P.dotR/W;
   return pts.map(p=>{
-    if(p[2]!==undefined) return {x:p[0]/W, y:p[1]/H, r:p[2]/W};
-    const B=lum ? Math.max(0.06, lum(Math.round(p[0]),Math.round(p[1]))) : 1;
-    return {x:p[0]/W, y:p[1]/H, r:base*Math.sqrt(B)};
+    const d = p[2]!==undefined
+      ? {x:p[0]/W, y:p[1]/H, r:p[2]/W}
+      : {x:p[0]/W, y:p[1]/H,
+         r:base*Math.sqrt(lum?Math.max(0.06,lum(Math.round(p[0]),Math.round(p[1]))):1)};
+    if(colR){ const c=colR(Math.round(p[0]),Math.round(p[1])); if(c) d.c=c; }
+    return d;
   }).concat(manual.map(m=>({x:m.x,y:m.y,r:base})));
 }
 

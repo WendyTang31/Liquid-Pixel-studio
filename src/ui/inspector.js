@@ -21,7 +21,20 @@ export function updateSelBox(){
     <div class="row">
       <label class="ck"><input type="checkbox" id="selInvert" ${sel.invert?'checked':''}> 反相</label>
       <label class="ck" title="按灰度控制点大小(r=R·√亮度),点阵呈现照片明暗"><input type="checkbox" id="selHalf" ${sel.halftone?'checked':''}> 半调</label>
+      <label class="ck" title="k-means 提取主色并逐点着色 — 彩色图标(emoji 等)可识别的关键"><input type="checkbox" id="selColorful" ${sel.colorful?'checked':''}> 彩色</label>
     </div>` : '';
+  const sampCtrls = `
+    <div class="row"><label style="min-width:auto">采样</label>
+      <select id="selSampler" style="flex:1">
+        <option value="">(跟随全局)</option>
+        <option value="grid">方格网格</option><option value="hex">六角网格</option>
+        <option value="poisson">泊松盘</option><option value="uniform">均匀·Lloyd</option>
+        <option value="smart">智能·结构圆</option><option value="vogel">向日葵螺旋</option>
+        <option value="rings">同心环</option><option value="outline">仅轮廓</option>
+      </select>
+      <label style="min-width:auto" title="本形状的目标点数;留空=按间距自动">点数</label>
+      <input type="text" id="selCount" value="${sel.count||''}" style="width:44px" placeholder="自动">
+    </div>`;
   const num=(id,v)=>`<input type="text" id="${id}" value="${Math.round(v)}" style="width:44px">`;
   box.innerHTML=`<div>${name}</div>
     <div class="row" title="精确数值定位;方向键微移 1px,Shift=10px">
@@ -31,6 +44,7 @@ export function updateSelBox(){
       <label style="min-width:auto">高</label>${num('selH',sel.h)}
     </div>
     ${imgCtrls}
+    ${sampCtrls}
     <div style="display:flex;gap:6px">
       <button id="selBool" style="flex:1">${sel.bool==='add'?'➕ 添加':'➖ 挖除'}</button>
       <button id="selDel" style="flex:1">删除 (Del)</button>
@@ -57,7 +71,18 @@ export function updateSelBox(){
       // 半调下阈值语义变为"黑场底限",二值化的高阈值会吃掉大半灰阶 —— 给个合理默认
       if(sel.halftone && sel.threshold>100) sel.threshold=26;
       updateSelBox(); shapesChanged(cur()); });
+    $('selColorful').addEventListener('change',e=>{ pushUndo(); sel.colorful=e.target.checked;
+      updateSelBox(); shapesChanged(cur()); });
   }
+  // 逐形状采样覆盖:采样方式 + 目标点数(留空=按间距自动)
+  $('selSampler').value=sel.sampler||'';
+  $('selSampler').addEventListener('change',e=>{ pushUndo();
+    if(e.target.value) sel.sampler=e.target.value; else delete sel.sampler;
+    shapesChanged(cur()); });
+  $('selCount').addEventListener('change',e=>{ pushUndo();
+    const v=parseInt(e.target.value);
+    if(isFinite(v)&&v>0) sel.count=Math.min(1500,v); else delete sel.count;
+    shapesChanged(cur()); updateSelBox(); });
 }
 export function deleteSel(){
   if(!store.sel||store.mode==='play') return;

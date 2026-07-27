@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EASE, buildSequence, makePairs, sampleFrame, transBalls } from '../src/engine.js';
-import { SAMPLERS, sampleDots, setLloydBudget } from '../src/samplers.js';
+import { SAMPLERS, sampleDots, samplePtsFit, setLloydBudget } from '../src/samplers.js';
 setLloydBudget(10000); // 测试并行抢 CPU 时别让 250ms 护栏掐掉迭代,否则断言的是降级路径
 import { P } from '../src/config.js';
 
@@ -228,6 +228,41 @@ test('半调:点半径按 √亮度 缩放;不给亮度读取器时行为不变'
   for (const d of plain) assert.ok(Math.abs(d.r - 4.5/480) < 1e-12, '无亮度读取器时半径应为 dotR 基准');
 });
 
+test('vogel/rings:确定性、只在蒙版内落点、有产出', () => {
+  const on = (x, y) => (x - 240) ** 2 + (y - 140) ** 2 <= 90 * 90;
+  for (const name of ['vogel', 'rings']) {
+    const a = SAMPLERS[name](on, 16), b = SAMPLERS[name](on, 16);
+    assert.ok(a.length > 20, `${name} 应产出足量点,实际 ${a.length}`);
+    assert.deepEqual(a, b, `${name} 必须确定性(预览=导出)`);
+    for (const [x, y] of a) assert.ok(on(Math.round(x), Math.round(y)), `${name} 点应在蒙版内`);
+  }
+});
+
+test('samplePtsFit:目标点数拟合到 ±15% 内', () => {
+  const on = (x, y) => x >= 100 && x <= 380 && y >= 60 && y <= 220;
+  for (const target of [50, 200]) {
+    const pts = samplePtsFit('hex', on, 17, 0, target);
+    assert.ok(Math.abs(pts.length - target) / target <= 0.15,
+      `目标 ${target} 实际 ${pts.length}`);
+  }
+});
+
+test('彩色采样:colR 命中处 dot 带 c,未命中处无 c;颜色插值端点正确', () => {
+  const on = (x, y) => x >= 100 && x <= 380 && y >= 100 && y <= 180;
+  const Pl = { sample: 'grid', spacing: 20, jitter: 0, dotR: 4.5 };
+  const colR = (x, y) => x < 240 ? [255, 0, 0] : null; // 左半红,右半无色
+  const dots = sampleDots(on, [], Pl, null, colR);
+  const withC = dots.filter(d => d.c), without = dots.filter(d => !d.c);
+  assert.ok(withC.length && without.length, '两类点都应存在');
+  for (const d of withC) assert.deepEqual(d.c, [255, 0, 0]);
+  // 过渡颜色插值:红球 → 蓝球,中点应为紫(约一半)
+  const A = [{ x: .2, y: .5, r: .02, c: [255, 0, 0] }], B = [{ x: .8, y: .5, r: .02, c: [0, 0, 255] }];
+  const P0 = { ease: 'linear', stag: 0, amp: 0, freq: .4, match: 'sortXY', flow: 0, stretch: 0 };
+  const mid = transBalls(makePairs(A, B, P0), 0.5, 0, P0)[0];
+  assert.ok(mid.c && Math.abs(mid.c[0] - 127.5) < 1 && Math.abs(mid.c[2] - 127.5) < 1,
+    `中点颜色应为半红半蓝,实际 ${mid.c}`);
+});
+
 test('智能识别(smart):两个分离圆形 → 还原为两个大球,圆心/半径准确', () => {
   // 蒙版:两个 r=40 的圆,圆心 (120,140) 和 (330,140)
   const c1 = { x: 120, y: 140, r: 40 }, c2 = { x: 330, y: 140, r: 40 };
@@ -290,13 +325,12 @@ test('均匀填充(Lloyd 松弛)比原始泊松盘间距方差更小,即真的�
     const mean = d.reduce((a, b) => a + b, 0) / d.length;
     return d.reduce((a, b) => a + (b - mean) ** 2, 0) / d.length;
   };
-  // 5 轮中 uniform 至少赢一轮即可:Lloyd 内有 250ms 时间预算护栏,CI/负载高时迭代可能被
-  // 提前掐断导致个别轮次不占优 —— 全输才说明算法真的没效果。
-  let poissonWins = 0;
-  for (let trial = 0; trial < 5; trial++) {
-    const varPoisson = nnVariance(SAMPLERS.poisson(on, 14));
-    const varUniform = nnVariance(SAMPLERS.uniform(on, 14));
-    if (varPoisson <= varUniform) poissonWins++;
+  // 泊松种子随机 → 单轮比值长尾;取 8 轮均值 + 0.97 阈值:Lloyd 正常时均值比 ~0.65,
+  // 完全失效时 ~1.0(正是修掉的那个"5 轮停在更差区间"bug 的形态),两者可稳定区分。
+  let sumP = 0, sumU = 0;
+  for (let trial = 0; trial < 8; trial++) {
+    sumP += nnVariance(SAMPLERS.poisson(on, 14));
+    sumU += nnVariance(SAMPLERS.uniform(on, 14));
   }
-  assert.ok(poissonWins < 5, 'uniform 应至少有一轮比 poisson 更均匀(方差更小)');
+  assert.ok(sumU < sumP * 0.97, `uniform 方差均值应低于 poisson,实际比 ${(sumU/sumP).toFixed(2)}`);
 });

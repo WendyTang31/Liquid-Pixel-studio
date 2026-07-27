@@ -16,7 +16,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { W, H, P as P_DEFAULT } from '../config.js';
 import { buildSequence, sampleFrame } from '../engine.js';
 import { createSizedRenderer } from '../render.js';
-import { paintShapes, maskReaderFor, lumReaderFor, sampleDots } from '../pipeline.js';
+import { stateDots } from '../pipeline.js';
 import { decodeImageShape } from '../image.js';
 import { downloadBlob } from '../utils.js';
 
@@ -54,6 +54,7 @@ function makeGroup(name){
   maskCtx.fillStyle='#fff'; maskCtx.fillRect(0,0,TEXW,TEXH);
   const maskTex=new THREE.CanvasTexture(maskCanvas);
   const mat=new THREE.MeshBasicMaterial({map:screenTex, alphaMap:maskTex, toneMapped:false,
+    vertexColors:true, // RGBA 顶点色:alpha 通道做边缘羽化(消除"硬切"的贴片边界)
     transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-4});
   return {name, states:null, SEQ:null, P:{...P_DEFAULT},
     texCanvas, texCtx, renderTex:createSizedRenderer(texCtx,TEXW,TEXH),
@@ -71,14 +72,11 @@ async function loadProjectData(data, gi=0){
          {name:'状态 2',color:data.params?.colB||'#98f5d0',hold:1,dur:3,shapes:data.B?.shapes||[],manual:data.B?.manual||[]}];
   }
   if(!raw) throw new Error('无法识别的工程格式');
-  const mask=document.createElement('canvas'); mask.width=W; mask.height=H;
-  const mctx=mask.getContext('2d',{willReadFrequently:true});
   const out=[];
   for(const d of raw){
     for(const sh of d.shapes) if(sh.type==='image') await decodeImageShape(sh);
-    paintShapes(mctx, d.shapes);
     out.push({name:d.name, color:d.color, hold:d.hold, dur:d.dur, trans:d.trans||{},
-      dots:sampleDots(maskReaderFor(mctx), d.manual||[], gr.P, lumReaderFor(mctx))});
+      dots:stateDots(d.shapes, d.manual||[], gr.P)}); // 与编辑器同一采样核心(彩色/逐形状覆盖同步生效)
   }
   gr.states=out; gr.SEQ=buildSequence(out, true, gr.P);
   hint(`✓ 「${gr.name}」已载入:${out.length} 个状态 · 循环 ${gr.SEQ.T.toFixed(1)}s`);
@@ -185,7 +183,7 @@ function buildWrap(d){
   const box=new THREE.Box3().setFromObject(carGroup);
   const c=box.getCenter(new THREE.Vector3());
   const a0=d.a0*Math.PI/180, span=Math.max(0.2,d.span*Math.PI/180);
-  const positions=[], uvs=[];
+  const positions=[], uvs=[], colsArr=[];
   const v=new THREE.Vector3();
   for(const mesh of meshList()){
     const geo=mesh.geometry; if(!geo?.attributes?.position) continue;
@@ -219,10 +217,15 @@ function buildWrap(d){
         ? new THREE.Vector3(cen.x-c.x,0,cen.z-c.z).normalize()
         : new THREE.Vector3(0,cen.y-c.y,cen.z-c.z).normalize();
       if(tn.dot(radial)<0.05) continue; // 只包朝外的表面(内饰/底盘剔除)
+      const ss=(a,b,t)=>{ const x=Math.max(0,Math.min(1,(t-a)/(b-a))); return x*x*(3-2*x); };
+      const FE=0.05, fullTurn=d.span>=359.5;
       for(let j=0;j<3;j++){
         positions.push(pts[j].x,pts[j].y,pts[j].z);
+        const u0=uvT[j][0], v0=uvT[j][1];
         // 取景窗口与分区切割器兼容:u/v 再经窗口重映射
-        uvs.push(d.cx+uvT[j][0]*d.cw, (1-d.cy-d.ch)+uvT[j][1]*d.ch);
+        uvs.push(d.cx+u0*d.cw, (1-d.cy-d.ch)+v0*d.ch);
+        const fade=(fullTurn?1:ss(0,FE,u0)*ss(0,FE,1-u0)) * ss(0,FE,v0)*ss(0,FE,1-v0);
+        colsArr.push(1,1,1,fade); // 上下沿/角向端点羽化
       }
     }
   }
@@ -230,6 +233,7 @@ function buildWrap(d){
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs,2));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colsArr,4));
   const obj=new THREE.Mesh(geo, groups[d.group].mat);
   obj.renderOrder=1; obj.userData.isDecal=true;
   obj.applyMatrix4(carGroup.matrixWorld.clone().invert());
@@ -249,11 +253,18 @@ function projectDecal(d){
   helper.rotateZ(d.rot*Math.PI/180);
   const geo=new DecalGeometry(d.mesh, point, helper.rotation, new THREE.Vector3(w,h,w*0.7));
   const uv=geo.attributes.uv;
+  const ss=(a,b,t)=>{ const x=Math.max(0,Math.min(1,(t-a)/(b-a))); return x*x*(3-2*x); };
+  const FE=0.1; // 羽化带宽(贴片本地 uv 比例)
+  const cols=new Float32Array(uv.count*4);
   for(let i=0;i<uv.count;i++){
-    uv.setX(i, d.cx + uv.getX(i)*d.cw);
-    uv.setY(i, (1-d.cy-d.ch) + uv.getY(i)*d.ch);
+    const u0=uv.getX(i), v0=uv.getY(i); // 重映射前 = 贴片本地 0..1
+    const fade=ss(0,FE,u0)*ss(0,FE,1-u0)*ss(0,FE,v0)*ss(0,FE,1-v0);
+    cols[i*4]=1; cols[i*4+1]=1; cols[i*4+2]=1; cols[i*4+3]=fade; // 边缘羽化,消硬切
+    uv.setX(i, d.cx + u0*d.cw);
+    uv.setY(i, (1-d.cy-d.ch) + v0*d.ch);
   }
   uv.needsUpdate=true;
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(cols,4));
   const obj=new THREE.Mesh(geo, groups[d.group].mat);
   obj.renderOrder=1; obj.userData.isDecal=true;
   obj.applyMatrix4(toWorld.clone().invert());

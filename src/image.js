@@ -67,6 +67,54 @@ export function grayscaleize(data,{threshold,invert,useAlpha}){
   }
 }
 
+// 彩色量化(k-means):把图像压到 ≤k 个主色 —— CV 提炼"图像最重要属性"的第一步:
+// 主色区域保住了,图标(emoji 等)才可识别。原地改写 RGBA;背景剔除:
+// 有透明通道按 alpha;否则把四角上占多数的颜色(容差内)判为背景置透明。
+export function quantizeColors(data, w, h, k=6){
+  // ── 背景剔除 ──
+  let useAlpha=false;
+  for(let i=3;i<data.length;i+=4) if(data[i]<250){ useAlpha=true; break; }
+  let bg=null;
+  if(!useAlpha){
+    const corners=[0,(w-1)*4,(h-1)*w*4,((h-1)*w+w-1)*4];
+    const cs=corners.map(i=>[data[i],data[i+1],data[i+2]]);
+    bg=cs[0]; let best=0;
+    for(const c of cs){ const n=cs.filter(o=>Math.hypot(o[0]-c[0],o[1]-c[1],o[2]-c[2])<40).length;
+      if(n>best){ best=n; bg=c; } }
+  }
+  const isBg=i=> useAlpha ? data[i+3]<64
+    : Math.hypot(data[i]-bg[0],data[i+1]-bg[1],data[i+2]-bg[2])<48;
+  // ── k-means(抽样 + 8 轮迭代;确定性:均匀抽样、固定初始质心)──
+  const samples=[];
+  const step=Math.max(4, Math.floor(data.length/4/4000))*4;
+  for(let i=0;i<data.length;i+=step) if(!isBg(i)) samples.push([data[i],data[i+1],data[i+2]]);
+  if(!samples.length){ for(let i=3;i<data.length;i+=4) data[i]=0; return []; }
+  let cents=[];
+  for(let j=0;j<k;j++) cents.push(samples[Math.floor(j*samples.length/k)].slice());
+  for(let it=0;it<8;it++){
+    const sum=cents.map(()=>[0,0,0,0]);
+    for(const s of samples){
+      let bi=0,bd=Infinity;
+      for(let j=0;j<cents.length;j++){ const c=cents[j];
+        const d=(s[0]-c[0])**2+(s[1]-c[1])**2+(s[2]-c[2])**2;
+        if(d<bd){bd=d;bi=j;} }
+      sum[bi][0]+=s[0]; sum[bi][1]+=s[1]; sum[bi][2]+=s[2]; sum[bi][3]++;
+    }
+    cents=cents.map((c,j)=> sum[j][3] ? [sum[j][0]/sum[j][3],sum[j][1]/sum[j][3],sum[j][2]/sum[j][3]] : c);
+  }
+  cents=cents.map(c=>c.map(Math.round));
+  // ── 回写:非背景像素替换为最近主色,背景全透明 ──
+  for(let i=0;i<data.length;i+=4){
+    if(isBg(i)){ data[i+3]=0; continue; }
+    let bi=0,bd=Infinity;
+    for(let j=0;j<cents.length;j++){ const c=cents[j];
+      const d=(data[i]-c[0])**2+(data[i+1]-c[1])**2+(data[i+2]-c[2])**2;
+      if(d<bd){bd=d;bi=j;} }
+    data[i]=cents[bi][0]; data[i+1]=cents[bi][1]; data[i+2]=cents[bi][2]; data[i+3]=255;
+  }
+  return cents;
+}
+
 // dataURL → 解码好的 <img>,挂到 sh._img(非可枚举,JSON.stringify 自动跳过,不会混进工程文件)。
 // 按 dataURL 缓存:撤销/重做/多次打开同一工程时同一张图不用重复解码。
 const _imgCache=new Map();

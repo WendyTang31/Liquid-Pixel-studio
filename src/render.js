@@ -1,13 +1,28 @@
 // 渲染层:CPU 逐像素场函数 f(p)=Σ rᵢ²/dᵢ²,阈值 ± 柔度出软边,可选 gamma。
 // tile 分块加速(24px 格,球按影响半径 6r 登记入格)是 ≥30fps 红线的命根,别拆。
+// 彩色模式:任一球带 c 时逐像素做"场权重混色" color=Σw·c/Σw —— 不同色的球在融合处
+// 自然渐变(彩色 metaball 标准做法),透明度仍由总场值决定。
 // 预览版(固定 W×H、复用缓冲)与导出版(任意尺寸 + 适配映射)共用同一 fieldLoop 内核。
 import { W, H } from './config.js';
 import { hex2rgb } from './utils.js';
 
 const TS=24; // tile 边长
 
+// 球颜色打包:任一球带 c → Float32Array(3n)(无 c 的球用帧色补),否则 null(旧路径)。
+function packColors(balls, col){
+  let any=false;
+  for(const b of balls) if(b.c){ any=true; break; }
+  if(!any) return null;
+  const cols=new Float32Array(balls.length*3);
+  for(let i=0;i<balls.length;i++){
+    const c=balls[i].c||col;
+    cols[i*3]=c[0]; cols[i*3+1]=c[1]; cols[i*3+2]=c[2];
+  }
+  return cols;
+}
+
 // 场求值 + 出像素。bx/by 已是目标像素坐标,br2 是半径平方(像素),bins 复用清零。
-function fieldLoop(d, EW, EH, tc, tr, bins, bx, by, br2, n, col, bg, P){
+function fieldLoop(d, EW, EH, tc, tr, bins, bx, by, br2, n, col, bg, P, cols){
   for(const b of bins) b.length=0;
   for(let i=0;i<n;i++){
     const r=Math.sqrt(br2[i]), cut=Math.max(r*6,14);
@@ -21,14 +36,23 @@ function fieldLoop(d, EW, EH, tc, tr, bins, bx, by, br2, n, col, bg, P){
     const trow=((y/TS)|0)*tc;
     for(let x=0;x<EW;x++){
       const list=bins[trow+((x/TS)|0)];
-      let f=0;
-      for(let j=0;j<list.length;j++){
-        const i=list[j], dx=x-bx[i], dy=y-by[i];
-        f+=br2[i]/(dx*dx+dy*dy+1e-6);
+      let f=0, cr=0, cg=0, cb=0;
+      if(cols){
+        for(let j=0;j<list.length;j++){
+          const i=list[j], dx=x-bx[i], dy=y-by[i];
+          const w=br2[i]/(dx*dx+dy*dy+1e-6);
+          f+=w; cr+=w*cols[i*3]; cg+=w*cols[i*3+1]; cb+=w*cols[i*3+2];
+        }
+      } else {
+        for(let j=0;j<list.length;j++){
+          const i=list[j], dx=x-bx[i], dy=y-by[i];
+          f+=br2[i]/(dx*dx+dy*dy+1e-6);
+        }
       }
       let a=(f-lo)*inv; a=a<0?0:(a>1?1:a); a=a*a*(3-2*a);
       if(P.gamma!==1) a=Math.pow(a,P.gamma);
-      d[k++]=col[0]*a+bg[0]*(1-a); d[k++]=col[1]*a+bg[1]*(1-a); d[k++]=col[2]*a+bg[2]*(1-a); d[k++]=255;
+      const R=cols&&f>1e-9?cr/f:col[0], G=cols&&f>1e-9?cg/f:col[1], B=cols&&f>1e-9?cb/f:col[2];
+      d[k++]=R*a+bg[0]*(1-a); d[k++]=G*a+bg[1]*(1-a); d[k++]=B*a+bg[2]*(1-a); d[k++]=255;
     }
   }
 }
@@ -43,7 +67,7 @@ export function createPreviewRenderer(ctx){
     const bx=new Float32Array(n), by=new Float32Array(n), br2=new Float32Array(n);
     for(let i=0;i<n;i++){ bx[i]=balls[i].x*W; by[i]=balls[i].y*H;
       const r=balls[i].r*W; br2[i]=r*r; }
-    fieldLoop(img.data, W,H, tc,tr, bins, bx,by,br2, n, col, bg, P);
+    fieldLoop(img.data, W,H, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col));
     ctx.putImageData(img,0,0);
   };
 }
@@ -60,7 +84,7 @@ export function createSizedRenderer(ctx, EW, EH){
     const bx=new Float32Array(n), by=new Float32Array(n), br2=new Float32Array(n);
     for(let i=0;i<n;i++){ bx[i]=balls[i].x*EW; by[i]=balls[i].y*EH;
       const r=balls[i].r*W*rScale; br2[i]=r*r; }
-    fieldLoop(img.data, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P);
+    fieldLoop(img.data, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col));
     ctx.putImageData(img,0,0);
   };
 }
@@ -78,6 +102,6 @@ export function renderToImageData(ectx, EW, EH, balls, col, P){
   const bins=Array.from({length:tc*tr},()=>[]);
   for(let i=0;i<n;i++){ bx[i]=mapX(balls[i].x); by[i]=mapY(balls[i].y);
     const r=balls[i].r*W*rScale; br2[i]=r*r; }
-  fieldLoop(d, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P);
+  fieldLoop(d, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col));
   ectx.putImageData(eimg,0,0);
 }

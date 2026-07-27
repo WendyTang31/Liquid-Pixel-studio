@@ -103,8 +103,9 @@ export function makePairs(dotsA,dotsB,P){
       return {a:aIsSmall?s:g, b:aIsSmall?g:s, d:0};
     });
     for(const bi of excess){
-      const p=big[bi], phantom={x:p.x,y:p.y,r:0};
+      const p=big[bi], phantom={x:p.x,y:p.y,r:0,c:p.c};
       // aIsSmall: big=B 多出 → B 侧原地新生;否则 big=A 多出 → A 侧原地消亡。
+      // 幽灵端继承真实端的颜色 —— 生灭过程中颜色恒定,只有半径在变。
       pairs.push(aIsSmall
         ? {a:phantom, b:p, d:0}
         : {a:p, b:phantom, d:0});
@@ -138,6 +139,10 @@ export function transBalls(pairs,t,time,P){
     const ball={x:p.a.x+(p.b.x-p.a.x)*e+P.amp*(dxA+(dxB-dxA)*e),
                 y:p.a.y+(p.b.y-p.a.y)*e+P.amp*(dyA+(dyB-dyA)*e),
                 r:p.a.r+(p.b.r-p.a.r)*e};
+    if(p.a.c||p.b.c){ // 逐点颜色插值(缺一端时用另一端,颜色恒定)
+      const ca=p.a.c||p.b.c, cb=p.b.c||p.a.c;
+      ball.c=[ca[0]+(cb[0]-ca[0])*e, ca[1]+(cb[1]-ca[1])*e, ca[2]+(cb[2]-ca[2])*e];
+    }
     if(flow>0){
       // 相干流场:方向角取决于行程中点位置(邻近的点弯向一致 → 群体如流体),
       // 叠加少量每球个性(phaseA);sin(π·lt) 包络保证两端精确归零,不破坏与停留态的衔接。
@@ -192,7 +197,7 @@ export function sampleFrame(SEQ, states, g, time, P){
     const st=states[seg.si];
     return {seg, col:hex2rgb(st.color),
       balls:st.dots.map(b=>{ const ph=dotPhase(b.x,b.y);
-        return {x:b.x+P.amp*drift(ph,time,P), y:b.y+P.amp*drift(ph+3.1,time,P), r:b.r}; })};
+        return {x:b.x+P.amp*drift(ph,time,P), y:b.y+P.amp*drift(ph+3.1,time,P), r:b.r, c:b.c}; })};
   } else {
     const lt=(g-seg.t0)/seg.dur, ca=hex2rgb(states[seg.a].color), cb=hex2rgb(states[seg.b].color);
     const e=EASE.smoothstep(lt);
