@@ -19,6 +19,7 @@ import { createSizedRenderer } from '../render.js';
 import { stateDots } from '../pipeline.js';
 import { decodeImageShape } from '../image.js';
 import { downloadBlob } from '../utils.js';
+import { initI18n } from '../i18n.js';
 
 const $=id=>document.getElementById(id);
 const hint=msg=>{ $('hint').textContent=msg; };
@@ -908,6 +909,7 @@ function frame(now){
 }
 function tick(now){ frame(now); requestAnimationFrame(tick); }
 requestAnimationFrame(tick);
+initI18n(); // 界面语言
 
 window.__morph3d={
   status:()=>({ g:+g.toFixed(2), groups:groups.map(gr=>({name:gr.name, T:gr.SEQ?+gr.SEQ.T.toFixed(1):null, states:gr.states?.length||0})),

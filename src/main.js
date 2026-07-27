@@ -11,6 +11,7 @@ import { initStage, setMode, startLoop } from './ui/stage.js';
 import { importImageFile, importImageSequence } from './ui/imageImport.js';
 import { initAutosave, autosaveNow } from './autosave.js';
 import { initSkinRef } from './ui/skinRef.js';
+import { initI18n } from './i18n.js';
 
 // ── 顶栏:组操作 + 工程 ──
 function initTopbar(){
@@ -87,6 +88,7 @@ renderStrip(); syncStateUI(); syncUI();
 setMode('play');
 startLoop();
 if(restored) setHint('✓ 已恢复上次编辑(自动保存)· 若要全新开始:🗑 全部');
+initI18n(); // 界面语言(在初始 DOM 与首批动态文案就绪后应用)
 setInterval(autosave, 15000);
 addEventListener('pagehide', autosave);
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden) autosave(); });
