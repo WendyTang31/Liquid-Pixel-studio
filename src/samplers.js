@@ -115,6 +115,30 @@ export const SAMPLERS = {
     }
     return pts;
   },
+  // 灰阶点画·照片(Secord 加权 Voronoi 点画):复杂照片 → 可读单色点阵的业界标准。
+  // 密度 ∝ 亮度(LED 语境:亮=发光),叠加边缘增益(亮度梯度)保住轮廓 —— 3D 透视/细节
+  // 的可读性来自"点贴着结构走"。播种用加权拒绝采样,再跑亮度加权 Lloyd 收匀。
+  // 需要灰度信息:图片形状开"半调"后蒙版 G 通道即亮度;无灰度时退化为均匀填充。
+  stipple(on,sp,jit,lum){
+    if(!lum) return SAMPLERS.uniform(on,sp,jit);
+    let sum=0;
+    for(let y=0;y<H;y+=2) for(let x=0;x<W;x+=2) if(on(x,y)) sum+=lum(x,y);
+    const target=Math.max(16, Math.min(1500, Math.round(sum*4/(sp*sp)*1.15)));
+    const weight=(x,y)=>{
+      const l=lum(x,y);
+      const ex=Math.abs(lum(Math.min(W-1,x+2),y)-lum(Math.max(0,x-2),y));
+      const ey=Math.abs(lum(x,Math.min(H-1,y+2))-lum(x,Math.max(0,y-2)));
+      return Math.min(1, l + 1.5*(ex+ey)); // 亮度 + 边缘增益
+    };
+    const pts=[];
+    for(let a=0;a<target*60 && pts.length<target;a++){
+      const x=Math.random()*W, y=Math.random()*H;
+      if(!on(x|0,y|0)) continue;
+      if(Math.random()<weight(x|0,y|0)) pts.push([x,y]);
+    }
+    if(pts.length<2) return pts;
+    return lloydRelax(on,pts,10,(x,y)=>Math.max(0.03,weight(x,y)));
+  },
   // 笔画·文字:专为字形/线稿设计的骨架串珠 —— 沿笔画中轴密排小珠,
   // 珠半径 = 局部笔画半宽 × 0.9(收 10%:保字腔与字距;跨沟融合判据下 0.9h 仍安全,
   // 因为相邻笔画的中轴距 = 沟宽 + 整个笔画宽,远超融合距离),
@@ -178,12 +202,12 @@ export const SAMPLERS = {
 };
 
 // 按目标点数拟合:间距二分逼近(∝1/√n),超出均匀抽稀 —— "每个图形单独控制点数"的底层。
-export function samplePtsFit(sampler, on, spacing, jitter, target){
-  let sp=spacing, pts=SAMPLERS[sampler](on,sp,jitter);
+export function samplePtsFit(sampler, on, spacing, jitter, target, lum=null){
+  let sp=spacing, pts=SAMPLERS[sampler](on,sp,jitter,lum);
   if(target){
     for(let t=0;t<3 && pts.length && Math.abs(pts.length-target)/target>0.15;t++){
       sp=Math.max(3, Math.min(60, sp*Math.sqrt(pts.length/target)));
-      pts=SAMPLERS[sampler](on,sp,jitter);
+      pts=SAMPLERS[sampler](on,sp,jitter,lum);
     }
     if(pts.length>target){ const k=pts.length/target;
       pts=pts.filter((_,i)=>Math.floor(i*k)!==Math.floor((i-1)*k) ? true : false)
@@ -197,7 +221,7 @@ export function samplePtsFit(sampler, on, spacing, jitter, target){
 // 半调亮度 lum → r=dotR·√B;彩色读取器 colR(x,y)=>[r,g,b]|null → 逐点颜色(dot.c),
 // 引擎会在过渡中逐点插值颜色、渲染层按加权场混色 —— 彩色图标(如 emoji)的可识别性来自这里。
 export function sampleDots(on, manual, P, lum, colR){
-  let pts=SAMPLERS[P.sample](on,P.spacing,P.jitter);
+  let pts=SAMPLERS[P.sample](on,P.spacing,P.jitter,lum);
   if(pts.length>1500){ const k=Math.ceil(pts.length/1500); pts=pts.filter((_,i)=>i%k===0); }
   const base=P.dotR/W;
   return pts.map(p=>{
@@ -215,7 +239,8 @@ export function sampleDots(on, manual, P, lum, colR){
 let LLOYD_BUDGET=250;
 export function setLloydBudget(ms){ LLOYD_BUDGET=ms; }
 
-function lloydRelax(on,pts,iters){
+// lum 可选:给出时做"加权质心"(密度场 CVT,Secord 点画的核心),点被亮度/权重场吸引。
+function lloydRelax(on,pts,iters,lum=null){
   const n=pts.length;
   const cell=Math.max(4,Math.sqrt((W*H)/n)); // 网格边长按点密度取,平均每格约一个点
   // 硬性时间预算:无论蒙版多病态(文字这类多连通块、细笔画、大片空白最容易触发退化到
@@ -229,7 +254,7 @@ function lloydRelax(on,pts,iters){
       const cx=Math.min(gc-1,(pts[i][0]/cell)|0), cy=Math.min(gr-1,(pts[i][1]/cell)|0);
       bins[cy*gc+cx].push(i);
     }
-    const sx=new Float64Array(n), sy=new Float64Array(n), cnt=new Int32Array(n);
+    const sx=new Float64Array(n), sy=new Float64Array(n), cnt=new Float64Array(n); // 权重可为小数
     for(let y=0;y<H;y++) for(let x=0;x<W;x++){
       if(!on(x,y)) continue;
       const cx=Math.min(gc-1,(x/cell)|0), cy=Math.min(gr-1,(y/cell)|0);
@@ -244,9 +269,10 @@ function lloydRelax(on,pts,iters){
       }
       if(best<0) for(let i=0;i<n;i++){ // 3x3 邻域内恰好没点(极端稀疏)时的兜底
         const ddx=pts[i][0]-x, ddy=pts[i][1]-y, d=ddx*ddx+ddy*ddy; if(d<bd){bd=d;best=i;} }
-      sx[best]+=x; sy[best]+=y; cnt[best]++;
+      const w=lum?lum(x,y):1; // 加权质心:点被亮度/权重场吸引(密度场 CVT)
+      sx[best]+=x*w; sy[best]+=y*w; cnt[best]+=w;
     }
-    for(let i=0;i<n;i++) if(cnt[i]>0) pts[i]=[sx[i]/cnt[i], sy[i]/cnt[i]];
+    for(let i=0;i<n;i++) if(cnt[i]>1e-6) pts[i]=[sx[i]/cnt[i], sy[i]/cnt[i]];
   }
   return pts;
 }

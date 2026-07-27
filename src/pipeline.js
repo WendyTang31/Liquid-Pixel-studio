@@ -159,7 +159,7 @@ export function stateDots(shapes, manual, Pp){
   for(const sh of overridden){
     paintShapes(_smActx, [sh, ...subs], _scActx);
     const on=maskReaderFor(_smActx), lum=lumReaderFor(_smActx), colR=colorReaderFor(_scActx);
-    const pts=samplePtsFit(sh.sampler||Pp.sample, on, Pp.spacing, Pp.jitter, sh.count||null);
+    const pts=samplePtsFit(sh.sampler||Pp.sample, on, Pp.spacing, Pp.jitter, sh.count||null, lum);
     const base=Pp.dotR/W, rs=sh.rscale||1; // 半径×:笔画/智能缩放自带半径,普通采样缩放全局半径
     for(const p of pts){
       const d = p[2]!==undefined

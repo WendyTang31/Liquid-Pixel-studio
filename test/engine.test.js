@@ -304,6 +304,22 @@ test('笔画采样(strokes):响应间距 → 点数拟合可收敛(少点=均匀
     `点数拟合应接近目标 12,实际 ${fitted.length}`);
 });
 
+test('灰阶点画(stipple):点密度跟随亮度(亮区远多于暗区),点都在蒙版内', () => {
+  const on = (x, y) => x >= 80 && x <= 400 && y >= 80 && y <= 200;
+  const lum = (x, y) => x < 240 ? 0.9 : 0.08; // 左亮右暗
+  const pts = SAMPLERS.stipple(on, 16, 0, lum);
+  assert.ok(pts.length > 30, `应产出足量点,实际 ${pts.length}`);
+  const L = pts.filter(p => p[0] < 240).length, R = pts.filter(p => p[0] >= 240).length;
+  assert.ok(L > R * 2.5, `亮区(${L})点数应远多于暗区(${R})`);
+  for (const [x, y] of pts) assert.ok(on(Math.round(x), Math.round(y)), '点应在蒙版内');
+});
+
+test('灰阶点画(stipple):无亮度读取器时退化为均匀填充,不崩', () => {
+  const on = (x, y) => (x - 240) ** 2 + (y - 140) ** 2 <= 80 * 80;
+  const pts = SAMPLERS.stipple(on, 16, 0, null);
+  assert.ok(pts.length > 20, `退化路径应有产出,实际 ${pts.length}`);
+});
+
 test('智能识别(smart):两个分离圆形 → 还原为两个大球,圆心/半径准确', () => {
   // 蒙版:两个 r=40 的圆,圆心 (120,140) 和 (330,140)
   const c1 = { x: 120, y: 140, r: 40 }, c2 = { x: 330, y: 140, r: 40 };

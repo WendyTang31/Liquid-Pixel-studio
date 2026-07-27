@@ -30,6 +30,7 @@ export function updateSelBox(){
         <option value="grid">方格网格</option><option value="hex">六角网格</option>
         <option value="poisson">泊松盘</option><option value="uniform">均匀·Lloyd</option>
         <option value="smart">智能·结构圆</option><option value="strokes">笔画·文字</option>
+        <option value="stipple">灰阶点画·照片</option>
         <option value="vogel">向日葵螺旋</option>
         <option value="rings">同心环</option><option value="outline">仅轮廓</option>
       </select>
