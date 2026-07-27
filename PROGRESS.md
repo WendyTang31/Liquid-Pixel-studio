@@ -1,0 +1,63 @@
+# PROGRESS — 项目进展快照(供新对话/协作者快速接手)
+
+> 最后更新:2026-07-27。配合 `Claude.md`(项目纲领)与 git log(每个功能一个详细 commit)阅读。
+> 新 Claude 会话:先读 `Claude.md`,再读本文件,即可继续工作。
+
+## 当前状态:功能完整、全部已推送 GitHub
+
+仓库:https://github.com/WendyTang31/metaball-morph-studio (main)
+产物:`dist/index.html`(2D 编辑器)+ `dist/viewer.html`(3D 车模预览器),均为自包含单文件,可双击运行。
+构建:`npm run dev`(5173)· `npm run build`(两次构建出双单文件)· `npm test`(41 项纯函数断言)。
+
+## 已实现(按层)
+
+**采样器家族**(`src/samplers.js`,含逐形状覆盖 sh.sampler/count/rscale):
+grid / hex / poisson / uniform(Lloyd 24 轮,曾有"5 轮停在劣化区"的 bug 已修)/
+smart(中轴结构圆+边缘细化)/ strokes(文字骨架串珠,新文字默认)/
+stipple(Secord 加权点画,照片→单色可读点阵,亮度+边缘增益加权)/ vogel / rings / outline。
+
+**引擎**(`src/engine.js`,纯函数):OT 配对(sliced optimal transport)+ 点数不等时生灭(birth/death)、
+位置哈希呼吸相位(消接缝跳变)、物理缓动(backOut/elasticOut/bounceOut)、拉伸拖尾、相干流场、
+逐段过渡覆盖(state.trans)、逐点颜色插值。
+
+**渲染**:CPU tile 场渲染(彩色=场权重混色)+ WebGL2 GPU 预览(render-gl.js,3× 分辨率,导出仍 CPU 保确定性)。
+
+**彩色管线**:图片"彩色"开关 → k-means 主色量化+背景剔除 → 逐点颜色全链路(采样→引擎→双端渲染)。
+
+**2D 编辑器**:钢笔(RDP+锚点编辑)、图片导入(Otsu/半调/彩色)、图像序列批量导入(每张一状态)、
+对齐(数值 XYWH/方向键微移/4px 磁吸参考线)、车面参考底图(3D 同步来的布局+快照+UV 线框)、
+PS 式会话(每次改动即时 autosave,启动恢复)、导出 2×超采样+辉光、中英切换(🌐,src/i18n.js)。
+
+**3D 预览器**(`src/viewer/main3d.js`):三种投影层——
+① 贴花 Decal(点击放置,gumball 操纵球:箭头移/环转/方块缩放,双击重放);
+② 🌀 环绕面(圆柱投影连续皮肤,跨部件无缝);
+③ 🧩 UV 直贴(Blender 展开工作流:按网格自带 UV 贴,越界警告+平铺,UV 线框自动同步 2D 底图)。
+动画组节点(多动画并行,组内共享纹理/时间线/蒙版)、画面分区切割器(取景框+磁吸)、
+🔗均分/🧲衔接(等密度接缝)、软边笔刷/橡皮(按组蒙版)、🎨车身上色、⏸暂停(空格)、
+视图控件(前后左右顶)、中键平移、Blender GLB 导出、IndexedDB 模型持久化、Ctrl+Z 视图撤销。
+
+## 关键架构约定(违反=错误,详见 Claude.md)
+
+- 引擎纯函数,任意 g 可凭空求值;预览与导出共用 sampleFrame。
+- 蒙版双通道:R=放置(>127),G=亮度(半调);彩色走独立 colorCanvas。
+- dots 逐点携带 r(半径)与可选 c(颜色);采样器可返回 [x,y] 或 [x,y,r]。
+- Lloyd 有 250ms 时间预算护栏(测试用 setLloydBudget 放宽)。
+- 工程文件向后兼容 v3 A/B 与 v4 states;serializeStates 含 trans/sampler/count/rscale/colorful 等。
+- 已知验证技巧:隐藏标签页 rAF 不触发,用 window.__morph(编辑器)/window.__morph3d(3D,含 step/place/uvLayer 等)探针驱动;
+  Vite 对已编辑模块加 ?t= 时间戳,外部 import 拿到的是不同实例,读状态必须走探针。
+
+## 待办候选(按既往讨论优先级)
+
+1. 动画内虚拟摄像机(推拉摇移)。
+2. 多选与群组对齐按钮(PPT 式,对齐工具的第二步)。
+3. 贝塞尔缓动编辑器(Backlog P2)。
+4. Sidecar JSON / 观看距离模拟 / 闪烁护栏(研究仪器化,Backlog P2,论文相关)。
+5. 演出模式(全屏+键盘跳状态,8/22 展览)。
+6. i18n 词典补全(长 tooltip 尚有中文残留)。
+
+## 用户工作流备忘
+
+- 照片→点阵:导入图片 → 勾半调 → 阈值≈10 → 采样"灰阶点画·照片";单色=不勾彩色。
+- 文字:新文字默认"笔画"采样;点数留空=全覆盖;"半径×"0.7 更细。
+- Blender UV 工作流:Unwrap → **Pack Islands(必须,0-1 方格)** → 导出 .glb → 3D 里 🧩 点部件 → 2D 勾"车面"对着线框画。
+- 跨面跑动:同组多面 + 🔗均分;或 🌀 环绕面;或 UV 直贴(最优)。
