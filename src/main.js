@@ -11,6 +11,8 @@ import { initStage, setMode, startLoop } from './ui/stage.js';
 import { importImageFile, importImageSequence } from './ui/imageImport.js';
 import { initAutosave, autosaveNow } from './autosave.js';
 import { initSkinRef } from './ui/skinRef.js';
+import { initTimeline } from './ui/timeline.js';
+import { renderLayers } from './ui/layers.js';
 import { initI18n } from './i18n.js';
 
 // ── 顶栏:组操作 + 工程 ──
@@ -82,9 +84,10 @@ initInspector();
 initStage();
 initTopbar();
 initSkinRef();
+initTimeline();
 const restored=tryRestoreAutosave();
 if(!restored) seedExample();
-renderStrip(); syncStateUI(); syncUI();
+renderStrip(); syncStateUI(); syncUI(); renderLayers();
 setMode('play');
 startLoop();
 if(restored) setHint('✓ 已恢复上次编辑(自动保存)· 若要全新开始:🗑 全部');

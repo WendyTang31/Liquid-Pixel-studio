@@ -39,6 +39,37 @@
   .hint{position:absolute; left:10px; bottom:8px; font-size:11px; color:var(--dim); pointer-events:none; max-width:92%;}
   .tlbar{ background:var(--panel); border:1px solid var(--line); border-radius:8px;
           padding:8px 12px; display:flex; align-items:center; gap:9px;}
+  /* ── AE 式时间轴 ── */
+  .tl{ position:relative; flex:1; height:36px; background:#101010; border:1px solid var(--line);
+       border-radius:6px; overflow:hidden; cursor:pointer; user-select:none; touch-action:none;}
+  .tl .seg{ position:absolute; top:0; bottom:0; border-right:1px solid #000; overflow:hidden;}
+  .tl .seg.hold.active{box-shadow:inset 0 0 0 1px var(--mint);}
+  .tl .seg.trans{ background:repeating-linear-gradient(100deg,
+       rgba(255,255,255,.055) 0 5px, transparent 5px 11px);}
+  .tl .seg .lb{ position:absolute; left:5px; top:50%; transform:translateY(-50%);
+       font-size:10px; color:var(--ink); white-space:nowrap; pointer-events:none;}
+  .tl .seg .lb i{color:var(--dim); font-style:normal; margin-left:2px;}
+  .tl .seg .lb.dim{color:var(--dim);}
+  .tl .hdl{ position:absolute; right:-1px; top:0; bottom:0; width:7px; cursor:ew-resize;}
+  .tl .hdl:hover{background:rgba(152,245,208,.35);}
+  .tl .ph{ position:absolute; top:0; bottom:0; width:1.5px; background:#fff;
+       pointer-events:none; box-shadow:0 0 4px rgba(255,255,255,.7);}
+  /* ── 图层面板 ── */
+  .layers{ width:170px; background:var(--panel); border:1px solid var(--line); border-radius:8px;
+       padding:8px; display:flex; flex-direction:column; gap:6px; max-height:660px; overflow-y:auto;}
+  .layers::-webkit-scrollbar{width:6px} .layers::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+  .lyrow{ display:flex; align-items:center; gap:4px; border:1px solid transparent; border-radius:6px;
+       padding:3px 5px; cursor:pointer; font-size:11.5px; background:#101010;}
+  .lyrow:hover{border-color:var(--line);}
+  .lyrow.sel{border-color:var(--mint);}
+  .lyrow.dropAbove{border-top:2px solid var(--mint);}
+  .lyrow.dropBelow{border-bottom:2px solid var(--mint);}
+  .lyrow .ic{width:15px; text-align:center; color:var(--dim); flex:0 0 auto; font-size:11px;}
+  .lyrow .nm{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .lyrow .nm input{width:100%; font-size:11px; padding:1px 4px;}
+  .lyrow .tg{flex:0 0 auto; cursor:pointer; opacity:.4; font-size:10.5px; width:16px; text-align:center;}
+  .lyrow .tg.on{opacity:1;}
+  .lyrow.hidden .nm{opacity:.4; text-decoration:line-through;}
   .props{ width:292px; background:var(--panel); border:1px solid var(--line); border-radius:8px;
           padding:10px 12px; display:flex; flex-direction:column; gap:8px;
           max-height:660px; overflow-y:auto;}
@@ -100,6 +131,12 @@
     <button id="boolBtn" title="新形状:添加/挖除">➕</button>
   </div>
 
+  <!-- 左2:图层面板(AE 式;顶行=最上层) -->
+  <div class="layers">
+    <div class="sec" title="顶行=最上层(后画);点选 · 双击改名 · 拖动排序 · 👁显隐 · 🔒锁定">图层</div>
+    <div id="lyList" style="display:flex;flex-direction:column;gap:3px;"></div>
+  </div>
+
   <!-- 中:画布 + 时间轴 -->
   <div class="center">
     <div class="stage">
@@ -109,7 +146,9 @@
     </div>
     <div class="tlbar">
       <button id="playBtn">▶ 播放</button>
-      <input type="range" id="timeline" min="0" max="1000" value="0">
+      <div class="tl" id="tlTrack" title="拖动=擦洗时间;拖段右缘=改时长;双击停留段=编辑该状态">
+        <div class="ph" id="tlPh" style="display:none"></div>
+      </div>
       <div class="val" id="tVal">0.0s</div>
       <label class="ck"><input type="checkbox" id="loop" checked> 循环</label>
       <label class="ck"><input type="checkbox" id="seamless" checked> 无缝(尾→首)</label>

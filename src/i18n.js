@@ -17,6 +17,18 @@ const EXACT = {
   '(跟随全局)':'(inherit global)',
   '📷 本状态镜头(推拉摇移)':'📷 STATE CAMERA (pan & zoom)',
   '变焦':'Zoom', '移X':'Pan X', '移Y':'Pan Y', '↺ 复位镜头':'↺ Reset Camera',
+  // ── 图层面板 / 时间轴 ──
+  '图层':'LAYERS', '矩形':'Rect', '椭圆':'Ellipse', '轮廓':'Path', '图片':'Image',
+  '(空 — 用左侧工具画形状)':'(empty — draw with the left tools)',
+  '双击改名':'dbl-click to rename',
+  '显示/隐藏(隐藏 = 不进蒙版不出点)':'Show/hide (hidden = no dots)',
+  '锁定:画布上不可选不可动(面板里仍可点)':'Lock: untouchable on canvas (panel still works)',
+  '顶行=最上层(后画);点选 · 双击改名 · 拖动排序 · 👁显隐 · 🔒锁定':
+    'Top = frontmost; click select · dbl-click rename · drag reorder · 👁 hide · 🔒 lock',
+  '拖动=擦洗时间;拖段右缘=改时长;双击停留段=编辑该状态':
+    'Drag = scrub · drag segment edge = duration · dbl-click hold = edit that state',
+  '已调整图层顺序(上=前)':'Layer order changed (top = front)',
+  '形状已锁定 — 图层面板点 🔒 解锁后再删':'Shape locked — unlock 🔒 in Layers first',
   // ── 选中对象 ──
   '选中对象':'SELECTION', '（未选中 — ➤ 工具点击形状）':'(none — click a shape with ➤)',
   '宽':'W', '高':'H', '阈值':'Threshold', '黑场':'Black floor',

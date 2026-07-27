@@ -15,6 +15,7 @@ import { setTool } from './toolbar.js';
 import { rdpSimplify, pathBBox, fillSmoothClosedPath } from '../path.js';
 import { applyShapeBBox } from '../shapes.js';
 import { drawSkinRef } from './skinRef.js';
+import { tlTick } from './timeline.js';
 
 let cv, ctx, previewRender, glRender=null, glCv=null;
 // 双画布:#cvgl(WebGL 高分辨率场渲染,垫底)+ #cv(2D,GPU 模式下只画叠加层)。
@@ -142,8 +143,7 @@ function tick(now){
     if(store.seqDirty) rebuildSequence();
     if(store.playing){ store.g+=dt;
       if(store.g>=store.SEQ.T){ if($('loop').checked) store.g-=store.SEQ.T;
-        else{ store.g=store.SEQ.T; store.playing=false; $('playBtn').textContent='▶ 播放'; } }
-      $('timeline').value=Math.round(store.g/store.SEQ.T*1000); }
+        else{ store.g=store.SEQ.T; store.playing=false; $('playBtn').textContent='▶ 播放'; } } }
     $('tVal').textContent=store.g.toFixed(1)+'s';
     const fr=sampleFrame(store.SEQ, store.states, store.g, store.clock, P);
     if(gpuOn()){ glCv.style.display='block'; glRender(fr.balls, fr.col, P); ctx.clearRect(0,0,W,H); }
@@ -174,6 +174,7 @@ function tick(now){
     }
     overlaySelection(); overlaySnapGuides(); overlayFrameGuide(); overlayCamFrame();
   }
+  tlTick(); // AE 式时间轴:签名变化时重建段条,播放头逐帧跟随
   requestAnimationFrame(tick);
 }
 export function startLoop(){ store.last=performance.now(); requestAnimationFrame(tick); }
@@ -182,7 +183,7 @@ export function startLoop(){ store.last=performance.now(); requestAnimationFrame
 export function setMode(m){ store.mode=m;
   $('mPlay').classList.toggle('active',m==='play');
   if(m==='play'){ store.sel=null; updateSelBox();
-    resampleAll(); rebuildSequence(); store.g=0; $('timeline').value=0;
+    resampleAll(); rebuildSequence(); store.g=0;
     store.playing=true; $('playBtn').textContent='⏸ 暂停';
     $('mPlay').textContent='✏ 回到编辑';
     setHint(`预览序列 · 共 ${store.states.length} 个状态 · 总时长 ${store.SEQ.T.toFixed(1)}s`);
@@ -202,13 +203,14 @@ function onPointerDown(e){
   if(store.mode==='play') return;
   const p=ptr(e), s=cur();
   if(P.tool==='sel'){
-    if(store.sel&&store.sel.type==='path'){ // 锚点手柄优先于整体缩放/移动判定
+    // 锁定的选中形状不给任何手柄/拖动入口(面板选中锁定形状时,画布只读)
+    if(store.sel&&!store.sel.locked&&store.sel.type==='path'){ // 锚点手柄优先于整体缩放/移动判定
       const pts=store.sel.points;
       for(let i=0;i<pts.length;i++)
         if(Math.hypot(p.x-pts[i].x,p.y-pts[i].y)<7){
           pushUndo(); store.dragAct='pathpt'+i; store.dragStart=p; return; }
     }
-    if(store.sel){
+    if(store.sel&&!store.sel.locked){
       const hs=handlePts(store.sel);
       for(let i=0;i<4;i++)
         if(Math.abs(p.x-hs[i][0])<7&&Math.abs(p.y-hs[i][1])<7){
@@ -221,6 +223,7 @@ function onPointerDown(e){
     }
     store.sel=null;
     for(let i=s.shapes.length-1;i>=0;i--){ const sh=s.shapes[i];
+      if(sh.hidden||sh.locked) continue; // 隐藏/锁定的形状画布上不参与命中
       if(p.x>=sh.x&&p.x<=sh.x+sh.w&&p.y>=sh.y&&p.y<=sh.y+sh.h){ store.sel=sh; break; } }
     updateSelBox();
     if(store.sel){ pushUndo(); store.dragAct='move'; store.dragStart=p;
@@ -321,7 +324,7 @@ function onKeyDown(e){
   else if(k==='d')setTool('dot'); else if(k==='p')setTool('pen');
   else if(e.key==='Delete'||e.key==='Backspace'){ deleteSel(); e.preventDefault(); }
   else if(e.key==='Escape'){ store.sel=null; updateSelBox(); }
-  else if(e.key.startsWith('Arrow') && store.sel && store.mode==='edit'){
+  else if(e.key.startsWith('Arrow') && store.sel && !store.sel.locked && store.mode==='edit'){
     const step=e.shiftKey?10:1;
     const dx=e.key==='ArrowLeft'?-step:e.key==='ArrowRight'?step:0;
     const dy=e.key==='ArrowUp'?-step:e.key==='ArrowDown'?step:0;
@@ -337,7 +340,7 @@ function onKeyDown(e){
 
 // 双击编辑路径锚点:双击已有手柄=删除该点(至少保留 3 点);双击轮廓线段=在该处插入新锚点。
 function onDblClick(e){
-  if(store.mode==='play'||P.tool!=='sel'||!store.sel||store.sel.type!=='path') return;
+  if(store.mode==='play'||P.tool!=='sel'||!store.sel||store.sel.type!=='path'||store.sel.locked) return;
   const p=ptr(e), sel=store.sel, s=cur();
   for(let i=0;i<sel.points.length;i++){
     if(Math.hypot(p.x-sel.points[i].x,p.y-sel.points[i].y)<7){
@@ -364,11 +367,8 @@ export function initStage(){
   cv.addEventListener('dblclick',onDblClick);
   window.addEventListener('pointerup',onPointerUp);
   window.addEventListener('keydown',onKeyDown);
-  // 播放控制条
+  // 播放控制条(时间轴的擦洗/改时长手势在 timeline.js)
   $('mPlay').onclick=()=>setMode(store.mode==='play'?'edit':'play');
-  $('timeline').oninput=e=>{ if(store.mode!=='play'){setMode('play');}
-    if(store.seqDirty) rebuildSequence();
-    store.g=e.target.value/1000*store.SEQ.T; store.playing=false; $('playBtn').textContent='▶ 播放'; };
   $('playBtn').onclick=()=>{ if(store.mode!=='play'){setMode('play');return;}
     store.playing=!store.playing; if(store.playing&&store.g>=store.SEQ.T){store.g=0;}
     $('playBtn').textContent=store.playing?'⏸ 暂停':'▶ 播放'; };

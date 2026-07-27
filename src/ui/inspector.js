@@ -8,9 +8,11 @@ import { rasterize, resample, resampleAll, updateThumb, tintGhost, shapesChanged
 import { renderStrip, setActive, syncStateUI } from './filmstrip.js';
 import { exportPNG, toggleRecord } from '../export.js';
 import { applyShapeBBox } from '../shapes.js';
+import { renderLayers } from './layers.js';
 
 // ── 选中对象小面板 ──
 export function updateSelBox(){
+  renderLayers(); // 图层面板与选中状态同源刷新(选中高亮/行数变化都走这一个口)
   const box=$('selBox'); const sel=store.sel;
   if(!sel){ box.innerHTML='<span class="small">（未选中 — ➤ 工具点击形状）</span>'; return; }
   const name={rect:'矩形',ellipse:'椭圆',text:`文字 "${sel.text}"`,
@@ -94,6 +96,7 @@ export function updateSelBox(){
 }
 export function deleteSel(){
   if(!store.sel||store.mode==='play') return;
+  if(store.sel.locked){ setHint('形状已锁定 — 图层面板点 🔒 解锁后再删'); return; }
   pushUndo();
   const s=cur(), i=s.shapes.indexOf(store.sel);
   if(i>=0) s.shapes.splice(i,1);

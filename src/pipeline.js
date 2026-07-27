@@ -43,6 +43,7 @@ function ensureQuantized(sh){
 // 把形状列表画进任意蒙版上下文(add=白,sub=黑)。colorCtx 若给出,同时把彩色图片形状的
 // 量化主色画进去(sub 形状同步擦除)—— 逐点颜色采样的数据源。纯绘制,不碰 store。
 export function paintShapes(c, shapes, colorCtx=null){
+  shapes=shapes.filter(sh=>!sh.hidden); // 图层面板"隐藏":不进蒙版 = 不出点(sub 隐藏则恢复被挖区域)
   c.fillStyle='#000'; c.fillRect(0,0,W,H);
   if(colorCtx) colorCtx.clearRect(0,0,W,H);
   for(const sh of shapes){
@@ -146,6 +147,7 @@ const _scActx=_scA.getContext('2d',{willReadFrequently:true});
 // 覆盖形状各自单独光栅化(带全部 sub 形状)后用自己的采样器/点数取点;其余走全局设置。
 // 编辑器 resample 与 3D 预览器共用,保证两端 dots 一致。
 export function stateDots(shapes, manual, Pp){
+  shapes=shapes.filter(sh=>!sh.hidden); // 隐藏形状连"逐形状覆盖采样"通道也不走
   const hasOv=sh=>sh.sampler||sh.count||(sh.rscale&&Math.abs(sh.rscale-1)>0.01);
   const subs=shapes.filter(sh=>sh.bool==='sub');
   const overridden=shapes.filter(sh=>sh.bool!=='sub' && hasOv(sh));
