@@ -57,9 +57,16 @@ function makeGroup(name){
   const mat=new THREE.MeshBasicMaterial({map:screenTex, alphaMap:maskTex, toneMapped:false,
     vertexColors:true, // RGBA 顶点色:alpha 通道做边缘羽化(消除"硬切"的贴片边界)
     transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-4});
+  // UV 直贴材质:glTF 的 UV 原点在左上(v 向下),需 flipY=false 的纹理对;
+  // 无顶点色/无深度偏移 —— 它就是该网格的"正式材质",不是叠加贴花。
+  const screenTexUV=new THREE.CanvasTexture(texCanvas);
+  screenTexUV.colorSpace=THREE.SRGBColorSpace; screenTexUV.flipY=false;
+  const maskTexUV=new THREE.CanvasTexture(maskCanvas); maskTexUV.flipY=false;
+  const matUV=new THREE.MeshBasicMaterial({map:screenTexUV, alphaMap:maskTexUV,
+    toneMapped:false, transparent:true});
   return {name, states:null, SEQ:null, P:{...P_DEFAULT},
     texCanvas, texCtx, renderTex:createSizedRenderer(texCtx,TEXW,TEXH),
-    screenTex, maskCanvas, maskCtx, maskTex, mat};
+    screenTex, screenTexUV, maskCanvas, maskCtx, maskTex, maskTexUV, mat, matUV};
 }
 const groups=[makeGroup('动画 1')];
 let activeGroup=0;
@@ -131,7 +138,7 @@ async function loadModelBlob(blob, persist){
   const url=URL.createObjectURL(blob);
   try{
     const gltf=await new GLTFLoader().loadAsync(url);
-    scene.remove(carGroup); clearAllDecals(); origMats.clear(); carColors.length=0;
+    scene.remove(carGroup); clearAllDecals(); origMats.clear(); carColors.length=0; uvOrig.clear();
     carGroup=gltf.scene;
     const box=new THREE.Box3().setFromObject(carGroup);
     const size=box.getSize(new THREE.Vector3()), c=box.getCenter(new THREE.Vector3());
@@ -242,7 +249,37 @@ function buildWrap(d){
   d.obj=obj;
 }
 
+/* ── UV 直贴(Blender 展开工作流):动画按网格自带 UV 直接作为其材质 ——
+   零投影畸变,连续性由 Blender 里的展开质量决定;UV 线框同步给 2D 编辑器当底图。── */
+const uvOrig=new Map(); // mesh → 原材质(删除 UV 图层时还原)
+function applyUvLayer(d){
+  if(!d.mesh) return;
+  if(!d.mesh.geometry?.attributes?.uv){ hint('⚠ 该网格没有 UV,请在 Blender 里展开后重新导出'); return; }
+  if(!uvOrig.has(d.mesh)) uvOrig.set(d.mesh, d.mesh.material);
+  d.mesh.material=groups[d.group].matUV;
+}
+// UV 线框(编辑器底图):把网格的 UV 三角边画成 480×280 线稿。大网格隔三角抽稀。
+function uvWireframe(mesh){
+  const c=document.createElement('canvas'); c.width=480; c.height=280;
+  const g2=c.getContext('2d');
+  g2.strokeStyle='rgba(255,255,255,0.55)'; g2.lineWidth=1;
+  const uv=mesh.geometry.attributes.uv, idx=mesh.geometry.index;
+  const triCount=idx?idx.count/3:Math.floor(uv.count/3);
+  const step=triCount>60000?2:1;
+  const getI=k=>idx?idx.getX(k):k;
+  g2.beginPath();
+  for(let t=0;t<triCount;t+=step){
+    const p=[0,1,2].map(j=>{ const i=getI(t*3+j);
+      return [uv.getX(i)*480, uv.getY(i)*280]; }); // glTF v 向下,与画布同向
+    g2.moveTo(p[0][0],p[0][1]); g2.lineTo(p[1][0],p[1][1]);
+    g2.lineTo(p[2][0],p[2][1]); g2.lineTo(p[0][0],p[0][1]);
+  }
+  g2.stroke();
+  return c.toDataURL('image/png');
+}
+
 function projectDecal(d){
+  if(d.kind==='uv'){ applyUvLayer(d); return; }
   if(d.kind==='wrap'){ buildWrap(d); return; }
   if(!d.mesh||!d.localPoint) return;
   removeObj(d);
@@ -296,13 +333,17 @@ function pushViewUndo(){ viewUndoStack.push(viewSnapshot());
 async function restoreView(s){
   for(const d of decals) removeObj(d);
   decals.length=0;
+  for(const [mesh,mat] of uvOrig) mesh.material=mat; // 先还原 UV 直贴材质再重放
+  uvOrig.clear();
   for(const sd of s.decals){
     const gi=Math.min(sd.group||0, groups.length-1);
     const d=sd.kind==='wrap'?newWrap(gi):newDecal(gi);
+    if(sd.kind==='uv') d.kind='uv';
     Object.assign(d,{sz:sd.sz,rot:sd.rot,du:sd.du,dv:sd.dv,cx:sd.cx,cy:sd.cy,cw:sd.cw,ch:sd.ch});
     if(sd.kind==='wrap') Object.assign(d,{axis:sd.axis||'y',a0:sd.a0??-90,span:sd.span??360,lo:sd.lo??0.15,hi:sd.hi??0.75});
     const m=meshList()[sd.meshIdx];
-    if(m&&sd.p&&sd.n){ d.mesh=m;
+    if(m&&sd.kind==='uv'){ d.mesh=m; }
+    else if(m&&sd.p&&sd.n){ d.mesh=m;
       d.localPoint=new THREE.Vector3().fromArray(sd.p);
       d.localNormal=new THREE.Vector3().fromArray(sd.n); }
     decals.push(d);
@@ -407,14 +448,15 @@ function strokeTo(gr,x,y,white){
   }
   stampBrush(gr,x,y,white);
   lastStamp={gr,x,y};
-  gr.maskTex.needsUpdate=true;
+  gr.maskTex.needsUpdate=true; gr.maskTexUV.needsUpdate=true;
 }
 $('eraSl').addEventListener('input',e=>{ $('eraV').textContent=e.target.value; });
 $('featherSl').addEventListener('input',e=>{ $('featherV').textContent=(+e.target.value).toFixed(2); });
 $('clearErase').onclick=()=>{ pushViewUndo();
   const gr=groups[activeGroup];
   gr.maskCtx.fillStyle='#fff'; gr.maskCtx.fillRect(0,0,TEXW,TEXH);
-  gr.maskTex.needsUpdate=true; saveViewState(); hint(`↺ 「${gr.name}」被擦区域已恢复`); };
+  gr.maskTex.needsUpdate=true; gr.maskTexUV.needsUpdate=true;
+  saveViewState(); hint(`↺ 「${gr.name}」被擦区域已恢复`); };
 
 /* ══════════════ 指针交互 ══════════════ */
 const ray=new THREE.Raycaster(), ptr=new THREE.Vector2();
@@ -425,18 +467,19 @@ function rayFromEvent(e){
 }
 function brushHit(e){
   rayFromEvent(e);
-  const objs=decals.filter(d=>d.obj).map(d=>d.obj);
+  const objs=decals.filter(d=>d.obj).map(d=>d.obj)
+    .concat(decals.filter(d=>d.kind==='uv'&&d.mesh).map(d=>d.mesh)); // UV 直贴网格也可刷
   const hit=ray.intersectObjects(objs,false)[0];
   if(!hit?.uv) return null;
-  const d=decals.find(dd=>dd.obj===hit.object);
-  return {gr:groups[d.group], uv:hit.uv};
+  const d=decals.find(dd=>dd.obj===hit.object || (dd.kind==='uv'&&dd.mesh===hit.object));
+  return {gr:groups[d.group], uv:hit.uv, flip:d.kind!=='uv'}; // glTF UV v 向下,贴花 uv v 向上
 }
 let downAt=null, painting=false, gizmoDrag=null, projThrottle=0;
 renderer.domElement.addEventListener('pointerdown',e=>{
   downAt=[e.clientX,e.clientY];
   if(mode==='brush'||mode==='erase'){
     pushViewUndo(); painting=true; lastStamp=null;
-    const h=brushHit(e); if(h) strokeTo(h.gr, h.uv.x*TEXW,(1-h.uv.y)*TEXH, mode==='brush');
+    const h=brushHit(e); if(h) strokeTo(h.gr, h.uv.x*TEXW,(h.flip?1-h.uv.y:h.uv.y)*TEXH, mode==='brush');
     return;
   }
   if(mode==='sel'&&selected&&gumball.visible){
@@ -458,7 +501,7 @@ renderer.domElement.addEventListener('pointerdown',e=>{
   }
 });
 renderer.domElement.addEventListener('pointermove',e=>{
-  if(painting){ const h=brushHit(e); if(h) strokeTo(h.gr, h.uv.x*TEXW,(1-h.uv.y)*TEXH, mode==='brush'); return; }
+  if(painting){ const h=brushHit(e); if(h) strokeTo(h.gr, h.uv.x*TEXW,(h.flip?1-h.uv.y:h.uv.y)*TEXH, mode==='brush'); return; }
   if(gizmoDrag){
     const d=decals[activeDecal], gd=gizmoDrag;
     const dx=e.clientX-gd.sx, dy=e.clientY-gd.sy;
@@ -486,6 +529,29 @@ addEventListener('pointerup',e=>{
   if(!downAt || Math.hypot(e.clientX-downAt[0], e.clientY-downAt[1])>5) return;
   if(e.target!==renderer.domElement) return;
   rayFromEvent(e);
+  if(mode==='uvpick'){
+    const hit=ray.intersectObject(carGroup,true).find(h=>h.object.isMesh && !h.object.userData.isDecal);
+    if(hit){
+      if(!hit.object.geometry?.attributes?.uv){ hint('⚠ 该网格没有 UV — 请在 Blender 展开后重新导出 .glb'); return; }
+      pushViewUndo();
+      const d={kind:'uv', group:activeGroup, mesh:hit.object, localPoint:null, localNormal:null,
+        sz:1.2, rot:0, du:0, dv:0, cx:0, cy:0, cw:1, ch:1, obj:null};
+      decals.push(d); activeDecal=decals.length-1;
+      applyUvLayer(d);
+      // UV 线框立即同步给 2D 编辑器(沿用车面参考通道)
+      try{
+        const layout=JSON.parse(localStorage.getItem('morph-uvlayout')||'{"patches":[]}');
+        layout.ts=performance.now();
+        layout.patches=layout.patches.filter(p=>p.name!==`🧩 UV · ${hit.object.name||'mesh'}`);
+        layout.patches.push({cx:0,cy:0,cw:1,ch:1, color:'#9affe2',
+          name:`🧩 UV · ${hit.object.name||'mesh'}`, meshName:'', snap:uvWireframe(hit.object)});
+        localStorage.setItem('morph-uvlayout', JSON.stringify(layout));
+      }catch(_){}
+      selected=true; syncPanel(); saveViewState(); setMode3('sel');
+      hint(`🧩 「${hit.object.name||'部件'}」已按自带 UV 直贴 — 2D 编辑器勾「车面」即见 UV 线框底图`);
+    }
+    return;
+  }
   if(mode==='place'){
     const hit=ray.intersectObject(carGroup,true).find(h=>h.object.isMesh && !h.object.userData.isDecal && h.face);
     if(hit){ pushViewUndo(); placeDecalAt(hit); setMode3('sel'); }
@@ -595,8 +661,10 @@ function syncPanel(){
       const row=document.createElement('div');
       row.className='lay'+(i===activeDecal?' on':'');
       row.style.marginLeft='14px';
-      const label=d.kind==='wrap'?`🌀 环绕 ${i+1}`:`投影面 ${i+1}`;
-      const status=d.kind==='wrap'?(d.obj?`${d.span}°`:'待生成')
+      const label=d.kind==='uv'?`🧩 UV · ${d.mesh?.name||'mesh'}`
+        :d.kind==='wrap'?`🌀 环绕 ${i+1}`:`投影面 ${i+1}`;
+      const status=d.kind==='uv'?(d.mesh?'直贴':'失效')
+        :d.kind==='wrap'?(d.obj?`${d.span}°`:'待生成')
         :(d.obj?`${Math.round(d.cx*100)}-${Math.round((d.cx+d.cw)*100)}%`:'未放置');
       row.innerHTML=`<span class="sw" style="background:${DEC_COLORS[i%DEC_COLORS.length]}"></span>
         <span class="nm">${label}</span>
@@ -613,6 +681,10 @@ $('addWrap').onclick=()=>{ pushViewUndo();
   projectDecal(decals[activeDecal]); // 立即按默认参数包上车身
   selected=true; syncPanel(); saveViewState();
   hint('🌀 连续皮肤已包上车身 — 右侧"环绕参数"调轴向/角度/上下沿;笔刷可直接跨面画'); };
+$('addUv').onclick=()=>{ mode='uvpick';
+  for(const id of Object.values(MODE_BTN)) $(id).classList.remove('on');
+  controls.enabled=true;
+  hint('🧩 点击 Blender 展好 UV 的部件 — 动画按其 UV 直贴,线框同步给 2D 编辑器'); };
 // 环绕参数滑块:input 时限频重建(全车三角形扫描有成本),change 落定存档
 const wrapSliders={wa0:['a0',v=>v+'°'], wspan:['span',v=>v+'°'],
   wlo:['lo',v=>(+v).toFixed(2)], whi:['hi',v=>(+v).toFixed(2)]};
@@ -634,7 +706,11 @@ $('wrapAxis').onclick=()=>{ const d=decals[activeDecal]; if(d.kind!=='wrap') ret
 function delActiveDecal(){
   if(decals.length<=1){ hint('至少保留一块投影面'); return; }
   pushViewUndo();
-  removeObj(decals[activeDecal]); decals.splice(activeDecal,1);
+  const d=decals[activeDecal];
+  if(d.kind==='uv' && d.mesh && uvOrig.has(d.mesh)){ // 还原网格原材质
+    d.mesh.material=uvOrig.get(d.mesh); uvOrig.delete(d.mesh);
+  }
+  removeObj(d); decals.splice(activeDecal,1);
   activeDecal=Math.min(activeDecal,decals.length-1);
   syncPanel(); saveViewState();
 }
@@ -897,7 +973,7 @@ function frame(now){
     if(!gr.SEQ) continue;
     const fr=sampleFrame(gr.SEQ, gr.states, g%gr.SEQ.T, clock, gr.P);
     gr.renderTex(fr.balls, fr.col, gr.P);
-    gr.screenTex.needsUpdate=true;
+    gr.screenTex.needsUpdate=true; gr.screenTexUV.needsUpdate=true;
   }
   if($('spinCk').checked && !gizmoDrag && !painting) carGroup.rotation.y+=dt*0.12;
   stepCamTween(dt);

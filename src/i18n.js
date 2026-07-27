@@ -52,6 +52,8 @@ const EXACT = {
   '动画组(节点)与投影面':'ANIM GROUPS (NODES) & PATCHES',
   '➕ 投影面':'➕ Patch', '🗑 删除':'🗑 Delete',
   '🌀 环绕面(连续皮肤)':'🌀 Wrap (continuous skin)',
+  '🧩 UV 直贴(Blender 展开)':'🧩 UV map (Blender unwrap)',
+  '直贴':'mapped', '失效':'invalid',
   '➕ 新动画(节点)':'➕ New Anim (node)',
   '属性 · 当前投影面':'PROPERTIES · ACTIVE PATCH',
   '大小':'Size', '旋转':'Rotate', '横移':'Slide U', '纵移':'Slide V',
@@ -81,6 +83,7 @@ const EXACT = {
 };
 
 const PATTERNS_ZH_EN = [
+  [/^🧩 UV · (.+)$/, '🧩 UV · $1'],
   [/^投影面 (\d+)(.*)$/, 'Patch $1$2'],
   [/^🌀 环绕 (\d+)$/, '🌀 Wrap $1'],
   [/^动画 (\d+)$/, 'Anim $1'],
