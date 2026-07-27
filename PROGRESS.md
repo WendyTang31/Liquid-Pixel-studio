@@ -7,7 +7,7 @@
 
 仓库:https://github.com/WendyTang31/metaball-morph-studio (main)
 产物:`dist/index.html`(2D 编辑器)+ `dist/viewer.html`(3D 车模预览器),均为自包含单文件,可双击运行。
-构建:`npm run dev`(5173)· `npm run build`(两次构建出双单文件)· `npm test`(41 项纯函数断言)。
+构建:`npm run dev`(5173,占用时可用 PORT 环境变量改口)· `npm run build`(两次构建出双单文件)· `npm test`(48 项纯函数断言)。
 
 ## 已实现(按层)
 
@@ -26,7 +26,10 @@ stipple(Secord 加权点画,照片→单色可读点阵,亮度+边缘增益加�
 
 **2D 编辑器**:钢笔(RDP+锚点编辑)、图片导入(Otsu/半调/彩色)、图像序列批量导入(每张一状态)、
 对齐(数值 XYWH/方向键微移/4px 磁吸参考线)、车面参考底图(3D 同步来的布局+快照+UV 线框)、
-PS 式会话(每次改动即时 autosave,启动恢复)、导出 2×超采样+辉光、中英切换(🌐,src/i18n.js)。
+PS 式会话(每次改动即时 autosave,启动恢复)、导出 2×超采样+辉光、中英切换(🌐,src/i18n.js)、
+📷 虚拟镜头(逐状态 cam{x,y,z,rot},过渡间恒用 smootherstep 插值 + 变焦对数插值;
+纯变换在 sampleFrame 内施加 → CPU/GPU 预览、导出、3D 贴图零特判统一生效;
+编辑模式画布显示取景框;旋转在像素坐标系做,W≠H 不剪切变形)。
 
 **3D 预览器**(`src/viewer/main3d.js`):三种投影层——
 ① 贴花 Decal(点击放置,gumball 操纵球:箭头移/环转/方块缩放,双击重放);
@@ -48,7 +51,7 @@ PS 式会话(每次改动即时 autosave,启动恢复)、导出 2×超采样+辉
 
 ## 待办候选(按既往讨论优先级)
 
-1. 动画内虚拟摄像机(推拉摇移)。
+1. ~~动画内虚拟摄像机(推拉摇移)~~ ✅ 2026-07-27 完成(📷 本状态镜头)。
 2. 多选与群组对齐按钮(PPT 式,对齐工具的第二步)。
 3. 贝塞尔缓动编辑器(Backlog P2)。
 4. Sidecar JSON / 观看距离模拟 / 闪烁护栏(研究仪器化,Backlog P2,论文相关)。

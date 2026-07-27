@@ -1,6 +1,6 @@
 // 右属性栏:当前状态属性、选中对象、文字工具、采样/引擎/渲染/导出参数。
 // 这里是"参数 UI → P"的唯一写入口;改完置脏或重采样,渲染循环下一帧自然吃到。
-import { P } from '../config.js';
+import { W, H, P } from '../config.js';
 import { store, cur } from '../store.js';
 import { $, setHint } from '../utils.js';
 import { pushUndo, makeState } from '../state.js';
@@ -180,10 +180,27 @@ export function initInspector(){
   bindOv('trStagOn','trStag','vTrStag','stag');
   bindOv('trFlowOn','trFlow','vTrFlow','flow');
   bindOv('trStrOn','trStr','vTrStr','stretch');
+  // ── 📷 本状态镜头:写 cur().cam;回到全默认值时置 null(不入档,老工程格式不变)。
+  //    镜头改动不重建 pairs(sampleFrame 每帧现读 states[].cam),置脏只为保险。
+  const camGet=()=>cur().cam ? {...cur().cam} : {x:0.5,y:0.5,z:1,rot:0};
+  const camSet=c=>{ const def=Math.abs(c.x-0.5)<1e-9&&Math.abs(c.y-0.5)<1e-9&&
+      Math.abs(c.z-1)<1e-9&&Math.abs(c.rot)<1e-12;
+    cur().cam=def?null:c; store.seqDirty=true; };
+  const camUI=()=>{ const c=camGet();
+    $('vCamZ').textContent=c.z.toFixed(2)+'×';
+    $('vCamX').textContent=String(Math.round((c.x-0.5)*W));
+    $('vCamY').textContent=String(Math.round((c.y-0.5)*H));
+    $('vCamRot').textContent=Math.round(c.rot*180/Math.PI)+'°'; };
+  $('camZ').addEventListener('input',e=>{ const c=camGet(); c.z=parseFloat(e.target.value); camSet(c); camUI(); });
+  $('camX').addEventListener('input',e=>{ const c=camGet(); c.x=parseFloat(e.target.value); camSet(c); camUI(); });
+  $('camY').addEventListener('input',e=>{ const c=camGet(); c.y=parseFloat(e.target.value); camSet(c); camUI(); });
+  $('camRot').addEventListener('input',e=>{ const c=camGet(); c.rot=parseFloat(e.target.value)*Math.PI/180; camSet(c); camUI(); });
+  $('camReset').onclick=()=>{ cur().cam=null; store.seqDirty=true; syncStateUI(); };
 
   $('stDup').onclick=()=>{ pushUndo();
     const s=cur(), c=makeState(s.name+' 副本', s.color);
     Object.assign(c,{hold:s.hold, dur:s.dur, trans:JSON.parse(JSON.stringify(s.trans||{})),
+      cam:s.cam?{...s.cam}:null,
       shapes:JSON.parse(JSON.stringify(s.shapes)), manual:JSON.parse(JSON.stringify(s.manual))});
     store.states.splice(store.active+1,0,c); rasterize(c); resample(c);
     setActive(store.active+1); renderStrip(); };

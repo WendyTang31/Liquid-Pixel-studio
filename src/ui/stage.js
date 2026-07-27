@@ -5,7 +5,7 @@ import { store, cur } from '../store.js';
 import { $, hex2rgb, setHint, getExpSize } from '../utils.js';
 import { createPreviewRenderer } from '../render.js';
 import { createGLRenderer } from '../render-gl.js';
-import { sampleFrame, drift } from '../engine.js';
+import { sampleFrame, drift, camPt, camIdentity } from '../engine.js';
 import { rebuildSequence } from '../sequence.js';
 import { resampleAll, resample, updateThumb, shapesChanged, measureText } from '../pipeline.js';
 import { pushUndo, undo, redo } from '../state.js';
@@ -79,14 +79,16 @@ function overlayOnion(){
   if(prev!==cur()) ctx.drawImage(prev.ghost,0,0);
   if(next!==cur()&&next!==prev) ctx.drawImage(next.ghost,0,0);
 }
-function overlayTraj(curBalls,seg){
+function overlayTraj(curBalls,seg,cam){
   if(store.hideOverlays||!$('showTraj').checked||!seg||seg.type!=='trans') return;
   const pairs=seg.pairs, step=Math.ceil(pairs.length/350);
   ctx.lineWidth=0.6;
   for(let i=0;i<pairs.length;i+=step){
     const p=pairs[i];
+    // 端点过一遍镜头变换,轨迹线才与(已被镜头变换的)球画面对齐
+    const [ax,ay]=camPt(p.a.x,p.a.y,cam), [bx,by]=camPt(p.b.x,p.b.y,cam);
     ctx.strokeStyle='rgba(255,255,255,0.12)';
-    ctx.beginPath(); ctx.moveTo(p.a.x*W,p.a.y*H); ctx.lineTo(p.b.x*W,p.b.y*H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ax*W,ay*H); ctx.lineTo(bx*W,by*H); ctx.stroke();
     if(curBalls&&curBalls[i]){ ctx.fillStyle='rgba(255,255,255,0.5)';
       ctx.beginPath(); ctx.arc(curBalls[i].x*W,curBalls[i].y*H,1.2,0,7); ctx.fill(); }
   }
@@ -98,6 +100,22 @@ function overlayFrameGuide(){
   if(ar>ar0){ gw=W; gh=W/ar; } else { gh=H; gw=H*ar; }
   ctx.strokeStyle='rgba(255,200,80,0.55)'; ctx.setLineDash([5,4]); ctx.lineWidth=1;
   ctx.strokeRect((W-gw)/2,(H-gh)/2,gw,gh); ctx.setLineDash([]);
+}
+// 📷 取景框:编辑模式下把本状态镜头的可见区域画出来(播放/导出时该区域被放大填满全幅)。
+// 屏幕 = R(rot)·(p−c)·z + 中心,故取景框 = 以 c 为中心、W/z×H/z、旋转 −rot 的矩形。
+function overlayCamFrame(){
+  if(store.hideOverlays||store.mode==='play') return;
+  const cm=cur().cam;
+  if(camIdentity(cm)) return;
+  ctx.save();
+  ctx.translate(cm.x*W, cm.y*H); ctx.rotate(-(cm.rot||0));
+  const z=cm.z||1;
+  ctx.strokeStyle='rgba(160,150,255,0.85)'; ctx.setLineDash([7,5]); ctx.lineWidth=1.2;
+  ctx.strokeRect(-W/(2*z), -H/(2*z), W/z, H/z);
+  ctx.setLineDash([]);
+  ctx.font='11px sans-serif'; ctx.fillStyle='rgba(160,150,255,0.9)';
+  ctx.fillText('📷', -W/(2*z)+4, -H/(2*z)+13);
+  ctx.restore();
 }
 function overlaySelection(){
   if(!store.sel||store.mode==='play') return;
@@ -130,7 +148,7 @@ function tick(now){
     const fr=sampleFrame(store.SEQ, store.states, store.g, store.clock, P);
     if(gpuOn()){ glCv.style.display='block'; glRender(fr.balls, fr.col, P); ctx.clearRect(0,0,W,H); }
     else { if(glCv) glCv.style.display='none'; previewRender(fr.balls, fr.col, P); }
-    overlayTraj(fr.balls, fr.seg); overlayFrameGuide();
+    overlayTraj(fr.balls, fr.seg, fr.cam); overlayFrameGuide();
   } else {
     const s=cur();
     const editBalls=s.dots.map((b,i)=>({x:b.x+P.amp*drift(i*2.3,store.clock,P),y:b.y+P.amp*drift(i*2.3+3,store.clock,P),r:b.r,c:b.c}));
@@ -154,7 +172,7 @@ function tick(now){
       for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
       ctx.stroke();
     }
-    overlaySelection(); overlaySnapGuides(); overlayFrameGuide();
+    overlaySelection(); overlaySnapGuides(); overlayFrameGuide(); overlayCamFrame();
   }
   requestAnimationFrame(tick);
 }

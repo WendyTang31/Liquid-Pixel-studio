@@ -1,6 +1,7 @@
 // 引擎层:全部纯函数,无隐藏状态。参数从 P 显式传入,任意全局时间 g 都能凭空求值 ——
 // 这是时间轴可拖、导出确定性、"预览 == 导出"一致性的根基。预览与导出共用 sampleFrame。
 import { hex2rgb } from './utils.js';
+import { W, H } from './config.js';
 
 // 缓动:端点连续、速度/加速度在端点收敛(smootherstep 最柔)。
 // 物理组(backOut/elasticOut/bounceOut)刻意在中途越过 1 再回落 —— 过冲/弹跳/回弹的"手感"
@@ -187,21 +188,59 @@ export function buildSequence(states, seamless, P){
   return {segs,T};
 }
 
-// 采样一帧:全局时间 g → {seg, balls, col}。预览与导出共用同一函数。
+// ── 虚拟摄像机(推拉摇移)──
+// 每个状态可携带 cam {x,y,z,rot}:x/y=取景中心(归一化),z=变焦(>1 推近),rot=旋转(弧度)。
+// 摄像机是"观看变换",施加在 sampleFrame 的最终球列表上 —— CPU/GPU 预览、导出、3D 贴图
+// 全部经由 sampleFrame,零特判统一生效;编辑态数据(shapes/dots)完全不动。
+export const DEF_CAM={x:0.5,y:0.5,z:1,rot:0};
+export const camIdentity=c=>!c||(Math.abs(c.x-0.5)<1e-9&&Math.abs(c.y-0.5)<1e-9&&
+  Math.abs((c.z??1)-1)<1e-9&&Math.abs(c.rot||0)<1e-12);
+export function lerpCam(a,b,e){
+  a={...DEF_CAM,...(a||{})}; b={...DEF_CAM,...(b||{})};
+  // 变焦按对数插值(乘法均匀):推近的"感知速度"才恒定,线性插值会显得前快后慢。
+  return {x:a.x+(b.x-a.x)*e, y:a.y+(b.y-a.y)*e,
+          z:a.z*Math.pow(b.z/a.z,e), rot:a.rot+(b.rot-a.rot)*e};
+}
+// 单点镜头变换。旋转在"像素坐标系"里做:归一化系下 W≠H,直接旋转会剪切变形。
+export function camPt(x,y,cam){
+  if(camIdentity(cam)) return [x,y];
+  const cm={...DEF_CAM,...cam}, cos=Math.cos(cm.rot), sin=Math.sin(cm.rot);
+  const dx=(x-cm.x)*W, dy=(y-cm.y)*H;
+  return [0.5+(dx*cos-dy*sin)*cm.z/W, 0.5+(dx*sin+dy*cos)*cm.z/H];
+}
+export function applyCam(balls, cam){
+  if(camIdentity(cam)) return balls;
+  const cm={...DEF_CAM,...cam}, cos=Math.cos(cm.rot), sin=Math.sin(cm.rot);
+  return balls.map(b=>{
+    const dx=(b.x-cm.x)*W, dy=(b.y-cm.y)*H;
+    const o={...b, x:0.5+(dx*cos-dy*sin)*cm.z/W, y:0.5+(dx*sin+dy*cos)*cm.z/H, r:b.r*cm.z};
+    return o;
+  });
+}
+// 当前段的有效镜头:停留=本状态镜头;过渡=相邻两状态镜头插值。
+// 刻意恒用 smootherstep 而不跟随该段的点缓动 —— 弹性/弹跳适合"物",不适合"镜头"
+// (镜头过冲会整幅画面晃动,违背"光生长"的稳定感;真实摄影机运动也是柔进柔出)。
+export function camAt(seg, states, lt){
+  if(seg.type==='hold') return states[seg.si].cam||null;
+  return lerpCam(states[seg.a].cam, states[seg.b].cam, EASE.smootherstep(lt));
+}
+
+// 采样一帧:全局时间 g → {seg, balls, col, cam}。预览与导出共用同一函数。
 export function sampleFrame(SEQ, states, g, time, P){
   const {segs,T}=SEQ;
   g=Math.max(0,Math.min(T-1e-6,g));
   let seg=segs[0];
   for(const s of segs){ if(g>=s.t0 && g<s.t0+s.dur){seg=s;break;} }
   if(seg.type==='hold'){
-    const st=states[seg.si];
-    return {seg, col:hex2rgb(st.color),
-      balls:st.dots.map(b=>{ const ph=dotPhase(b.x,b.y);
-        return {x:b.x+P.amp*drift(ph,time,P), y:b.y+P.amp*drift(ph+3.1,time,P), r:b.r, c:b.c}; })};
+    const st=states[seg.si], cam=camAt(seg,states,0);
+    return {seg, col:hex2rgb(st.color), cam:camIdentity(cam)?null:cam,
+      balls:applyCam(st.dots.map(b=>{ const ph=dotPhase(b.x,b.y);
+        return {x:b.x+P.amp*drift(ph,time,P), y:b.y+P.amp*drift(ph+3.1,time,P), r:b.r, c:b.c}; }), cam)};
   } else {
     const lt=(g-seg.t0)/seg.dur, ca=hex2rgb(states[seg.a].color), cb=hex2rgb(states[seg.b].color);
-    const e=EASE.smoothstep(lt);
-    return {seg, balls:transBalls(seg.pairs,lt,time,segParams(P,seg.ov)),
+    const e=EASE.smoothstep(lt), cam=camAt(seg,states,lt);
+    return {seg, balls:applyCam(transBalls(seg.pairs,lt,time,segParams(P,seg.ov)), cam),
+      cam:camIdentity(cam)?null:cam,
       col:[ca[0]+(cb[0]-ca[0])*e, ca[1]+(cb[1]-ca[1])*e, ca[2]+(cb[2]-ca[2])*e]};
   }
 }

@@ -86,6 +86,7 @@ async function loadProjectData(data, gi=0){
   for(const d of raw){
     for(const sh of d.shapes) if(sh.type==='image') await decodeImageShape(sh);
     out.push({name:d.name, color:d.color, hold:d.hold, dur:d.dur, trans:d.trans||{},
+      cam:d.cam||null, // 镜头随工程走:车身贴图里同样推拉摇移
       dots:stateDots(d.shapes, d.manual||[], gr.P)}); // 与编辑器同一采样核心(彩色/逐形状覆盖同步生效)
   }
   gr.states=out; gr.SEQ=buildSequence(out, true, gr.P);

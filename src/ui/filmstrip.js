@@ -1,5 +1,6 @@
 // 顶部状态胶片条:缩略图 + 名称,点击 = 编辑该状态,末尾"＋ 新状态"。
 import { store, cur } from '../store.js';
+import { W, H } from '../config.js';
 import { $, setHint } from '../utils.js';
 import { updateThumb, resample } from '../pipeline.js';
 import { updateSelBox } from './inspector.js';
@@ -29,6 +30,13 @@ export function syncStateUI(){
   syncOv('trStagOn','trStag','vTrStag','stag',0.3);
   syncOv('trFlowOn','trFlow','vTrFlow','flow',0);
   syncOv('trStrOn','trStr','vTrStr','stretch',0);
+  // 📷 本状态镜头回填
+  const cm=s.cam||{x:0.5,y:0.5,z:1,rot:0};
+  $('camZ').value=cm.z;   $('vCamZ').textContent=(+cm.z).toFixed(2)+'×';
+  $('camX').value=cm.x;   $('vCamX').textContent=String(Math.round((cm.x-0.5)*W));
+  $('camY').value=cm.y;   $('vCamY').textContent=String(Math.round((cm.y-0.5)*H));
+  $('camRot').value=Math.round((cm.rot||0)*180/Math.PI);
+  $('vCamRot').textContent=Math.round((cm.rot||0)*180/Math.PI)+'°';
 }
 
 export function renderStrip(){

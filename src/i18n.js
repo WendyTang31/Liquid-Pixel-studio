@@ -15,6 +15,8 @@ const EXACT = {
   '本段过渡覆盖(→ 下一状态)':'Per-transition override (→ next)',
   '⧉ 复制':'⧉ Duplicate', '删除状态':'Delete State',
   '(跟随全局)':'(inherit global)',
+  '📷 本状态镜头(推拉摇移)':'📷 STATE CAMERA (pan & zoom)',
+  '变焦':'Zoom', '移X':'Pan X', '移Y':'Pan Y', '↺ 复位镜头':'↺ Reset Camera',
   // ── 选中对象 ──
   '选中对象':'SELECTION', '（未选中 — ➤ 工具点击形状）':'(none — click a shape with ➤)',
   '宽':'W', '高':'H', '阈值':'Threshold', '黑场':'Black floor',

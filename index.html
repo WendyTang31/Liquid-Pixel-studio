@@ -147,6 +147,14 @@
       <div class="row"><label class="ck"><input type="checkbox" id="trStrOn"> 拉伸</label>
         <input type="range" id="trStr" min="0" max="1" step="0.05" value="0"><div class="val" id="vTrStr">0.00</div></div>
     </div>
+    <div class="selbox" title="本状态的虚拟镜头(推拉摇移):变焦>1 推近、<1 拉远;移X/移Y 是取景中心偏移(像素);镜头随过渡在相邻状态间平滑运动(恒用最柔缓动,不跟随点缓动)。编辑模式画布上会显示 📷 取景框。">
+      <div class="small">📷 本状态镜头(推拉摇移)</div>
+      <div class="row"><label>变焦</label><input type="range" id="camZ" min="0.5" max="3" step="0.01" value="1"><div class="val" id="vCamZ">1.00×</div></div>
+      <div class="row"><label>移X</label><input type="range" id="camX" min="0" max="1" step="0.005" value="0.5"><div class="val" id="vCamX">0</div></div>
+      <div class="row"><label>移Y</label><input type="range" id="camY" min="0" max="1" step="0.005" value="0.5"><div class="val" id="vCamY">0</div></div>
+      <div class="row"><label>旋转</label><input type="range" id="camRot" min="-180" max="180" step="1" value="0"><div class="val" id="vCamRot">0°</div></div>
+      <button id="camReset" style="width:100%">↺ 复位镜头</button>
+    </div>
     <div class="row">
       <button id="stLeft" title="前移">←</button>
       <button id="stRight" title="后移">→</button>
