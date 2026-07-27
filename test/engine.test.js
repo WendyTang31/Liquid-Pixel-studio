@@ -271,9 +271,9 @@ test('笔画采样(strokes):圆环沿环布珠、洞保持干净(字母 O 的类
   for (const [x, y, r] of balls) {
     const d = Math.hypot(x - 240, y - 140);
     assert.ok(d >= 48 && d <= 82, `珠心应在环带内,实际距心 ${d.toFixed(1)}`);
-    assert.ok(r <= 15 * 0.8 + 1.5, `珠半径应 ≤ 半宽×0.8,实际 ${r.toFixed(1)}`);
+    assert.ok(r <= 15 * 0.9 + 1.5, `珠半径应 ≤ 半宽×0.9,实际 ${r.toFixed(1)}`);
     // 洞保护:珠体不得侵入内径 50 之内超过一点点
-    assert.ok(d - r >= 46, `珠体不应吞掉字腔(洞),d-r=${(d - r).toFixed(1)}`);
+    assert.ok(d - r >= 44, `珠体不应吞掉字腔(洞),d-r=${(d - r).toFixed(1)}`);
   }
 });
 
@@ -284,11 +284,24 @@ test('笔画采样(strokes):两条平行笔画,间隙无珠且珠体不越沟(�
   assert.ok(balls.length >= 10, `应产出串珠,实际 ${balls.length}`);
   for (const [x, y, r] of balls) {
     assert.ok((y >= 100 && y <= 116) || (y >= 130 && y <= 146), `珠心应在条内,y=${y}`);
-    // 珠体(含半径)不得伸进 116..130 的沟里超过 2px
+    // 珠体(含半径)不得伸进 116..130 的沟里超过 3px(0.9 因子下留一点余量,
+    // 融合安全性由"相邻中轴距 = 沟宽+笔画宽 ≫ 融合距离"保证)
     const inTop = y <= 116;
     const gapIntrusion = inTop ? (y + r) - 116 : 130 - (y - r);
-    assert.ok(gapIntrusion <= 2, `珠体越沟 ${gapIntrusion.toFixed(1)}px(会导致跨字融合)`);
+    assert.ok(gapIntrusion <= 3, `珠体越沟 ${gapIntrusion.toFixed(1)}px(会导致跨字融合)`);
   }
+});
+
+test('笔画采样(strokes):响应间距 → 点数拟合可收敛(少点=均匀虚线而非随机断裂)', () => {
+  const on = (x, y) => (x >= 80 && x <= 400) && (y >= 120 && y <= 136); // 单条 16px 笔画
+  const dense = SAMPLERS.strokes(on, 17);
+  const sparse = SAMPLERS.strokes(on, 40);
+  assert.ok(sparse.length < dense.length * 0.75,
+    `更大间距应产出更少珠,实际 ${dense.length}→${sparse.length}`);
+  // samplePtsFit 用间距收敛点数
+  const fitted = samplePtsFit('strokes', on, 17, 0, 12);
+  assert.ok(Math.abs(fitted.length - 12) / 12 <= 0.35,
+    `点数拟合应接近目标 12,实际 ${fitted.length}`);
 });
 
 test('智能识别(smart):两个分离圆形 → 还原为两个大球,圆心/半径准确', () => {

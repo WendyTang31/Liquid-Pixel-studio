@@ -116,8 +116,10 @@ export const SAMPLERS = {
     return pts;
   },
   // 笔画·文字:专为字形/线稿设计的骨架串珠 —— 沿笔画中轴密排小珠,
-  // 珠半径 = 局部笔画半宽 × 0.8(刻意收 20%:保住字腔 a/o 的洞与字母间隙,不跨沟融合),
-  // 沿笔画印章收紧到 0.75r(珠子首尾相接 → 线条连续可读)。自适应笔画粗细,不依赖全局间距。
+  // 珠半径 = 局部笔画半宽 × 0.9(收 10%:保字腔与字距;跨沟融合判据下 0.9h 仍安全,
+  // 因为相邻笔画的中轴距 = 沟宽 + 整个笔画宽,远超融合距离),
+  // 沿笔画印章 0.6r ×(间距/17):默认密排首尾相接、高融合阈值下也连续;
+  // 间距滑块/点数拟合调大间距 → 均匀虚线式稀疏(可控降级,不再随机断裂)。
   strokes(on,sp){
     const D=distanceField(on);
     const cand=[];
@@ -132,10 +134,11 @@ export const SAMPLERS = {
         for(let dx=-R;dx<=R;dx++){ const xx=bx+dx; if(xx<0||xx>=W) continue;
           if(dx*dx+dy*dy<=r2) cov[yy*W+xx]=1; } } };
     const balls=[];
+    const stepK=Math.max(0.35, 0.6*(sp/17)); // 间距响应:点数拟合经此收敛
     for(const [x,y,r] of cand){
       if(cov[y*W+x]) continue;
-      balls.push([x,y,Math.max(1.2,r*0.8)]);
-      stamp(x,y,Math.max(1.5,r*0.75));
+      balls.push([x,y,Math.max(1.2,r*0.9)]);
+      stamp(x,y,Math.max(1.5,r*stepK));
       if(balls.length>=900) break;
     }
     return balls;
