@@ -3,7 +3,7 @@
 import { W, H, P } from '../config.js';
 import { store, cur } from '../store.js';
 import { $, setHint } from '../utils.js';
-import { pushUndo, makeState } from '../state.js';
+import { pushUndo, makeState, groupTail } from '../state.js';
 import { rasterize, resample, resampleAll, updateThumb, tintGhost, shapesChanged } from '../pipeline.js';
 import { renderStrip, setActive, syncStateUI } from './filmstrip.js';
 import { exportPNG, toggleRecord } from '../export.js';
@@ -200,13 +200,35 @@ export function initInspector(){
   $('camRot').addEventListener('input',e=>{ const c=camGet(); c.rot=parseFloat(e.target.value)*Math.PI/180; camSet(c); camUI(); });
   $('camReset').onclick=()=>{ cur().cam=null; store.seqDirty=true; syncStateUI(); };
 
+  // 复制状态:插到组尾之后(直接插 active+1 会落进"主状态与其姿态"之间抢走姿态)
   $('stDup').onclick=()=>{ pushUndo();
     const s=cur(), c=makeState(s.name+' 副本', s.color);
     Object.assign(c,{hold:s.hold, dur:s.dur, trans:JSON.parse(JSON.stringify(s.trans||{})),
-      cam:s.cam?{...s.cam}:null,
+      cam:s.cam?{...s.cam}:null, isPose:s.isPose||false, loop:s.loop?{...s.loop}:null,
       shapes:JSON.parse(JSON.stringify(s.shapes)), manual:JSON.parse(JSON.stringify(s.manual))});
-    store.states.splice(store.active+1,0,c); rasterize(c); resample(c);
-    setActive(store.active+1); renderStrip(); };
+    const at=(s.isPose?store.active:groupTail(store.active))+1;
+    store.states.splice(at,0,c); rasterize(c); resample(c);
+    setActive(at); renderStrip(); };
+  // 🔁 ＋循环姿态:复制当前画面为一格姿态,挂进当前组(主状态选中时挂组尾;姿态选中时接在其后)
+  $('poseAdd').onclick=()=>{ pushUndo();
+    const s=cur();
+    const master=s.isPose? null : s;
+    const c=makeState((master?s.name:s.name.replace(/·姿态.*$/,''))+'·姿态', s.color);
+    Object.assign(c,{isPose:true, hold:0.15, dur:0.3,
+      shapes:JSON.parse(JSON.stringify(s.shapes)), manual:JSON.parse(JSON.stringify(s.manual))});
+    const at=groupTail(store.active)+1;
+    store.states.splice(at,0,c); rasterize(c); resample(c);
+    if(master && !master.loop) master.loop={h0:1, d0:0.3};
+    setActive(at); renderStrip();
+    setHint('已加循环姿态:改动它(如闭眼),停留期间会 基→姿态→基 循环');
+  };
+  // 🔁 基姿态计时(主状态携带 loop{h0,d0})
+  const loopSet=(k,v)=>{ const s=cur(); s.loop={h0:1,d0:0.3,...(s.loop||{})};
+    s.loop[k]=v; store.seqDirty=true; };
+  $('loopH0').addEventListener('input',e=>{ loopSet('h0',parseFloat(e.target.value));
+    $('vLoopH0').textContent=(+e.target.value).toFixed(2); });
+  $('loopD0').addEventListener('input',e=>{ loopSet('d0',parseFloat(e.target.value));
+    $('vLoopD0').textContent=(+e.target.value).toFixed(2); });
   $('stDel').onclick=()=>{ if(store.states.length<=1){setHint('至少保留一个状态');return;}
     pushUndo(); store.states.splice(store.active,1);
     store.active=Math.min(store.active,store.states.length-1);

@@ -123,14 +123,14 @@ export function tintGhost(s){
   out.putImageData(od,0,0);
 }
 
-// 胶片条缩略图(96×56):蒙版乘状态色。
+// 胶片条缩略图:蒙版乘状态色。尺寸随缩略画布走(主状态 96×56,循环姿态 68×40)。
 export function updateThumb(s){
   if(!s.thumb) return;
-  const c=s.thumb.getContext('2d');
-  c.fillStyle='#000'; c.fillRect(0,0,96,56);
-  c.drawImage(s.mask,0,0,96,56);
+  const c=s.thumb.getContext('2d'), tw=s.thumb.width, th=s.thumb.height;
+  c.fillStyle='#000'; c.fillRect(0,0,tw,th);
+  c.drawImage(s.mask,0,0,tw,th);
   c.globalCompositeOperation='multiply';
-  c.fillStyle=s.color; c.fillRect(0,0,96,56);
+  c.fillStyle=s.color; c.fillRect(0,0,tw,th);
   c.globalCompositeOperation='source-over';
 }
 

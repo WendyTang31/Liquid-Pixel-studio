@@ -170,20 +170,50 @@ export function transBalls(pairs,t,time,P){
 // 段级有效参数:状态可携带 trans 覆盖对象(ease/stag/flow/stretch/match),缺省继承全局。
 export const segParams=(P,ov)=> (ov && Object.keys(ov).length) ? {...P, ...ov} : P;
 
-// 序列构建:[停留, 过渡, 停留, …(seamless 时补一段 尾→首 过渡)]。
+// ── 状态内子循环(姿态分组)──
+// isPose=true 的状态不是主序列成员,而是"归属其前面最近主状态"的循环姿态(眨眼/走路帧)。
+// 分组规则唯一定义在这里:时间轴/胶片条等 UI 必须复用本函数,否则排布会与播放对不上。
+// 开头的孤儿姿态(前面没有主状态)按主状态对待 —— 删除主状态后姿态不会凭空消失。
+export function groupStates(states){
+  const masters=[];
+  states.forEach((st,idx)=>{
+    if(st.isPose && masters.length) masters[masters.length-1].poses.push(idx);
+    else masters.push({idx, poses:[]});
+  });
+  return masters;
+}
+
+// 序列构建:[停留, 过渡, 停留, …(seamless 时补一段 尾→首 过渡)],主状态参与,姿态归组。
 // 纯函数:states + seamless 开关 + P 进,{segs,T} 出;不碰任何全局。
 // 每段过渡记住出发状态的 trans 覆盖(seg.ov),配对用段级 match,采样时再合并其余参数。
-export function buildSequence(states, seamless, P){
-  const segs=[]; const N=states.length;
-  for(let i=0;i<N;i++){
-    if(states[i].hold>0.01) segs.push({type:'hold', si:i, dur:states[i].hold});
-    const isLast=(i===N-1);
-    const j=isLast ? (seamless && N>1 ? 0 : null) : i+1;
-    if(j!==null){ const ov=states[i].trans||null;
-      segs.push({type:'trans', a:i, b:j, dur:states[i].dur, ov,
-        pairs:makePairs(states[i].dots, states[j].dots, segParams(P,ov))}); }
+// 有姿态的主状态,其停留段挂 seg.loop = 子序列(基→各姿态→无缝回基),采样时整数圈回放:
+// 停留的头尾都精确落在基姿态上,与相邻过渡(按基姿态 dots 配对)零跳变 —— 这是
+// "循环速度微调以对齐圈数"的设计取舍,符合"光生长"的连续性纲领。
+export function buildSequence(states, seamless, P, _noLoop){
+  const masters=groupStates(states);
+  const segs=[]; const M=masters.length;
+  for(let m=0;m<M;m++){
+    const {idx,poses}=masters[m], st=states[idx];
+    if(st.hold>0.01){
+      const seg={type:'hold', si:idx, dur:st.hold};
+      if(!_noLoop && poses.length){
+        // 子循环里基姿态用 loop.h0/d0 计时(st.hold 是主时间轴上的总停留,别混用);
+        // 姿态用各自的 hold/dur。isPose 置 false + _noLoop 双保险防递归分组。
+        const lp=st.loop||{};
+        // cam 置空:镜头只在主层施加一次(不然递归里外各套一遍变成双重变焦);姿态镜头无意义。
+        const loopStates=[{...st, hold:lp.h0??1, dur:lp.d0??0.3, isPose:false, cam:null},
+                          ...poses.map(pi=>({...states[pi], isPose:false, cam:null}))];
+        seg.loop={states:loopStates, SEQ:buildSequence(loopStates, true, P, true)};
+      }
+      segs.push(seg);
+    }
+    const isLast=(m===M-1);
+    const n=isLast ? (seamless && M>1 ? masters[0].idx : null) : masters[m+1].idx;
+    if(n!==null){ const ov=st.trans||null;
+      segs.push({type:'trans', a:idx, b:n, dur:st.dur, ov,
+        pairs:makePairs(st.dots, states[n].dots, segParams(P,ov))}); }
   }
-  if(!segs.length) segs.push({type:'hold', si:0, dur:1});
+  if(!segs.length) segs.push({type:'hold', si:masters[0]?.idx??0, dur:1});
   let T=0; segs.forEach(s=>{s.t0=T; T+=s.dur;});
   return {segs,T};
 }
@@ -233,6 +263,16 @@ export function sampleFrame(SEQ, states, g, time, P){
   for(const s of segs){ if(g>=s.t0 && g<s.t0+s.dur){seg=s;break;} }
   if(seg.type==='hold'){
     const st=states[seg.si], cam=camAt(seg,states,0);
+    if(seg.loop){
+      // 子循环:把停留段的本地进度映射到"整数圈"的子序列时间上再递归采样。
+      // round(dur/LT) 圈 → 循环速度被轻微缩放以使停留头尾都精确落在基姿态(τ=0),
+      // 相邻过渡按基姿态 dots 配对,边界天然无跳变。time 直传,呼吸漂移跨层连续。
+      const LT=seg.loop.SEQ.T, lt=(g-seg.t0)/seg.dur;
+      const cycles=Math.max(1, Math.round(seg.dur/LT));
+      const tau=Math.min(LT-1e-6, (lt*cycles*LT)%LT);
+      const sub=sampleFrame(seg.loop.SEQ, seg.loop.states, tau, time, P);
+      return {seg, col:sub.col, cam:camIdentity(cam)?null:cam, balls:applyCam(sub.balls, cam)};
+    }
     return {seg, col:hex2rgb(st.color), cam:camIdentity(cam)?null:cam,
       balls:applyCam(st.dots.map(b=>{ const ph=dotPhase(b.x,b.y);
         return {x:b.x+P.amp*drift(ph,time,P), y:b.y+P.amp*drift(ph+3.1,time,P), r:b.r, c:b.c}; }), cam)};

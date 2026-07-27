@@ -17,6 +17,19 @@ const EXACT = {
   '(跟随全局)':'(inherit global)',
   '📷 本状态镜头(推拉摇移)':'📷 STATE CAMERA (pan & zoom)',
   '变焦':'Zoom', '移X':'Pan X', '移Y':'Pan Y', '↺ 复位镜头':'↺ Reset Camera',
+  '🔁 状态内循环(眨眼/走路)':'🔁 IN-STATE LOOP (blink / walk)',
+  '＋ 循环姿态(复制当前画面)':'+ Loop pose (copy current)',
+  '基姿态停留':'Base hold', '去程过渡':'To-pose trans',
+  '停留期间按整数圈循环:基→姿态→…→基,与前后过渡无缝':
+    'Loops whole cycles during hold: base→poses→base, seamless with transitions',
+  '正在编辑循环姿态:上方"停留/过渡"= 本姿态在循环内的时长(眨眼闭合可设 0.05/0.1)':
+    'Editing a loop pose: Hold/Trans above = this pose\'s timing inside the loop (blink: 0.05/0.1)',
+  '给本状态加"循环姿态"可做眨眼/走路等微动作(在停留期间循环)':
+    'Add loop poses for micro-motions (blink, walk) that cycle during the hold',
+  '已加循环姿态:改动它(如闭眼),停留期间会 基→姿态→基 循环':
+    'Pose added: edit it (e.g. close the eyes) — it cycles base→pose→base during hold',
+  '循环姿态:归属左侧主状态,停留期间循环回放':
+    'Loop pose: belongs to the master state on its left; plays cyclically during hold',
   // ── 图层面板 / 时间轴 ──
   '图层':'LAYERS', '矩形':'Rect', '椭圆':'Ellipse', '轮廓':'Path', '图片':'Image',
   '(空 — 用左侧工具画形状)':'(empty — draw with the left tools)',

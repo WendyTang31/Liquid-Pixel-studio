@@ -5,28 +5,31 @@
 import { store, cur } from '../store.js';
 import { $ } from '../utils.js';
 import { rebuildSequence } from '../sequence.js';
+import { groupStates } from '../engine.js';
 import { setMode } from './stage.js';
 import { setActive, syncStateUI } from './filmstrip.js';
 
 let sig='';           // DOM 重建签名:时长/颜色/名称/顺序变了才重建,playhead 每帧都动
 let act=null;         // 进行中的手势 {kind:'scrub'} | {kind:'resize', i, field, startX, startVal, T0}
 
-// 与 buildSequence 同规则的段列表(不含 pairs,纯排布用)。
+// 与 buildSequence 同规则的段列表(不含 pairs,纯排布用):
+// 姿态归组进主状态的停留段(loopN 记姿态数,显示 🔁 徽标),分组复用引擎的 groupStates。
 function layoutSegs(){
-  const N=store.states.length, seam=$('seamless').checked;
+  const masters=groupStates(store.states), M=masters.length, seam=$('seamless').checked;
   const segs=[];
-  store.states.forEach((s,i)=>{
-    if(s.hold>0.01) segs.push({type:'hold', i, dur:s.hold});
-    if(i<N-1 || (seam&&N>1)) segs.push({type:'trans', i, dur:s.dur});
+  masters.forEach((m,k)=>{
+    const s=store.states[m.idx];
+    if(s.hold>0.01) segs.push({type:'hold', i:m.idx, dur:s.hold, loopN:m.poses.length});
+    if(k<M-1 || (seam&&M>1)) segs.push({type:'trans', i:m.idx, dur:s.dur});
   });
-  if(!segs.length) segs.push({type:'hold', i:0, dur:1});
+  if(!segs.length) segs.push({type:'hold', i:masters[0]?.idx??0, dur:1, loopN:0});
   let T=0; segs.forEach(sg=>{sg.t0=T; T+=sg.dur;});
   return {segs, T};
 }
 
 function sigOf(){
   return $('seamless').checked+'|'+store.active+'|'+store.mode+'|'+
-    store.states.map(s=>`${s.id}:${s.hold}:${s.dur}:${s.color}:${s.name}`).join('|');
+    store.states.map(s=>`${s.id}:${s.hold}:${s.dur}:${s.color}:${s.name}:${s.isPose?'P':''}`).join('|');
 }
 
 function rebuild(){
@@ -41,8 +44,9 @@ function rebuild(){
     el.style.width=(sg.dur/T*100)+'%';
     if(sg.type==='hold'){
       el.style.background=s.color+'2e';
-      el.innerHTML=`<span class="lb">${sg.i+1}·${escapeHtml(s.name)} <i>${s.hold.toFixed(1)}s</i></span>`;
-      el.title=`「${s.name}」停留 ${s.hold.toFixed(1)}s · 双击编辑该状态`;
+      const loopMark=sg.loopN?` 🔁${sg.loopN}`:'';
+      el.innerHTML=`<span class="lb">${escapeHtml(s.name)}${loopMark} <i>${s.hold.toFixed(1)}s</i></span>`;
+      el.title=`「${s.name}」停留 ${s.hold.toFixed(1)}s`+(sg.loopN?` · 内含 ${sg.loopN} 姿态子循环`:'')+` · 双击编辑该状态`;
       el.ondblclick=()=>setActive(sg.i);
     } else {
       el.innerHTML=`<span class="lb dim">➝ <i>${s.dur.toFixed(1)}s</i></span>`;
