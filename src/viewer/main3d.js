@@ -694,17 +694,31 @@ cutCv.addEventListener('pointerdown',e=>{
     }
   }
 });
+// 取景框边缘磁吸:贴近同组其它框的边或画布边(2% 内)时精确对齐 ——
+// "77% vs 77.3%"这种手抖零头正是跨面接不上的常见根因,吸附让相邻严格成立。
+function snapCut(d, key, val){
+  const edges=[0,1];
+  for(const o of decals){ if(o===d||o.group!==d.group) continue;
+    edges.push(o.cx, o.cx+o.cw, o.cy, o.cy+o.ch); }
+  const size=(key==='cx')?d.cw:(key==='cy')?d.ch:0;
+  let best=val;
+  for(const t of edges){
+    if(Math.abs(t-val)<0.02) best=t;                     // 左/上边贴齐
+    else if(size && Math.abs(t-(val+size))<0.02) best=t-size; // 右/下边贴齐
+  }
+  return best;
+}
 cutCv.addEventListener('pointermove',e=>{
   if(!cutDrag) return;
   const r=cutCv.getBoundingClientRect();
   const mx=(e.clientX-r.left)/r.width*CUTW, my=(e.clientY-r.top)/r.height*CUTH;
   const d=decals[activeDecal];
   if(cutDrag.type==='move'){
-    d.cx=Math.min(Math.max(0,(mx-cutDrag.offX)/CUTW), 1-d.cw);
-    d.cy=Math.min(Math.max(0,(my-cutDrag.offY)/CUTH), 1-d.ch);
+    d.cx=Math.min(Math.max(0, snapCut(d,'cx',(mx-cutDrag.offX)/CUTW)), 1-d.cw);
+    d.cy=Math.min(Math.max(0, snapCut(d,'cy',(my-cutDrag.offY)/CUTH)), 1-d.ch);
   } else {
-    d.cw=Math.min(Math.max(0.05, mx/CUTW-d.cx), 1-d.cx);
-    d.ch=Math.min(Math.max(0.05, my/CUTH-d.cy), 1-d.cy);
+    d.cw=Math.min(Math.max(0.05, snapCut(d,'cw',mx/CUTW)-d.cx), 1-d.cx);
+    d.ch=Math.min(Math.max(0.05, snapCut(d,'ch',my/CUTH)-d.cy), 1-d.cy);
   }
   const now=performance.now();
   if(now-projThrottle>90){ projThrottle=now; projectDecal(d); }
