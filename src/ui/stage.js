@@ -15,7 +15,9 @@ import { renderStrip } from './filmstrip.js';
 import { setTool } from './toolbar.js';
 import { rdpSimplify, pathBBox, fillSmoothClosedPath } from '../path.js';
 import { applyShapeBBox } from '../shapes.js';
-import { drawSkinRef, skinHit, saveSkinWindow } from './skinRef.js';
+import { drawSkinRef, skinWindowAt, skinHandleAt, skinCursorAt, getSelSkin, selectSkin,
+  clearSkinSel, skinPushUndo, skinUndo, deleteSelSkin, persistSkin, skinFocus, setSkinFocus,
+  skinHasUndo } from './skinRef.js';
 import { tlTick } from './timeline.js';
 
 let cv, ctx, previewRender, glRender=null, glCv=null;
@@ -319,17 +321,27 @@ function onPointerDown(e){
   const p=ptr(e), s=cur();
   // Shift = 选择手势,任意工具通用:松手时移动 <4px 判点选切换,否则判框选加选。
   // 不再要求先切 ➤ 工具、也不再要求从空白处起手 —— 画布被大形状铺满时依然可框选。
+  // 车面取景框(UV 读画区):点选 → 拖动=移动 / 拖角边=缩放 / Shift+角=等比;独立撤销/删除。
+  // 放在 shift 手势之前 —— 选中取景框后 Shift+拖角要走等比缩放,而非形状框选。
+  if($('showSkin')?.checked){
+    const sel=getSelSkin();
+    const startWin=(win,mode)=>{ skinPushUndo(); store.dragAct='skinwin';
+      store.dragNow={p:win, mode, offX:p.x-win.cx*W, offY:p.y-win.cy*H,
+        sx:win.cx, sy:win.cy, sw:win.cw, sh:win.ch, aspect:win.cw/Math.max(1e-6,win.ch)}; };
+    if(sel){ const m=skinHandleAt(sel,p.x,p.y);
+      if(m){ startWin(sel,m); return; } }
+    const hit=skinWindowAt(p.x,p.y);
+    if(hit){ selectSkin(hit); store.sel=null; store.selMulti=[]; updateSelBox();
+      startWin(hit, skinHandleAt(hit,p.x,p.y)||'move');
+      setHint('已选中取景框 — 拖动=移动 · 拖角/边=缩放 · Shift+角=等比 · Delete 删除 · Ctrl+Z 撤销 · Esc 取消');
+      return; }
+    if(sel && !e.shiftKey){ clearSkinSel(); } // 点空处取消取景框选中(不拦截后续绘制/框选)
+  }
+  setSkinFocus(false); // 走到这说明本次按下不是取景框操作 → 离开取景框语境,Ctrl+Z 回到形状
   if(e.shiftKey){
     store.dragAct='shiftsel'; store.dragStart=p; store.dragNow=p;
     store._shiftBase=[...(store.selMulti||[])];
     return;
-  }
-  // 车面取景框(UV 读画区):边框带=移动、右下角=缩放 —— 在编辑器里直接调,回写 3D
-  if($('showSkin')?.checked){
-    const hit=skinHit(p.x,p.y);
-    if(hit){ store.dragAct='skinwin';
-      store.dragNow={p:hit.p, mode:hit.mode, offX:p.x-hit.p.cx*W, offY:p.y-hit.p.cy*H};
-      return; }
   }
   if(P.tool==='sel'){
     // 中线拖动 / CAD 边拾取(优先级低于已选形状的锚点与缩放手柄,见下)
@@ -405,8 +417,7 @@ function onPointerMove(e){
     // 悬停反馈:车面取景框(移动/缩放)、可拾取的边、可拖的中线
     if(store.mode!=='edit'){ cv.style.cursor=''; return; }
     let c='';
-    if($('showSkin')?.checked){ const h=skinHit(p.x,p.y);
-      if(h) c=h.mode==='br'?'nwse-resize':'move'; }
+    if($('showSkin')?.checked) c=skinCursorAt(p.x,p.y);
     if(!c&&P.tool==='sel'){ const ep=pickEdgeAt(p,s);
       if(ep) c=ep.g?(ep.g.a==='v'?'ew-resize':'ns-resize'):'pointer'; }
     cv.style.cursor=c;
@@ -425,13 +436,30 @@ function onPointerMove(e){
   }
   else if(store.dragAct==='marquee'||store.dragAct==='shiftsel'){ store.dragNow=p; }
   else if(store.dragAct==='skinwin'){
-    const d=store.dragNow, w=d.p;
+    const d=store.dragNow, w=d.p, MIN=0.03;
     if(d.mode==='move'){
       w.cx=Math.min(Math.max(0,(p.x-d.offX)/W),1-w.cw);
       w.cy=Math.min(Math.max(0,(p.y-d.offY)/H),1-w.ch);
     } else {
-      w.cw=Math.min(Math.max(0.05,p.x/W-w.cx),1-w.cx);
-      w.ch=Math.min(Math.max(0.05,p.y/H-w.cy),1-w.ch);
+      // 四边固定,按手柄方向推动对应边;角手柄推两边。归一化坐标。
+      const nx=p.x/W, ny=p.y/H, m=d.mode;
+      let x0=d.sx, y0=d.sy, x1=d.sx+d.sw, y1=d.sy+d.sh;
+      const corner=(m.length===2);
+      if(e.shiftKey && corner){
+        // 等比:锚定对角,按对角线较大需求缩放,锁定原始宽高比
+        const ax=m.includes('w')?x1:x0, ay=m.includes('n')?y1:y0;
+        let cw=Math.abs(nx-ax), ch=Math.abs(ny-ay);
+        if(cw/Math.max(1e-6,ch) > d.aspect) ch=cw/d.aspect; else cw=ch*d.aspect;
+        x0=m.includes('e')?ax:ax-cw; x1=m.includes('e')?ax+cw:ax;
+        y0=m.includes('s')?ay:ay-ch; y1=m.includes('s')?ay+ch:ay;
+      } else {
+        if(m.includes('w')) x0=Math.min(nx, x1-MIN);
+        if(m.includes('e')) x1=Math.max(nx, x0+MIN);
+        if(m.includes('n')) y0=Math.min(ny, y1-MIN);
+        if(m.includes('s')) y1=Math.max(ny, y0+MIN);
+      }
+      w.cx=Math.max(0,Math.min(x0,1-MIN)); w.cy=Math.max(0,Math.min(y0,1-MIN));
+      w.cw=Math.max(MIN,Math.min(x1,1)-w.cx); w.ch=Math.max(MIN,Math.min(y1,1)-w.cy);
     }
   }
   else if(store.dragAct==='guidedrag'){
@@ -477,7 +505,7 @@ function onPointerMove(e){
 function onPointerUp(e){
   if(!store.dragAct) return;
   const s=cur();
-  if(store.dragAct==='skinwin'){ saveSkinWindow(store.dragNow.p);
+  if(store.dragAct==='skinwin'){ persistSkin();
     setHint('✓ 取景框已保存 — 回 3D 时该部件按新窗口读画(UV 层自动重映射)');
     store.dragAct=null; store.dragStart=null; store.dragNow=null; return; }
   if(store.dragAct==='guidedrag'){ shapesChanged(s); updateSelBox();
@@ -542,6 +570,12 @@ let shapeClipboard=null; // Ctrl+C 的形状快照(JSON 深拷贝,可跨状态/�
 function onKeyDown(e){
   if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
   const k=e.key.toLowerCase();
+  // 取景框语境:选中框时 Delete 删它;焦点在取景框(含刚删除后)时 Ctrl+Z 撤销取景框操作
+  const skinOn=$('showSkin')?.checked;
+  if(skinOn && getSelSkin() && (e.key==='Delete'||e.key==='Backspace')){
+    if(deleteSelSkin()) setHint('🗑 取景框已从 2D 叠加移除(要恢复回 3D 再 🗺同步) · Ctrl+Z 撤销'); e.preventDefault(); return; }
+  if(skinOn && skinFocus() && skinHasUndo() && (e.ctrlKey||e.metaKey)&&k==='z'){
+    if(skinUndo()) setHint('↩ 取景框已撤销'); e.preventDefault(); return; }
   if((e.ctrlKey||e.metaKey)&&k==='z'){ e.shiftKey?redo():undo(); e.preventDefault(); return; }
   if((e.ctrlKey||e.metaKey)&&k==='y'){ redo(); e.preventDefault(); return; }
   if((e.ctrlKey||e.metaKey)&&k==='c' && store.mode==='edit'){
@@ -572,7 +606,7 @@ function onKeyDown(e){
   else if(k==='e')setTool('ell'); else if(k==='t')setTool('text');
   else if(k==='d')setTool('dot'); else if(k==='p')setTool('pen');
   else if(e.key==='Delete'||e.key==='Backspace'){ deleteSel(); e.preventDefault(); }
-  else if(e.key==='Escape'){ store.sel=null; store.selMulti=[]; edgePick=null; closeDimInput(); updateSelBox(); }
+  else if(e.key==='Escape'){ store.sel=null; store.selMulti=[]; edgePick=null; clearSkinSel(); closeDimInput(); updateSelBox(); }
   else if(e.key.startsWith('Arrow') && store.sel && !store.sel.locked && store.mode==='edit'){
     const step=e.shiftKey?10:1;
     const dx=e.key==='ArrowLeft'?-step:e.key==='ArrowRight'?step:0;
