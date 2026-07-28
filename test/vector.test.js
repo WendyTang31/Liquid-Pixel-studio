@@ -38,11 +38,8 @@ test('computeVectorPolys:停留=静态;过渡同 layerId 两端插值;端点精�
     shapes:[{type:'ellipse', layerId:7, x:300,y:120,w:80,h:80}]};
   const states=[A,B];
   const SEQ=buildSequence(states, false, {match:'sortXY',ease:'linear',stag:0,amp:0,freq:.4});
-  // 停留 A(g=0.5):静态矩形轮廓
-  const hold=computeVectorPolys(states, SEQ, 0.5);
-  assert.equal(hold.length,1);
-  const holdCx=hold[0].poly.reduce((s,p)=>s+p.x,0)/hold[0].poly.length;
-  assert.ok(Math.abs(holdCx-140)<3, `停留应为 A 矩形(中心~140),实际 ${holdCx.toFixed(1)}`);
+  // 停留态由实心 SDF 显示 → computeVectorPolys 停留返回空(不重复画)
+  assert.equal(computeVectorPolys(states, SEQ, 0.5).length, 0);
   // 过渡起点(g=1⁺,lt≈0):应≈A;过渡终点(g=3⁻,lt≈1):应≈B
   const near0=computeVectorPolys(states, SEQ, 1.0001);
   const cx0=near0[0].poly.reduce((s,p)=>s+p.x,0)/near0[0].poly.length;

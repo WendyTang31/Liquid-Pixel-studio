@@ -3,30 +3,30 @@
 // 彩色模式:任一球带 c 时逐像素做"场权重混色" color=Σw·c/Σw —— 不同色的球在融合处
 // 自然渐变(彩色 metaball 标准做法),透明度仍由总场值决定。
 // 预览版(固定 W×H、复用缓冲)与导出版(任意尺寸 + 适配映射)共用同一 fieldLoop 内核。
-import { W, H } from './config.js';
+import { W, H, SDFSC, SDFW, SDFH } from './config.js';
 import { hex2rgb } from './utils.js';
 import { camPtInv } from './engine.js';
 
 const TS=24; // tile 边长
 
-// ── 实心场采样(solid 显示):SDF(chamfer,3≈1px)→ 场值。EDGE 控制边缘陡度:
-// 越小越锐利;1.2px 时软边约 2px,矢量边缘在任何导出分辨率下都笔直(双线性采样)。──
-const SEDGE=3*1.2; // chamfer 单位
+// ── 实心场采样(solid 显示):SDF(2× 分辨率,chamfer 3≈1 SDF 像素)→ 场值。──
+// 边缘软度按逻辑约 1.2px:2× SDF 下 = 1.2·SDFSC·3 chamfer;SDF 越高分辨率边缘越细腻。
+const SEDGE=3*1.2*SDFSC; // chamfer 单位(随 SDF 分辨率缩放)
 function bilin(D,x,y){
-  const x0=Math.max(0,Math.min(W-2,x|0)), y0=Math.max(0,Math.min(H-2,y|0));
+  const x0=Math.max(0,Math.min(SDFW-2,x|0)), y0=Math.max(0,Math.min(SDFH-2,y|0));
   const fx=Math.min(1,Math.max(0,x-x0)), fy=Math.min(1,Math.max(0,y-y0));
-  const i=y0*W+x0;
-  return (D[i]*(1-fx)+D[i+1]*fx)*(1-fy) + (D[i+W]*(1-fx)+D[i+W+1]*fx)*fy;
+  const i=y0*SDFW+x0;
+  return (D[i]*(1-fx)+D[i+1]*fx)*(1-fy) + (D[i+SDFW]*(1-fx)+D[i+SDFW+1]*fx)*fy;
 }
 // 目标像素 → 源画布像素(经逆镜头)→ 各实心场加权求和(单位:thr 的倍数)。
-// invX/invY 把目标像素映射回归一化画布坐标(处理 stretch/fit 与任意分辨率)。
+// invX/invY 把目标像素映射回归一化画布坐标(处理 stretch/fit 与任意分辨率)。SDF 为 2× 分辨率。
 function makeSolidSampler(solids, cam, invX, invY, thr){
   if(!solids||!solids.length) return null;
   return (x,y)=>{
     let u=invX(x,y), v=invY(x,y);
     if(cam){ const p=camPtInv(u,v,cam); u=p[0]; v=p[1]; }
-    const sx=u*W, sy=v*H;
-    if(sx<-1||sy<-1||sx>W||sy>H) return 0;
+    const sx=u*SDFW, sy=v*SDFH;
+    if(sx<-1||sy<-1||sx>SDFW||sy>SDFH) return 0;
     let f=0;
     for(const s of solids) f+=s.w*Math.min(8, bilin(s.sdf,sx,sy)/SEDGE);
     return f*thr;

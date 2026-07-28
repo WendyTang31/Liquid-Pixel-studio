@@ -19,7 +19,7 @@ import { drawSkinRef, skinWindowAt, skinHandleAt, skinCursorAt, getSelSkin, sele
   clearSkinSel, skinPushUndo, skinUndo, deleteSelSkin, persistSkin, skinFocus, setSkinFocus,
   skinHasUndo } from './skinRef.js';
 import { tlTick } from './timeline.js';
-import { computeVectorPolys, staticVectorPolys, rasterizeVectorSolids } from '../vector.js';
+import { computeVectorPolys, rasterizeVectorSolids } from '../vector.js';
 
 let cv, ctx, previewRender, glRender=null, glCv=null;
 // #cv 缓冲用 2× 逻辑分辨率(960×560)提升基础清晰度;叠加层用 VS 缩放变换按逻辑坐标绘制。
@@ -185,9 +185,8 @@ function tick(now){
     const s=cur();
     // 实心状态在编辑模式也按 SDF 显示(此前只在播放/导出/3D 生效 → 勾了实心编辑时仍看到笔画黑团)。
     // 实心蒙版内的点抑制(r=0),边缘由矢量 SDF 主导;编辑态不套镜头,SDF 与点同在画布坐标系。
-    let solid = s.solid && s._sdf ? [{sdf:s._sdf, w:1}] : [];
-    solid=solid.concat(rasterizeVectorSolids(staticVectorPolys(s))); // 矢量图层静态轮廓
-    if(!solid.length) solid=null;
+    // 矢量图层的停留态已并入 s._sdf(实心显示);编辑态直接用它即可
+    let solid = s.solid && s._sdf ? [{sdf:s._sdf, w:1}] : null;
     const editBalls=s.dots.map((b,i)=>({x:b.x+P.amp*drift(i*2.3,store.clock,P),y:b.y+P.amp*drift(i*2.3+3,store.clock,P),
       r:(solid&&b.sf)?0:b.r, c:b.c}));
     if(gpuOn() && !solid){ glCv.style.display='block'; glRender(editBalls, hex2rgb(s.color), P); ctx.clearRect(0,0,W,H); }
@@ -518,6 +517,7 @@ function onPointerMove(e){
   const p=ptr(e), s=cur();
   if(P.tool==='pen'&&store.penPts) store.penCursor=p; // 钢笔橡皮筋:随时记录光标
   if(!store.dragAct){
+    if(store.spaceHeld){ cv.style.cursor='grab'; return; } // 空格=平移手,别被下面的悬停光标覆盖
     // 悬停反馈:车面取景框(移动/缩放)、可拾取的边、可拖的中线
     if(store.mode!=='edit'){ cv.style.cursor=''; return; }
     let c='';

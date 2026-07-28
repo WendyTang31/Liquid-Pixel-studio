@@ -1,6 +1,6 @@
 // 管线层:形状 → 光栅化蒙版 → 采样成点。这里是数据层(shapes)与画布对象(mask/ghost/thumb)
 // 唯一合法的交汇处;纯引擎/采样只吃它产出的 dots。
-import { W, H } from './config.js';
+import { W, H, SDFSC, SDFW, SDFH } from './config.js';
 import { P } from './config.js';
 import { store } from './store.js';
 import { $, FONT, hex2rgb } from './utils.js';
@@ -110,19 +110,25 @@ export function paintShapes(c, shapes, colorCtx=null){
 // 实心状态同步重算蒙版距离场(_sdf,运行时字段不入档)—— 实心渲染的边缘数据源。
 export function rasterize(s){
   paintShapes(s.mctx, s.shapes);
-  // 🧱 实心是逐形状选项(sh.solidFill):SDF 只由实心形状(带全部 sub)构成,
-  // 与其它形状/采样算法互不干扰;state.solid 为派生标记(供引擎权重窗口用)。
-  // 矢量图层(layerId)由 vector.js 独立处理,不进这里的点阵/静态 SDF。
-  const solids=s.shapes.filter(sh=>sh.solidFill&&sh.bool!=='sub'&&!sh.hidden&&!sh.layerId);
+  // 🧱 实心是逐形状选项(sh.solidFill):SDF 由实心形状(含矢量图层,带全部 sub)构成。
+  // 矢量图层也进 SDF —— 停留/未配对过渡时按实心显示(轮廓变形仅在相邻同 layerId 时接管)。
+  const solids=s.shapes.filter(sh=>(sh.solidFill||sh.layerId)&&sh.bool!=='sub'&&!sh.hidden);
   s.solid=solids.length>0;
   s._sdf = s.solid ? shapesSdf([...solids, ...s.shapes.filter(sh=>sh.bool==='sub')]) : null;
   tintGhost(s); updateThumb(s);
 }
 
-// 任意形状列表 → 距离场(3D 预览器载入工程时用,编辑器直接走 rasterize)。
+// 任意形状列表 → 2× 距离场(实心/矢量边缘更细,消像素台阶)。3D 预览器载入工程时用。
+// 2× 蒙版:缩放上下文后按逻辑坐标绘制 → 形状在 2× 画布上精细光栅化。
+const _sdfC=document.createElement('canvas'); _sdfC.width=SDFW; _sdfC.height=SDFH;
+const _sdfCtx=_sdfC.getContext('2d',{willReadFrequently:true});
 export function shapesSdf(shapes){
-  paintShapes(_smActx, shapes);
-  return distanceField(maskReaderFor(_smActx));
+  _sdfCtx.setTransform(SDFSC,0,0,SDFSC,0,0);
+  paintShapes(_sdfCtx, shapes);          // 逻辑坐标(fillRect(0,0,W,H) 等)经变换铺满 2× 画布
+  _sdfCtx.setTransform(1,0,0,1,0,0);
+  const d=_sdfCtx.getImageData(0,0,SDFW,SDFH).data;
+  const on=(x,y)=> x>=0&&y>=0&&x<SDFW&&y<SDFH && d[(y*SDFW+x)*4]>127;
+  return distanceField(on, SDFW, SDFH);
 }
 
 // 幽灵:半透明染色版蒙版,编辑时叠加做洋葱皮/参考。
@@ -161,11 +167,14 @@ const _scActx=_scA.getContext('2d',{willReadFrequently:true});
 // 覆盖形状各自单独光栅化(带全部 sub 形状)后用自己的采样器/点数取点;其余走全局设置。
 // 编辑器 resample 与 3D 预览器共用,保证两端 dots 一致。
 export function stateDots(shapes, manual, Pp){
-  shapes=shapes.filter(sh=>!sh.hidden && !sh.layerId); // 隐藏 + 矢量图层不出点(矢量图层走 vector.js)
+  shapes=shapes.filter(sh=>!sh.hidden);
   const hasOv=sh=>sh.sampler||sh.count||(sh.rscale&&Math.abs(sh.rscale-1)>0.01);
   const subs=shapes.filter(sh=>sh.bool==='sub');
-  const overridden=shapes.filter(sh=>sh.bool!=='sub' && hasOv(sh));
-  const defaults=shapes.filter(sh=>sh.bool!=='sub' && !hasOv(sh));
+  // 矢量图层(layerId)也出点(打 lid 标),用于"矢量图层↔普通帧"的溶解过渡 ——
+  // 相邻关键帧都有同 layerId 时走轮廓变形(引擎按 lid 抑制这些点);否则这些点照常溶解。
+  const vecs=shapes.filter(sh=>sh.bool!=='sub' && sh.layerId);
+  const overridden=shapes.filter(sh=>sh.bool!=='sub' && !sh.layerId && hasOv(sh));
+  const defaults=shapes.filter(sh=>sh.bool!=='sub' && !sh.layerId && !hasOv(sh));
   let dots=[];
   // 默认组
   paintShapes(_smActx, [...defaults, ...subs], _scActx);
@@ -184,6 +193,19 @@ export function stateDots(shapes, manual, Pp){
            r:base*rs*Math.sqrt(Math.max(0.06,lum(Math.round(p[0]),Math.round(p[1]))))};
       const c=colR(Math.round(p[0]),Math.round(p[1])); if(c) d.c=c;
       dots.push(d);
+    }
+  }
+  // 矢量图层组:逐图层独立采样并打 lid 标(用于跨系统溶解;相邻同层时引擎按 lid 抑制)
+  for(const sh of vecs){
+    paintShapes(_smActx, [sh, ...subs], _scActx);
+    const on=maskReaderFor(_smActx), lum=lumReaderFor(_smActx), colR=colorReaderFor(_scActx);
+    const pts=samplePtsFit(sh.sampler||Pp.sample, on, Pp.spacing, Pp.jitter, sh.count||null, lum);
+    const base=Pp.dotR/W, rs=sh.rscale||1;
+    for(const p of pts){
+      const d = p[2]!==undefined ? {x:p[0]/W, y:p[1]/H, r:p[2]*rs/W}
+        : {x:p[0]/W, y:p[1]/H, r:base*rs*Math.sqrt(Math.max(0.06,lum(Math.round(p[0]),Math.round(p[1]))))};
+      const c=colR(Math.round(p[0]),Math.round(p[1])); if(c) d.c=c;
+      d.lid=sh.layerId; dots.push(d);
     }
   }
   if(dots.length>1500){ const k=Math.ceil(dots.length/1500); dots=dots.filter((_,i)=>i%k===0); }

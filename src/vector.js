@@ -4,7 +4,7 @@
 // 数据层(shapes,含 layerId)→ 本模块取轮廓 → 光栅化成 SDF solid,复用既有实心渲染管线。
 // 注意:模块顶层保持无 DOM(canvas 懒建、不 import pipeline)——
 // 这样纯几何(outline/computeVectorPolys)可在 node 里单测。
-import { W, H } from './config.js';
+import { W, H, SDFSC, SDFW, SDFH } from './config.js';
 import { hex2rgb } from './utils.js';
 import { distanceField } from './samplers.js';
 
@@ -79,11 +79,12 @@ export function staticVectorPolys(state){
   return out;
 }
 
-// 当前全局时间 g 的矢量轮廓:停留=静态;过渡=同 layerId 两端轮廓逐点插值(smootherstep),
-// 端点 e=0/1 精确等于相邻停留态 → 与序列衔接零跳变。返回 [{poly,col}]。
+// 当前全局时间 g 的矢量轮廓:只在【过渡且两端同 layerId】时接管为轮廓变形(逐点 smootherstep)。
+// 停留、以及只在一端出现的图层,都交回实心 SDF/点阵系统(前者显实心、后者溶解为点),
+// 这样"矢量图层↔普通帧"有溶解过渡而非空白。端点 e=0/1 精确等于两端形状 → 零跳变。
 export function computeVectorPolys(states, SEQ, g){
   const {seg, lt}=segAt(SEQ, g);
-  if(seg.type==='hold') return staticVectorPolys(states[seg.si]);
+  if(seg.type==='hold') return []; // 停留由状态实心 SDF 显示,不重复画
   const A=states[seg.a], B=states[seg.b], e=smooth(lt);
   const ca=hex2rgb(A.color), cb=hex2rgb(B.color), out=[];
   const bmap=new Map(vectorShapes(B).map(sh=>[sh.layerId, sh]));
@@ -100,14 +101,16 @@ export function computeVectorPolys(states, SEQ, g){
 let _vc=null, _vctx=null;
 export function rasterizeVectorSolids(polys){
   if(!polys.length) return [];
-  if(!_vc){ _vc=document.createElement('canvas'); _vc.width=W; _vc.height=H;
+  if(!_vc){ _vc=document.createElement('canvas'); _vc.width=SDFW; _vc.height=SDFH;
     _vctx=_vc.getContext('2d',{willReadFrequently:true}); }
+  _vctx.setTransform(SDFSC,0,0,SDFSC,0,0); // 逻辑坐标 → 2× 画布,轮廓更细
   _vctx.fillStyle='#000'; _vctx.fillRect(0,0,W,H); _vctx.fillStyle='#fff';
   for(const {poly} of polys){ if(!poly?.length) continue;
     _vctx.beginPath(); _vctx.moveTo(poly[0].x,poly[0].y);
     for(let i=1;i<poly.length;i++) _vctx.lineTo(poly[i].x,poly[i].y);
     _vctx.closePath(); _vctx.fill(); }
-  const d=_vctx.getImageData(0,0,W,H).data;
-  const on=(x,y)=> x>=0&&y>=0&&x<W&&y<H && d[(y*W+x)*4]>127;
-  return [{sdf: distanceField(on), w:1}];
+  _vctx.setTransform(1,0,0,1,0,0);
+  const d=_vctx.getImageData(0,0,SDFW,SDFH).data;
+  const on=(x,y)=> x>=0&&y>=0&&x<SDFW&&y<SDFH && d[(y*SDFW+x)*4]>127;
+  return [{sdf: distanceField(on, SDFW, SDFH), w:1}];
 }

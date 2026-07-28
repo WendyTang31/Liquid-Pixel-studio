@@ -166,18 +166,21 @@ const centroidPt=dots=>{ let x=0,y=0,n=dots.length||1; for(const b of dots){x+=b
 // P.stretch>0 时,运动中的球沿速度反方向甩出两颗递减拖尾球 —— metaball 场把三球融成
 // 胶囊状,即 squash & stretch 的"拉伸"近似;速度由缓动的数值微分给出,错峰使各球
 // 拉伸时刻互不相同。头部球始终在结果数组前 N 位,与 pairs 下标对齐(轨迹叠加层依赖此约定)。
-export function transBalls(pairs,t,time,P,fxc){
+export function transBalls(pairs,t,time,P,fxc,morphLayers){
   const ease=EASE[P.ease], span=Math.max(1e-6,1-P.stag), stretch=P.stretch||0, flow=P.flow||0;
   const fxOn=fxc&&(hasFx(fxc.fxA)||hasFx(fxc.fxB)); // 动态几何:两端各自求值后按 e 插值(端点连续)
+  const ml=(morphLayers&&morphLayers.size)?morphLayers:null; // 两端同层的点抑制(轮廓变形接管)
   const out=new Array(pairs.length); const trails=[];
   for(let i=0;i<pairs.length;i++){
     const p=pairs[i];
     const lt=Math.max(0,Math.min(1,(t-p.d*P.stag)/span)), e=ease(lt);
     const dxA=drift(p.phaseA,time,P), dxB=drift(p.phaseB,time,P);
     const dyA=drift(p.phaseA+3.1,time,P), dyB=drift(p.phaseB+3.1,time,P);
+    const lid=p.a.lid??p.b.lid;
+    const rr = (ml&&lid!=null&&ml.has(lid)) ? 0 : p.a.r+(p.b.r-p.a.r)*e; // 两端同层→点抑制,轮廓变形接管
     const ball={x:p.a.x+(p.b.x-p.a.x)*e+P.amp*(dxA+(dxB-dxA)*e),
                 y:p.a.y+(p.b.y-p.a.y)*e+P.amp*(dyA+(dyB-dyA)*e),
-                r:p.a.r+(p.b.r-p.a.r)*e};
+                r:rr};
     if(p.a.sf) ball.sfA=1; if(p.b.sf) ball.sfB=1; // 实心标记随配对传递(供停留/过渡抑制)
     if(p.a.c||p.b.c){ // 逐点颜色插值(缺一端时用另一端,颜色恒定)
       const ca=p.a.c||p.b.c, cb=p.b.c||p.a.c;
@@ -214,6 +217,8 @@ export function transBalls(pairs,t,time,P,fxc){
 
 // 段级有效参数:状态可携带 trans 覆盖对象(ease/stag/flow/stretch/match),缺省继承全局。
 export const segParams=(P,ov)=> (ov && Object.keys(ov).length) ? {...P, ...ov} : P;
+// 一组点里出现的矢量图层号集合(用于判"两端同层→轮廓变形")。
+export const lidSet=dots=>{ const s=new Set(); for(const d of dots) if(d.lid!=null) s.add(d.lid); return s; };
 
 // ── 状态内子循环(姿态分组)──
 // isPose=true 的状态不是主序列成员,而是"归属其前面最近主状态"的循环姿态(眨眼/走路帧)。
@@ -255,7 +260,11 @@ export function buildSequence(states, seamless, P, _noLoop){
     const isLast=(m===M-1);
     const n=isLast ? (seamless && M>1 ? masters[0].idx : null) : masters[m+1].idx;
     if(n!==null){ const ov=st.trans||null;
-      segs.push({type:'trans', a:idx, b:n, dur:st.dur, ov,
+      // 两端都有的 layerId = 该过渡走轮廓变形(vector.js),这些点由引擎按 lid 抑制;
+      // 只在一端的 layerId 不算 morph,其点照常溶解(矢量图层↔普通帧的溶解过渡)。
+      const la=lidSet(st.dots), lb=lidSet(states[n].dots);
+      const morphLayers=new Set([...la].filter(x=>lb.has(x)));
+      segs.push({type:'trans', a:idx, b:n, dur:st.dur, ov, morphLayers,
         pairs:makePairs(st.dots, states[n].dots, segParams(P,ov))}); }
   }
   if(!segs.length) segs.push({type:'hold', si:masters[0]?.idx??0, dur:1});
@@ -376,7 +385,7 @@ export function sampleFrame(SEQ, states, g, time, P){
     const fxc=(hasFx(fxA)||hasFx(fxB))
       ? {fxA,fxB,cA:centroidPt(states[seg.a].dots),cB:centroidPt(states[seg.b].dots)} : null;
     return {seg, balls:applyCam(suppressSolidDots(
-        transBalls(seg.pairs,lt,time,segParams(P,seg.ov),fxc), seg, states, lt), cam),
+        transBalls(seg.pairs,lt,time,segParams(P,seg.ov),fxc,seg.morphLayers), seg, states, lt), cam),
       cam:camIdentity(cam)?null:cam, solids:solidsOf(seg,states,lt),
       col:[ca[0]+(cb[0]-ca[0])*e, ca[1]+(cb[1]-ca[1])*e, ca[2]+(cb[2]-ca[2])*e]};
   }

@@ -4,23 +4,24 @@
 import { W, H } from './config.js';
 
 // 两遍 chamfer 3/4 距离场:每个内部像素到最近边界的距离(×3 存储)。smart/strokes 共用。
-export function distanceField(on){
-  const INF=1e9, D=new Float32Array(W*H);
-  for(let y=0;y<H;y++)for(let x=0;x<W;x++) D[y*W+x]=on(x,y)?INF:0;
-  for(let y=0;y<H;y++)for(let x=0;x<W;x++){        // 前向遍历
-    const i=y*W+x; if(D[i]===0) continue; let d=D[i];
+// 默认 W×H(点采样用);实心渲染传更高分辨率(w,h)以获得更细的边缘。
+export function distanceField(on, w=W, h=H){
+  const INF=1e9, D=new Float32Array(w*h);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++) D[y*w+x]=on(x,y)?INF:0;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){        // 前向遍历
+    const i=y*w+x; if(D[i]===0) continue; let d=D[i];
     if(x>0)d=Math.min(d,D[i-1]+3);
-    if(y>0){ d=Math.min(d,D[i-W]+3);
-      if(x>0)d=Math.min(d,D[i-W-1]+4);
-      if(x<W-1)d=Math.min(d,D[i-W+1]+4); }
+    if(y>0){ d=Math.min(d,D[i-w]+3);
+      if(x>0)d=Math.min(d,D[i-w-1]+4);
+      if(x<w-1)d=Math.min(d,D[i-w+1]+4); }
     D[i]=d;
   }
-  for(let y=H-1;y>=0;y--)for(let x=W-1;x>=0;x--){  // 后向遍历
-    const i=y*W+x; if(D[i]===0) continue; let d=D[i];
-    if(x<W-1)d=Math.min(d,D[i+1]+3);
-    if(y<H-1){ d=Math.min(d,D[i+W]+3);
-      if(x<W-1)d=Math.min(d,D[i+W+1]+4);
-      if(x>0)d=Math.min(d,D[i+W-1]+4); }
+  for(let y=h-1;y>=0;y--)for(let x=w-1;x>=0;x--){  // 后向遍历
+    const i=y*w+x; if(D[i]===0) continue; let d=D[i];
+    if(x<w-1)d=Math.min(d,D[i+1]+3);
+    if(y<h-1){ d=Math.min(d,D[i+w]+3);
+      if(x<w-1)d=Math.min(d,D[i+w+1]+4);
+      if(x>0)d=Math.min(d,D[i+w-1]+4); }
     D[i]=d;
   }
   return D;
