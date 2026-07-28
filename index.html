@@ -240,6 +240,18 @@
       <button id="mrH" title="镜像复制:按画布竖直中线复制出左右对称件" style="flex:1">⧉ 左右镜像</button>
       <button id="mrV" title="镜像复制:按画布水平中线复制出上下对称件" style="flex:1">⧉ 上下镜像</button>
     </div>
+    <div class="row">
+      <button id="gAddV" title="添加竖直中线(默认画布中央;对中/对称的参考)">┃中线</button>
+      <button id="gAddH" title="添加水平中线">━中线</button>
+      <span id="gList" style="display:flex;gap:4px;flex-wrap:wrap"></span>
+    </div>
+    <div class="row" style="gap:4px" title="持久约束(Fusion 式:定义一次永远成立;拖动参照,被约束件实时跟随;撤销/工程文件均生效)">
+      <button id="relGap" title="选中 2 个:主选中(最后点的)与另一个绑定当前间距,持续跟随">🔗定距</button>
+      <button id="relEq" title="选中 2 个:主选中的宽高持续等于另一个">🔗等尺寸</button>
+      <button id="relMir" title="选中 1 个:生成对称件并绑定到最近中线(随原件实时镜像)">🪞对称</button>
+      <button id="relCtr" title="选中 ≥1:持续对中到最近中线">⌖对中</button>
+      <button id="pOrtho" title="选中自由轮廓:各段就近吸到水平/垂直(去手抖锯齿斜边)">⟂正交</button>
+    </div>
     <div class="row" title="从选中形状出发按位移重复成 N 个 —— 三条等距横线 = 画一条 → N=3 ΔY=24 → 生成">
       <label style="min-width:auto">阵列</label>
       <input type="text" id="arrN" value="3" style="width:28px" title="总数量">

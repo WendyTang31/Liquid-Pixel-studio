@@ -183,6 +183,15 @@ function tick(now){
       for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
       ctx.stroke();
     }
+    // 中线(青色长虚线 + 位置标注)
+    if(!store.hideOverlays) for(const g of cur().guides||[]){
+      ctx.strokeStyle='rgba(120,230,255,0.55)'; ctx.setLineDash([9,6]); ctx.lineWidth=1;
+      ctx.beginPath();
+      if(g.a==='v'){ ctx.moveTo(g.p,0); ctx.lineTo(g.p,H); } else { ctx.moveTo(0,g.p); ctx.lineTo(W,g.p); }
+      ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle='rgba(120,230,255,0.8)'; ctx.font='9px system-ui';
+      if(g.a==='v') ctx.fillText(Math.round(g.p), g.p+3, 10); else ctx.fillText(Math.round(g.p), 3, g.p-3);
+    }
     overlaySelection(); overlaySnapGuides(); overlayFrameGuide(); overlayCamFrame();
   }
   tlTick(); // AE 式时间轴:签名变化时重建段条,播放头逐帧跟随

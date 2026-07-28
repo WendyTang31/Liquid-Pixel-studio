@@ -97,7 +97,84 @@ function array(){
   done(ts.length+made.length);
 }
 
+// ── 中线(guide)与持久约束 ──
+export function renderGuides(){
+  const el=$('gList'); if(!el) return;
+  el.innerHTML='';
+  (cur().guides||[]).forEach((g,i)=>{
+    const b=document.createElement('button');
+    b.textContent=(g.a==='v'?'┃':'━')+Math.round(g.p);
+    b.title='点击删除该中线'; b.style.padding='2px 5px';
+    b.onclick=()=>{ pushUndo(); cur().guides.splice(i,1); renderGuides(); };
+    el.appendChild(b);
+  });
+}
+const nearestGuide=(sh,axis)=>{ // axis 缺省:找最近的任意向中线
+  const gs=(cur().guides||[]).filter(g=>!axis||g.a===axis);
+  if(!gs.length) return null;
+  return gs.reduce((b,g)=>{
+    const d=g.a==='v'?Math.abs(g.p-(sh.x+sh.w/2)):Math.abs(g.p-(sh.y+sh.h/2));
+    return d<b.d?{g,d}:b; },{g:null,d:1e9}).g;
+};
+function addGuide(a){ pushUndo();
+  const gs=cur().guides||(cur().guides=[]);
+  gs.push({a, p:a==='v'?W/2:H/2});
+  renderGuides(); setHint('已加中线(在画布上显示为青色虚线;删除点上方胶囊)');
+}
+function relGap(){ // 主选中 ← 定距跟随另一个
+  const ts=targets(); if(ts.length!==2||!store.sel){ setHint('定距需要恰好选中 2 个'); return; }
+  const dep=store.sel, ref=ts.find(x=>x!==dep);
+  pushUndo();
+  dep.rel={type:'offset', ref:ref.id,
+    dx:(dep.x+dep.w/2)-(ref.x+ref.w/2), dy:(dep.y+dep.h/2)-(ref.y+ref.h/2)};
+  done(2); setHint('🔗 已绑定间距:拖动参照,它会跟着走;选中它可在下方改 Δ/解除');
+}
+function relEq(){
+  const ts=targets(); if(ts.length!==2||!store.sel){ setHint('等尺寸需要恰好选中 2 个'); return; }
+  const dep=store.sel, ref=ts.find(x=>x!==dep);
+  if(dep.type==='path'){ setHint('自由轮廓暂不支持等尺寸约束'); return; }
+  pushUndo(); dep.rel={type:'size', ref:ref.id}; done(2);
+}
+function relMir(){
+  const ts=targets(); if(ts.length!==1){ setHint('对称绑定:先选中 1 个原件'); return; }
+  const ref=ts[0], g=nearestGuide(ref);
+  if(!g){ setHint('先加一条中线(┃/━)'); return; }
+  pushUndo();
+  const s0=cur(), c=JSON.parse(JSON.stringify({...ref, id:undefined})); c.id=store.shapeId++;
+  delete c._img;
+  if(ref.type==='image'&&ref._img) Object.defineProperty(c,'_img',{value:ref._img,enumerable:false,configurable:true});
+  c.rel={type:g.a==='v'?'mirrorV':'mirrorH', ref:ref.id, p:g.p};
+  s0.shapes.push(c); store.sel=c; store.selMulti=[ref,c];
+  done(2); setHint('🪞 已生成对称件并绑定:改原件,镜像实时跟随');
+}
+function relCtr(){
+  const ts=targets(); if(!ts.length){ setHint('先选中要对中的形状'); return; }
+  pushUndo(); let n=0;
+  for(const sh of ts){ const g=nearestGuide(sh); if(!g) continue;
+    sh.rel={type:g.a==='v'?'centerV':'centerH', p:g.p}; n++; }
+  if(!n){ setHint('先加一条中线(┃/━)'); return; }
+  done(n);
+}
+function orthoPath(){
+  const ts=targets().filter(s=>s.type==='path');
+  if(!ts.length){ setHint('先选中一条自由轮廓(钢笔画的)'); return; }
+  pushUndo();
+  for(const sh of ts){
+    const pts=sh.points;
+    for(let i=1;i<pts.length;i++){ // 各段就近吸向水平/垂直
+      const a=pts[i-1], b=pts[i];
+      if(Math.abs(b.x-a.x)>Math.abs(b.y-a.y)) b.y=a.y; else b.x=a.x;
+    }
+    Object.assign(sh, pathBBox(pts));
+  }
+  done(ts.length); setHint('⟂ 已正交化:斜边吸到 0°/90°');
+}
+
 export function initArrange(){
+  $('gAddV').onclick=()=>addGuide('v'); $('gAddH').onclick=()=>addGuide('h');
+  $('relGap').onclick=relGap; $('relEq').onclick=relEq;
+  $('relMir').onclick=relMir; $('relCtr').onclick=relCtr;
+  $('pOrtho').onclick=orthoPath;
   $('alL').onclick=()=>align('l'); $('alC').onclick=()=>align('c'); $('alR').onclick=()=>align('r');
   $('alT').onclick=()=>align('t'); $('alM').onclick=()=>align('m'); $('alB').onclick=()=>align('b');
   $('dsH').onclick=()=>distribute('x'); $('dsV').onclick=()=>distribute('y');

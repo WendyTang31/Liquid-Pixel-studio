@@ -16,7 +16,7 @@ export function makeState(name,color){
   const mctx=mask.getContext('2d',{willReadFrequently:true});
   mctx.fillStyle='#000'; mctx.fillRect(0,0,W,H);
   const ghost=document.createElement('canvas'); ghost.width=W; ghost.height=H;
-  return {id:store.stateId++, name, color, hold:1.0, dur:3.0, trans:{}, cam:null,
+  return {id:store.stateId++, name, color, hold:1.0, dur:3.0, trans:{}, cam:null, guides:[],
           shapes:[], manual:[], dots:[], mask, mctx, ghost, thumb:null};
 }
 
@@ -24,6 +24,7 @@ export function makeState(name,color){
 export const serializeStates=()=>store.states.map(s=>({id:s.id,name:s.name,color:s.color,hold:s.hold,dur:s.dur,
   trans:JSON.parse(JSON.stringify(s.trans||{})), cam:s.cam?{...s.cam}:undefined,
   isPose:s.isPose||undefined, loop:s.loop?{...s.loop}:undefined,
+  guides:s.guides?.length?JSON.parse(JSON.stringify(s.guides)):undefined,
   shapes:JSON.parse(JSON.stringify(s.shapes)), manual:JSON.parse(JSON.stringify(s.manual))}));
 const snapshot=()=>({states:serializeStates(), active:store.active});
 
@@ -36,7 +37,8 @@ export function hydrate(data){
   store.states=data.states.map(d=>{
     const s=makeState(d.name,d.color);
     Object.assign(s,{id:d.id,hold:d.hold,dur:d.dur,shapes:d.shapes,manual:d.manual,
-      trans:d.trans||{}, cam:d.cam||null, isPose:d.isPose||false, loop:d.loop||null});
+      trans:d.trans||{}, cam:d.cam||null, isPose:d.isPose||false, loop:d.loop||null,
+      guides:d.guides||[]});
     return s;
   });
   store.stateId=Math.max(1,...store.states.map(s=>s.id))+1;

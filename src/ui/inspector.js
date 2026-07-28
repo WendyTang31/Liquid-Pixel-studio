@@ -9,10 +9,12 @@ import { renderStrip, setActive, syncStateUI } from './filmstrip.js';
 import { exportPNG, toggleRecord } from '../export.js';
 import { applyShapeBBox } from '../shapes.js';
 import { renderLayers } from './layers.js';
+import { renderGuides } from './arrange.js';
 
 // ── 选中对象小面板 ──
 export function updateSelBox(){
   renderLayers(); // 图层面板与选中状态同源刷新(选中高亮/行数变化都走这一个口)
+  renderGuides();
   const box=$('selBox'); const sel=store.sel;
   if(!sel){ box.innerHTML='<span class="small">（未选中 — ➤ 工具点击形状）</span>'; return; }
   const multiNote=store.selMulti?.length>1
@@ -53,6 +55,12 @@ export function updateSelBox(){
     </div>
     ${imgCtrls}
     ${sampCtrls}
+    ${sel.rel?`<div class="row" style="border-top:1px dashed var(--line);padding-top:5px">
+      <span class="small" style="color:var(--mint)">🔗 ${({offset:'定距跟随',size:'等尺寸',centerV:'对中┃',centerH:'对中━',mirrorV:'对称┃',mirrorH:'对称━'})[sel.rel.type]||sel.rel.type}</span>
+      ${sel.rel.type==='offset'?`<label style="min-width:auto">ΔX</label><input type="text" id="relDX" value="${Math.round(sel.rel.dx)}" style="width:38px">
+      <label style="min-width:auto">ΔY</label><input type="text" id="relDY" value="${Math.round(sel.rel.dy)}" style="width:38px">`:''}
+      <button id="relOff" title="解除该约束,回到自由形状">解除</button>
+    </div>`:''}
     <div style="display:flex;gap:6px">
       <button id="selBool" style="flex:1">${sel.bool==='add'?'➕ 添加':'➖ 挖除'}</button>
       <button id="selDel" style="flex:1">删除 (Del)</button>
@@ -70,6 +78,14 @@ export function updateSelBox(){
   }
   $('selBool').onclick=()=>{ pushUndo(); sel.bool=sel.bool==='add'?'sub':'add';
     updateSelBox(); shapesChanged(cur()); };
+  if(sel.rel){
+    $('relOff').onclick=()=>{ pushUndo(); delete sel.rel; updateSelBox(); shapesChanged(cur()); };
+    for(const [id,k] of [['relDX','dx'],['relDY','dy']]){
+      const el=$(id); if(!el) continue;
+      el.addEventListener('change',e=>{ const v=parseFloat(e.target.value);
+        if(isFinite(v)){ pushUndo(); sel.rel[k]=v; shapesChanged(cur()); updateSelBox(); } });
+    }
+  }
   $('selDel').onclick=deleteSel;
   if(sel.type==='image'){
     $('selThr').addEventListener('input',e=>{ sel.threshold=+e.target.value;

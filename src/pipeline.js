@@ -7,6 +7,7 @@ import { $, FONT, hex2rgb } from './utils.js';
 import { SAMPLERS, sampleDots, samplePtsFit } from './samplers.js';
 import { fillSmoothClosedPath } from './path.js';
 import { binarize, grayscaleize, quantizeColors } from './image.js';
+import { solveConstraints } from './constraints.js';
 
 // 蒙版读取器:R 通道 >127 = 形状内(放置);G 通道 = 亮度(半调用,普通形状画白 G=255 → B=1)。
 // maskReaderFor/lumReaderFor 接任意 2D 上下文(3D 预览器自建蒙版复用)。
@@ -186,4 +187,4 @@ export function resample(s){
 export const resampleAll=()=>store.states.forEach(resample);
 
 // 形状变动后统一入口。live=true(拖拽中)只重烧蒙版不重采样,松手时再采样。
-export function shapesChanged(s,live){ rasterize(s); if(!live){ resample(s); store.seqDirty=true; } }
+export function shapesChanged(s,live){ solveConstraints(s); rasterize(s); if(!live){ resample(s); store.seqDirty=true; } }

@@ -37,7 +37,7 @@ export function renderLayers(){
     row.draggable=true;
     const boolIc=sh.bool==='sub'?'➖':'';
     row.innerHTML=`<span class="ic">${TYPEICON[sh.type]||'?'}</span>`+
-      `<span class="nm" title="双击改名">${boolIc}${escapeHtml(shapeLabel(sh))}</span>`+
+      `<span class="nm" title="双击改名">${boolIc}${sh.rel?'🔗':''}${escapeHtml(shapeLabel(sh))}</span>`+
       `<span class="tg ${sh.hidden?'':'on'}" data-t="eye" title="显示/隐藏(隐藏 = 不进蒙版不出点)">${sh.hidden?'―':'👁'}</span>`+
       `<span class="tg ${sh.locked?'on':''}" data-t="lock" title="锁定:画布上不可选不可动(面板里仍可点)">${sh.locked?'🔒':'🔓'}</span>`;
     // 点行 = 选中(锁定的也允许 —— 面板是解锁/改名的入口)
