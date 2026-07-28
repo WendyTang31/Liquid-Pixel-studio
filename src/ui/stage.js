@@ -9,12 +9,13 @@ import { sampleFrame, drift, camPt, camIdentity } from '../engine.js';
 import { rebuildSequence } from '../sequence.js';
 import { resampleAll, resample, updateThumb, shapesChanged, measureText } from '../pipeline.js';
 import { pushUndo, undo, redo } from '../state.js';
+import { decodeImageShape } from '../image.js';
 import { updateSelBox, deleteSel } from './inspector.js';
 import { renderStrip } from './filmstrip.js';
 import { setTool } from './toolbar.js';
 import { rdpSimplify, pathBBox, fillSmoothClosedPath } from '../path.js';
 import { applyShapeBBox } from '../shapes.js';
-import { drawSkinRef } from './skinRef.js';
+import { drawSkinRef, skinHit, saveSkinWindow } from './skinRef.js';
 import { tlTick } from './timeline.js';
 
 let cv, ctx, previewRender, glRender=null, glCv=null;
@@ -193,7 +194,7 @@ function tick(now){
       ctx.fillStyle='rgba(120,230,255,0.8)'; ctx.font='9px system-ui';
       if(g.a==='v') ctx.fillText(Math.round(g.p), g.p+3, 10); else ctx.fillText(Math.round(g.p), 3, g.p-3);
     }
-    overlaySelection(); overlaySnapGuides(); overlayFrameGuide(); overlayCamFrame();
+    overlaySelection(); overlaySnapGuides(); overlayFrameGuide(); overlayCamFrame(); overlayDims();
   }
   tlTick(); // AE 式时间轴:签名变化时重建段条,播放头逐帧跟随
   requestAnimationFrame(tick);
@@ -220,6 +221,99 @@ export function setMode(m){ store.mode=m;
 function ptr(e){ const r=cv.getBoundingClientRect();
   return {x:(e.clientX-r.left)/r.width*W, y:(e.clientY-r.top)/r.height*H}; }
 
+// ── CAD 式边拾取与尺寸标注(Fusion 流程:点边 1 → Shift+点边 2/中线 → 输入距离 → Enter)──
+let edgePick=null;   // 第一条被拾取的边 {sh,edge,axis,pos} 或中线 {g,axis,pos}
+const EDGE_HIT=4;
+function pickEdgeAt(p,s){
+  for(let i=s.shapes.length-1;i>=0;i--){ const sh=s.shapes[i];
+    if(sh.hidden||sh.locked) continue;
+    const inY=p.y>sh.y-EDGE_HIT&&p.y<sh.y+sh.h+EDGE_HIT, inX=p.x>sh.x-EDGE_HIT&&p.x<sh.x+sh.w+EDGE_HIT;
+    if(inY&&Math.abs(p.x-sh.x)<EDGE_HIT) return {sh,edge:'l',axis:'x',pos:sh.x};
+    if(inY&&Math.abs(p.x-(sh.x+sh.w))<EDGE_HIT) return {sh,edge:'r',axis:'x',pos:sh.x+sh.w};
+    if(inX&&Math.abs(p.y-sh.y)<EDGE_HIT) return {sh,edge:'t',axis:'y',pos:sh.y};
+    if(inX&&Math.abs(p.y-(sh.y+sh.h))<EDGE_HIT) return {sh,edge:'b',axis:'y',pos:sh.y+sh.h};
+  }
+  for(const g of s.guides||[]){
+    if(g.a==='v'&&Math.abs(p.x-g.p)<EDGE_HIT) return {g,axis:'x',pos:g.p};
+    if(g.a==='h'&&Math.abs(p.y-g.p)<EDGE_HIT) return {g,axis:'y',pos:g.p};
+  }
+  return null;
+}
+// 浮动尺寸输入框(Fusion 的 fx 框):Enter 落成持久 edgegap 约束,Esc 取消。
+function openDimInput(a,b){
+  if(a.axis!==b.axis){ setHint('两条边方向不一致(都需竖直边或都需水平边)'); edgePick=null; return; }
+  // 被驱动方 = 后拾取的形状边;若后拾取的是中线,则先拾取的形状被驱动
+  const dep=b.sh?b:a, ref=b.sh?a:b;
+  if(!dep.sh){ setHint('两条都是中线,无法标注(至少一条是形状边)'); edgePick=null; return; }
+  closeDimInput();
+  const off0=dep.pos-ref.pos;
+  const inp=document.createElement('input');
+  inp.type='text'; inp.id='dimInp'; inp.value=String(Math.round(Math.abs(off0)));
+  const r=cv.getBoundingClientRect(), host=cv.parentElement;
+  const mx=(a.pos+b.pos)/2/(a.axis==='x'?W:1), my=a.axis==='x'?(p2y(a,b)):(a.pos+b.pos)/2/H;
+  inp.style.cssText=`position:absolute;width:64px;z-index:9;font-size:12px;text-align:center;
+    left:${a.axis==='x'?((a.pos+b.pos)/2/W*100):50}%;top:${a.axis==='y'?((a.pos+b.pos)/2/H*100):50}%;
+    transform:translate(-50%,-50%);background:#1e1e1e;color:#98f5d0;border:1px solid #98f5d0;border-radius:5px;`;
+  host.appendChild(inp); inp.focus(); inp.select();
+  inp.onkeydown=ev=>{
+    ev.stopPropagation();
+    if(ev.key==='Escape'){ closeDimInput(); edgePick=null; return; }
+    if(ev.key!=='Enter') return;
+    const v=parseFloat(inp.value);
+    if(!isFinite(v)||v<0){ setHint('请输入非负距离(px)'); return; }
+    pushUndo();
+    const sgn=off0===0?1:Math.sign(off0);
+    dep.sh.rel={type:'edgegap', myEdge:dep.edge, off:sgn*v,
+      ...(ref.sh?{ref:ref.sh.id, refEdge:ref.edge}:{gref:ref.g.id})};
+    closeDimInput(); edgePick=null;
+    shapesChanged(cur()); updateSelBox();
+    setHint(`📏 已标注:边距 ${v}px 持久成立(拖参照,它跟着走;选中后可改/解除)`);
+  };
+  inp.onblur=()=>{ closeDimInput(); };
+}
+const p2y=()=>50; // 简化:竖直边标注框放画布纵向中部
+function closeDimInput(){ document.getElementById('dimInp')?.remove(); }
+
+// 尺寸标注叠加:被 edgegap 约束的形状,画出 参照边↔本边 的标注线与数值(CAD 风格)。
+function overlayDims(){
+  if(store.hideOverlays||store.mode==='play') return;
+  const s=cur(), byId=new Map(s.shapes.map(x=>[x.id,x]));
+  ctx.font='10px system-ui';
+  for(const sh of s.shapes){
+    const r=sh.rel; if(!r||r.type!=='edgegap') continue;
+    let pos=null;
+    if(r.ref!=null){ const ref=byId.get(r.ref); if(ref) pos=({l:ref.x,r:ref.x+ref.w,t:ref.y,b:ref.y+ref.h})[r.refEdge]; }
+    else { const g=(s.guides||[]).find(x=>x.id===r.gref); if(g) pos=g.p; }
+    if(pos==null) continue;
+    const my=({l:sh.x,r:sh.x+sh.w,t:sh.y,b:sh.y+sh.h})[r.myEdge];
+    const horiz=(r.myEdge==='l'||r.myEdge==='r');
+    const lat=horiz? sh.y+sh.h/2 : sh.x+sh.w/2;   // 标注线放本形状中部
+    ctx.strokeStyle='rgba(255,214,120,0.85)'; ctx.lineWidth=1;
+    ctx.beginPath();
+    if(horiz){ ctx.moveTo(pos,lat); ctx.lineTo(my,lat);
+      ctx.moveTo(pos,lat-4); ctx.lineTo(pos,lat+4); ctx.moveTo(my,lat-4); ctx.lineTo(my,lat+4); }
+    else { ctx.moveTo(lat,pos); ctx.lineTo(lat,my);
+      ctx.moveTo(lat-4,pos); ctx.lineTo(lat+4,pos); ctx.moveTo(lat-4,my); ctx.lineTo(lat+4,my); }
+    ctx.stroke();
+    const label=`${Math.round(Math.abs(r.off))}`;
+    const tx=horiz?(pos+my)/2:lat, ty=horiz?lat-4:(pos+my)/2-4;
+    ctx.fillStyle='rgba(20,20,20,0.85)';
+    const tw=ctx.measureText(label).width;
+    ctx.fillRect(tx-tw/2-3,ty-9,tw+6,12);
+    ctx.fillStyle='#ffd678'; ctx.textAlign='center'; ctx.fillText(label,tx,ty); ctx.textAlign='left';
+  }
+  // 已拾取的第一条边:高亮
+  if(edgePick){
+    ctx.strokeStyle='#98f5d0'; ctx.lineWidth=2.5;
+    ctx.beginPath();
+    if(edgePick.g){ if(edgePick.g.a==='v'){ctx.moveTo(edgePick.pos,0);ctx.lineTo(edgePick.pos,H);} else {ctx.moveTo(0,edgePick.pos);ctx.lineTo(W,edgePick.pos);} }
+    else { const sh=edgePick.sh;
+      if(edgePick.axis==='x'){ ctx.moveTo(edgePick.pos,sh.y); ctx.lineTo(edgePick.pos,sh.y+sh.h); }
+      else { ctx.moveTo(sh.x,edgePick.pos); ctx.lineTo(sh.x+sh.w,edgePick.pos); } }
+    ctx.stroke();
+  }
+}
+
 function onPointerDown(e){
   if(store.mode==='play') return;
   const p=ptr(e), s=cur();
@@ -229,6 +323,28 @@ function onPointerDown(e){
     store.dragAct='shiftsel'; store.dragStart=p; store.dragNow=p;
     store._shiftBase=[...(store.selMulti||[])];
     return;
+  }
+  // 车面取景框(UV 读画区):边框带=移动、右下角=缩放 —— 在编辑器里直接调,回写 3D
+  if($('showSkin')?.checked){
+    const hit=skinHit(p.x,p.y);
+    if(hit){ store.dragAct='skinwin';
+      store.dragNow={p:hit.p, mode:hit.mode, offX:p.x-hit.p.cx*W, offY:p.y-hit.p.cy*H};
+      return; }
+  }
+  if(P.tool==='sel'){
+    // 中线拖动 / CAD 边拾取(优先级低于已选形状的锚点与缩放手柄,见下)
+    const ep=(!store.sel || !(function(){ // 已选形状手柄区内不抢
+        const hs=handlePts(store.sel);
+        return hs.some(([hx,hy])=>Math.abs(p.x-hx)<7&&Math.abs(p.y-hy)<7); })())
+      ? pickEdgeAt(p,s) : null;
+    if(ep?.g){ pushUndo(); store.dragAct='guidedrag'; store.dragNow={g:ep.g}; return; }
+    if(ep?.sh){
+      edgePick=ep; store.sel=ep.sh;
+      if(!store.selMulti.includes(ep.sh)) store.selMulti=[ep.sh];
+      updateSelBox();
+      setHint('已拾取一条边 — Shift+点另一条边/中线 → 输入距离 → Enter 落成标注');
+      return;
+    }
   }
   if(P.tool==='sel'){
     // 锁定的选中形状不给任何手柄/拖动入口(面板选中锁定形状时,画布只读)
@@ -284,8 +400,18 @@ function onPointerDown(e){
   }
 }
 function onPointerMove(e){
-  if(!store.dragAct) return;
   const p=ptr(e), s=cur();
+  if(!store.dragAct){
+    // 悬停反馈:车面取景框(移动/缩放)、可拾取的边、可拖的中线
+    if(store.mode!=='edit'){ cv.style.cursor=''; return; }
+    let c='';
+    if($('showSkin')?.checked){ const h=skinHit(p.x,p.y);
+      if(h) c=h.mode==='br'?'nwse-resize':'move'; }
+    if(!c&&P.tool==='sel'){ const ep=pickEdgeAt(p,s);
+      if(ep) c=ep.g?(ep.g.a==='v'?'ew-resize':'ns-resize'):'pointer'; }
+    cv.style.cursor=c;
+    return;
+  }
   if(store.dragAct==='draw'){ store.dragNow=p; }
   else if(store.dragAct==='pen'){
     const pts=store.dragNow.strokePts, last=pts[pts.length-1];
@@ -298,6 +424,21 @@ function onPointerMove(e){
     shapesChanged(s,true);
   }
   else if(store.dragAct==='marquee'||store.dragAct==='shiftsel'){ store.dragNow=p; }
+  else if(store.dragAct==='skinwin'){
+    const d=store.dragNow, w=d.p;
+    if(d.mode==='move'){
+      w.cx=Math.min(Math.max(0,(p.x-d.offX)/W),1-w.cw);
+      w.cy=Math.min(Math.max(0,(p.y-d.offY)/H),1-w.ch);
+    } else {
+      w.cw=Math.min(Math.max(0.05,p.x/W-w.cx),1-w.cx);
+      w.ch=Math.min(Math.max(0.05,p.y/H-w.cy),1-w.ch);
+    }
+  }
+  else if(store.dragAct==='guidedrag'){
+    const g=store.dragNow.g;
+    g.p=Math.round(g.a==='v'?Math.min(W,Math.max(0,p.x)):Math.min(H,Math.max(0,p.y)));
+    shapesChanged(s,true); // 对中/边距约束跟着中线实时重解
+  }
   else if(store.dragAct==='move'&&store.sel){
     const dx=p.x-store.dragStart.x, dy=p.y-store.dragStart.y;
     const snapped=snapMove(store.sel, store.dragNow.ox+dx, store.dragNow.oy+dy);
@@ -336,6 +477,11 @@ function onPointerMove(e){
 function onPointerUp(e){
   if(!store.dragAct) return;
   const s=cur();
+  if(store.dragAct==='skinwin'){ saveSkinWindow(store.dragNow.p);
+    setHint('✓ 取景框已保存 — 回 3D 时该部件按新窗口读画(UV 层自动重映射)');
+    store.dragAct=null; store.dragStart=null; store.dragNow=null; return; }
+  if(store.dragAct==='guidedrag'){ shapesChanged(s); updateSelBox();
+    store.dragAct=null; store.dragStart=null; store.dragNow=null; return; }
   if(store.dragAct==='draw'){
     const p=ptr(e);
     if(Math.abs(p.x-store.dragStart.x)>3||Math.abs(p.y-store.dragStart.y)>3){
@@ -358,6 +504,14 @@ function onPointerUp(e){
       store.sel=store.selMulti[store.selMulti.length-1]||null;
       if(store.selMulti.length>1) setHint(`已选 ${store.selMulti.length} 个形状 — 右栏「排列」可对齐/等距/阵列`);
     } else if(store.dragAct==='shiftsel'){
+      // 有第一条边在手:Shift+点优先判"第二条边"(边带很窄,不与常规选择冲突)
+      if(edgePick){
+        const ep2=pickEdgeAt(p,s);
+        if(ep2 && !(ep2.sh&&ep2.sh===edgePick.sh) && !(ep2.g&&ep2.g===edgePick.g)){
+          openDimInput(edgePick, ep2);
+          store.dragAct=null; store.dragStart=null; store.dragNow=null; return;
+        }
+      }
       // Shift+点选:命中即切换进出多选集合
       let hit=null;
       for(let i=s.shapes.length-1;i>=0;i--){ const sh=s.shapes[i];
@@ -384,16 +538,41 @@ function onPointerUp(e){
   store.dragAct=null; store.dragStart=null; store.dragNow=null; store.snapGuides=null;
 }
 
+let shapeClipboard=null; // Ctrl+C 的形状快照(JSON 深拷贝,可跨状态/图层粘贴)
 function onKeyDown(e){
   if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
   const k=e.key.toLowerCase();
   if((e.ctrlKey||e.metaKey)&&k==='z'){ e.shiftKey?redo():undo(); e.preventDefault(); return; }
   if((e.ctrlKey||e.metaKey)&&k==='y'){ redo(); e.preventDefault(); return; }
+  if((e.ctrlKey||e.metaKey)&&k==='c' && store.mode==='edit'){
+    const list=store.selMulti?.length?store.selMulti:(store.sel?[store.sel]:[]);
+    if(list.length){ shapeClipboard=JSON.parse(JSON.stringify(list));
+      setHint(`已复制 ${list.length} 个形状 — 切到任意状态 Ctrl+V 粘贴`); e.preventDefault(); }
+    return;
+  }
+  if((e.ctrlKey||e.metaKey)&&k==='v' && store.mode==='edit' && shapeClipboard?.length){
+    pushUndo();
+    const s=cur(), made=[];
+    for(const src of shapeClipboard){
+      const c=JSON.parse(JSON.stringify(src));
+      c.id=store.shapeId++; delete c.rel; // 约束引用不跨状态,粘贴即自由形状
+      if(c.type==='path') c.points=c.points.map(pt=>({x:pt.x+8,y:pt.y+8}));
+      c.x+=8; c.y+=8;                     // 轻微错位,肉眼可辨"粘出来了"
+      s.shapes.push(c); made.push(c);
+    }
+    store.selMulti=made; store.sel=made[made.length-1];
+    // 图片形状:_img 运行时缓存不随 JSON 走,补解码(dataURL 缓存命中近乎瞬时)
+    const pend=made.filter(sh=>sh.type==='image'&&!sh._img).map(sh=>decodeImageShape(sh));
+    if(pend.length) Promise.all(pend).then(()=>shapesChanged(s));
+    shapesChanged(s); updateSelBox();
+    setHint(`已粘贴 ${made.length} 个形状(含实心/采样等属性)`);
+    e.preventDefault(); return;
+  }
   if(k==='v')setTool('sel'); else if(k==='r')setTool('rect');
   else if(k==='e')setTool('ell'); else if(k==='t')setTool('text');
   else if(k==='d')setTool('dot'); else if(k==='p')setTool('pen');
   else if(e.key==='Delete'||e.key==='Backspace'){ deleteSel(); e.preventDefault(); }
-  else if(e.key==='Escape'){ store.sel=null; store.selMulti=[]; updateSelBox(); }
+  else if(e.key==='Escape'){ store.sel=null; store.selMulti=[]; edgePick=null; closeDimInput(); updateSelBox(); }
   else if(e.key.startsWith('Arrow') && store.sel && !store.sel.locked && store.mode==='edit'){
     const step=e.shiftKey?10:1;
     const dx=e.key==='ArrowLeft'?-step:e.key==='ArrowRight'?step:0;

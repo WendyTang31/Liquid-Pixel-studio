@@ -20,6 +20,33 @@ export function initSkinRef(){
 }
 export const hasSkinLayout=()=>!!layout?.patches?.length;
 
+// ── 编辑器侧直接拖动取景框(用户在这画,就在这调)──
+// 命中:边框带(6px)= 移动,右下角(10px)= 缩放。返回 null 或 {p, mode}。
+export function skinHit(x,y){
+  if(!layout?.patches) return null;
+  const E=6;
+  for(let i=layout.patches.length-1;i>=0;i--){
+    const p=layout.patches[i];
+    const px=p.cx*W, py=p.cy*H, pw=p.cw*W, ph=p.ch*H;
+    if(Math.abs(x-(px+pw))<10 && Math.abs(y-(py+ph))<10) return {p, mode:'br'};
+    const onV=(Math.abs(x-px)<E||Math.abs(x-(px+pw))<E) && y>py-E && y<py+ph+E;
+    const onH=(Math.abs(y-py)<E||Math.abs(y-(py+ph))<E) && x>px-E && x<px+pw+E;
+    if(onV||onH) return {p, mode:'move'};
+  }
+  return null;
+}
+// 写回:本页布局(立即重画)+ 3D 预览器存档(morph3d-view 里按 i 对位的 decal)——
+// 同窗工作流下切回 3D 时 restoreView 会按新窗口重投影(UV 层经 applyUvLayer 重映射)。
+export function saveSkinWindow(p){
+  try{ layout.ts=Date.now(); localStorage.setItem('morph-uvlayout', JSON.stringify(layout)); }catch(_){}
+  if(p.i==null) return;
+  try{
+    const v=JSON.parse(localStorage.getItem('morph3d-view')||'null');
+    if(v?.decals?.[p.i]){ Object.assign(v.decals[p.i], {cx:p.cx, cy:p.cy, cw:p.cw, ch:p.ch});
+      localStorage.setItem('morph3d-view', JSON.stringify(v)); }
+  }catch(_){}
+}
+
 export function drawSkinRef(ctx){
   if(!layout?.patches) return;
   for(const p of layout.patches){

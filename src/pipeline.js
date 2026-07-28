@@ -110,7 +110,11 @@ export function paintShapes(c, shapes, colorCtx=null){
 // 实心状态同步重算蒙版距离场(_sdf,运行时字段不入档)—— 实心渲染的边缘数据源。
 export function rasterize(s){
   paintShapes(s.mctx, s.shapes);
-  s._sdf = s.solid ? distanceField(maskReaderFor(s.mctx)) : null;
+  // 🧱 实心是逐形状选项(sh.solidFill):SDF 只由实心形状(带全部 sub)构成,
+  // 与其它形状/采样算法互不干扰;state.solid 为派生标记(供引擎权重窗口用)。
+  const solids=s.shapes.filter(sh=>sh.solidFill&&sh.bool!=='sub'&&!sh.hidden);
+  s.solid=solids.length>0;
+  s._sdf = s.solid ? shapesSdf([...solids, ...s.shapes.filter(sh=>sh.bool==='sub')]) : null;
   tintGhost(s); updateThumb(s);
 }
 
@@ -182,6 +186,14 @@ export function stateDots(shapes, manual, Pp){
     }
   }
   if(dots.length>1500){ const k=Math.ceil(dots.length/1500); dots=dots.filter((_,i)=>i%k===0); }
+  // 🧱 实心标记:落在实心形状蒙版内的点打 sf 标 —— 停留期间被抑制(边缘=纯矢量),
+  // 过渡时随实心场衰减平滑长出(这也是根治停留↔过渡边界"点突然出现"卡顿的关键)。
+  const solids=shapes.filter(sh=>sh.solidFill&&sh.bool!=='sub');
+  if(solids.length){
+    paintShapes(_smActx, [...solids, ...shapes.filter(sh=>sh.bool==='sub')]);
+    const on=maskReaderFor(_smActx);
+    for(const d of dots) if(on(Math.round(d.x*W), Math.round(d.y*H))) d.sf=1;
+  }
   return dots;
 }
 

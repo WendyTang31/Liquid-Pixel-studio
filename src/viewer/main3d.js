@@ -88,7 +88,11 @@ async function loadProjectData(data, gi=0){
     out.push({name:d.name, color:d.color, hold:d.hold, dur:d.dur, trans:d.trans||{},
       cam:d.cam||null, // 镜头随工程走:车身贴图里同样推拉摇移
       isPose:d.isPose||false, loop:d.loop||null, // 子循环同样随工程走(buildSequence 统一处理)
-      solid:d.solid||false, _sdf:d.solid?shapesSdf(d.shapes):null, // 实心显示:车身贴图同样锐利边缘
+      // 🧱 实心(逐形状 solidFill;老档 state 级 d.solid 视为全形状实心):车身贴图同样锐利边缘
+      ...(()=>{ const sh=d.shapes.map(x=>d.solid&&x.bool!=='sub'?{...x,solidFill:true}:x);
+        const so=sh.filter(x=>x.solidFill&&x.bool!=='sub');
+        return {solid:so.length>0,
+          _sdf:so.length?shapesSdf([...so, ...sh.filter(x=>x.bool==='sub')]):null}; })(),
       dots:stateDots(d.shapes, d.manual||[], gr.P)}); // 与编辑器同一采样核心(彩色/逐形状覆盖同步生效)
   }
   gr.states=out; gr.SEQ=buildSequence(out, true, gr.P);
@@ -290,6 +294,7 @@ function syncUvLayoutEntry(d){
     let p=layout.patches.find(q=>q.name===key);
     if(!p){ p={name:key, color:'#9affe2', meshName:'', snap:uvWireframe(d.mesh)}; layout.patches.push(p); }
     p.cx=d.cx; p.cy=d.cy; p.cw=d.cw; p.ch=d.ch;
+    p.i=decals.indexOf(d); // 编辑器拖框回写 morph3d-view 时按此对位
     layout.ts=performance.now();
     localStorage.setItem('morph-uvlayout', JSON.stringify(layout));
   }catch(_){}

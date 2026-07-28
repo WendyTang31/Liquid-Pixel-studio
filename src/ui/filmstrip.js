@@ -17,7 +17,6 @@ export function setActive(i){
 export function syncStateUI(){
   const s=cur();
   $('stName').value=s.name; $('stColor').value=s.color;
-  $('stSolid').checked=!!s.solid;
   $('stHold').value=s.hold; $('vHold').textContent=(+s.hold).toFixed(1);
   $('stDur').value=s.dur; $('vDur').textContent=(+s.dur).toFixed(1);
   const t=s.trans||{};

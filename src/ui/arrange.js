@@ -118,7 +118,7 @@ const nearestGuide=(sh,axis)=>{ // axis 缺省:找最近的任意向中线
 };
 function addGuide(a){ pushUndo();
   const gs=cur().guides||(cur().guides=[]);
-  gs.push({a, p:a==='v'?W/2:H/2});
+  gs.push({id:store.shapeId++, a, p:a==='v'?W/2:H/2}); // id 供边距约束引用;➤ 工具可直接拖动中线
   renderGuides(); setHint('已加中线(在画布上显示为青色虚线;删除点上方胶囊)');
 }
 function relGap(){ // 主选中 ← 定距跟随另一个
@@ -143,7 +143,7 @@ function relMir(){
   const s0=cur(), c=JSON.parse(JSON.stringify({...ref, id:undefined})); c.id=store.shapeId++;
   delete c._img;
   if(ref.type==='image'&&ref._img) Object.defineProperty(c,'_img',{value:ref._img,enumerable:false,configurable:true});
-  c.rel={type:g.a==='v'?'mirrorV':'mirrorH', ref:ref.id, p:g.p};
+  c.rel={type:g.a==='v'?'mirrorV':'mirrorH', ref:ref.id, p:g.p, gref:g.id};
   s0.shapes.push(c); store.sel=c; store.selMulti=[ref,c];
   done(2); setHint('🪞 已生成对称件并绑定:改原件,镜像实时跟随');
 }
@@ -151,7 +151,7 @@ function relCtr(){
   const ts=targets(); if(!ts.length){ setHint('先选中要对中的形状'); return; }
   pushUndo(); let n=0;
   for(const sh of ts){ const g=nearestGuide(sh); if(!g) continue;
-    sh.rel={type:g.a==='v'?'centerV':'centerH', p:g.p}; n++; }
+    sh.rel={type:g.a==='v'?'centerV':'centerH', p:g.p, gref:g.id}; n++; }
   if(!n){ setHint('先加一条中线(┃/━)'); return; }
   done(n);
 }

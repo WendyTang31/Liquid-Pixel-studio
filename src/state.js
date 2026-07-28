@@ -38,7 +38,9 @@ export function hydrate(data){
     const s=makeState(d.name,d.color);
     Object.assign(s,{id:d.id,hold:d.hold,dur:d.dur,shapes:d.shapes,manual:d.manual,
       trans:d.trans||{}, cam:d.cam||null, isPose:d.isPose||false, loop:d.loop||null,
-      solid:d.solid||false, guides:d.guides||[]});
+      guides:d.guides||[]});
+    // 兼容:上一版是"状态级实心",迁移为逐形状 solidFill(rasterize 会重推导 s.solid)
+    if(d.solid) s.shapes.forEach(sh=>{ if(sh.bool!=='sub') sh.solidFill=true; });
     return s;
   });
   store.stateId=Math.max(1,...store.states.map(s=>s.id))+1;

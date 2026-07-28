@@ -140,6 +140,7 @@ export function transBalls(pairs,t,time,P){
     const ball={x:p.a.x+(p.b.x-p.a.x)*e+P.amp*(dxA+(dxB-dxA)*e),
                 y:p.a.y+(p.b.y-p.a.y)*e+P.amp*(dyA+(dyB-dyA)*e),
                 r:p.a.r+(p.b.r-p.a.r)*e};
+    if(p.a.sf) ball.sfA=1; if(p.b.sf) ball.sfB=1; // 实心标记随配对传递(供停留/过渡抑制)
     if(p.a.c||p.b.c){ // 逐点颜色插值(缺一端时用另一端,颜色恒定)
       const ca=p.a.c||p.b.c, cb=p.b.c||p.a.c;
       ball.c=[ca[0]+(cb[0]-ca[0])*e, ca[1]+(cb[1]-ca[1])*e, ca[2]+(cb[2]-ca[2])*e];
@@ -281,6 +282,22 @@ export function solidWeights(seg, states, lt){
 const solidsOf=(seg,states,lt)=>solidWeights(seg,states,lt)
   .filter(s=>states[s.si]._sdf).map(s=>({sdf:states[s.si]._sdf, w:s.w}));
 
+// 实心形状的点抑制:实心场权重为 w 时,其蒙版内的点半径乘 √(1−w)(场值 ∝ r² → 场强恰乘 1−w)。
+// 停留(w=1)点完全消失 → 边缘 = 纯矢量 SDF,不会被靠边的大点"鼓包";过渡窗口内
+// 实心场降、点平滑长出,停留↔过渡边界零跳变(根治"点突然出现"的卡顿)。
+function suppressSolidDots(balls, seg, states, lt){
+  const sw=solidWeights(seg,states,lt);
+  if(!sw.length) return balls;
+  const wA=seg.type==='hold' ? (sw[0]?.w||0) : (sw.find(s=>s.si===seg.a)?.w||0);
+  const wB=seg.type==='trans' ? (sw.find(s=>s.si===seg.b)?.w||0) : 0;
+  if(!wA&&!wB) return balls;
+  for(const b of balls){
+    const w=Math.max(0, 1-(b.sfA?wA:0)-(b.sfB?wB:0));
+    if(w<1) b.r*=Math.sqrt(w);
+  }
+  return balls;
+}
+
 // 采样一帧:全局时间 g → {seg, balls, col, cam, solids}。预览与导出共用同一函数。
 export function sampleFrame(SEQ, states, g, time, P){
   const {segs,T}=SEQ;
@@ -302,12 +319,14 @@ export function sampleFrame(SEQ, states, g, time, P){
     }
     return {seg, col:hex2rgb(st.color), cam:camIdentity(cam)?null:cam,
       solids:solidsOf(seg,states,0),
-      balls:applyCam(st.dots.map(b=>{ const ph=dotPhase(b.x,b.y);
-        return {x:b.x+P.amp*drift(ph,time,P), y:b.y+P.amp*drift(ph+3.1,time,P), r:b.r, c:b.c}; }), cam)};
+      balls:applyCam(suppressSolidDots(st.dots.map(b=>{ const ph=dotPhase(b.x,b.y);
+        return {x:b.x+P.amp*drift(ph,time,P), y:b.y+P.amp*drift(ph+3.1,time,P), r:b.r, c:b.c, sfA:b.sf};
+      }), seg, states, 0), cam)};
   } else {
     const lt=(g-seg.t0)/seg.dur, ca=hex2rgb(states[seg.a].color), cb=hex2rgb(states[seg.b].color);
     const e=EASE.smoothstep(lt), cam=camAt(seg,states,lt);
-    return {seg, balls:applyCam(transBalls(seg.pairs,lt,time,segParams(P,seg.ov)), cam),
+    return {seg, balls:applyCam(suppressSolidDots(
+        transBalls(seg.pairs,lt,time,segParams(P,seg.ov)), seg, states, lt), cam),
       cam:camIdentity(cam)?null:cam, solids:solidsOf(seg,states,lt),
       col:[ca[0]+(cb[0]-ca[0])*e, ca[1]+(cb[1]-ca[1])*e, ca[2]+(cb[2]-ca[2])*e]};
   }

@@ -44,6 +44,7 @@ export function updateSelBox(){
       <input type="text" id="selCount" value="${sel.count||''}" style="width:44px" placeholder="自动">
       <label style="min-width:auto" title="本形状点半径缩放:笔画/智能采样按系数缩放自带半径(0.7=更细更清晰),普通采样按系数缩放全局点半径;留空=1.0">半径×</label>
       <input type="text" id="selRScale" value="${sel.rscale||''}" style="width:40px" placeholder="1.0">
+      <label class="ck" title="本形状按矢量整块填充:停留时边缘=形状本来的直线/曲线(任何分辨率下零毛边,其蒙版内的点被抑制不会鼓包);过渡时整块平滑溶解成点飞走、再凝回。与其它形状/采样算法互不冲突"><input type="checkbox" id="selSolid" ${sel.solidFill?'checked':''}> 🧱实心</label>
     </div>`;
   const num=(id,v)=>`<input type="text" id="${id}" value="${Math.round(v)}" style="width:44px">`;
   box.innerHTML=`${multiNote}<div>${name}</div>
@@ -56,9 +57,10 @@ export function updateSelBox(){
     ${imgCtrls}
     ${sampCtrls}
     ${sel.rel?`<div class="row" style="border-top:1px dashed var(--line);padding-top:5px">
-      <span class="small" style="color:var(--mint)">🔗 ${({offset:'定距跟随',size:'等尺寸',centerV:'对中┃',centerH:'对中━',mirrorV:'对称┃',mirrorH:'对称━'})[sel.rel.type]||sel.rel.type}</span>
+      <span class="small" style="color:var(--mint)">🔗 ${({offset:'定距跟随',size:'等尺寸',centerV:'对中┃',centerH:'对中━',mirrorV:'对称┃',mirrorH:'对称━',edgegap:'📏边距标注'})[sel.rel.type]||sel.rel.type}</span>
       ${sel.rel.type==='offset'?`<label style="min-width:auto">ΔX</label><input type="text" id="relDX" value="${Math.round(sel.rel.dx)}" style="width:38px">
       <label style="min-width:auto">ΔY</label><input type="text" id="relDY" value="${Math.round(sel.rel.dy)}" style="width:38px">`:''}
+      ${sel.rel.type==='edgegap'?`<label style="min-width:auto">距</label><input type="text" id="relGapV" value="${Math.round(Math.abs(sel.rel.off))}" style="width:38px">`:''}
       <button id="relOff" title="解除该约束,回到自由形状">解除</button>
     </div>`:''}
     <div style="display:flex;gap:6px">
@@ -85,6 +87,11 @@ export function updateSelBox(){
       el.addEventListener('change',e=>{ const v=parseFloat(e.target.value);
         if(isFinite(v)){ pushUndo(); sel.rel[k]=v; shapesChanged(cur()); updateSelBox(); } });
     }
+    const gv=$('relGapV');
+    if(gv) gv.addEventListener('change',e=>{ const v=parseFloat(e.target.value);
+      if(isFinite(v)&&v>=0){ pushUndo();
+        sel.rel.off=(sel.rel.off===0?1:Math.sign(sel.rel.off))*v;
+        shapesChanged(cur()); updateSelBox(); } });
   }
   $('selDel').onclick=deleteSel;
   if(sel.type==='image'){
@@ -107,6 +114,10 @@ export function updateSelBox(){
     const v=parseInt(e.target.value);
     if(isFinite(v)&&v>0) sel.count=Math.min(1500,v); else delete sel.count;
     shapesChanged(cur()); updateSelBox(); });
+  $('selSolid').addEventListener('change',e=>{ pushUndo();
+    if(e.target.checked) sel.solidFill=true; else delete sel.solidFill;
+    shapesChanged(cur()); store.seqDirty=true;
+    setHint(e.target.checked?'🧱 本形状实心:停留=矢量锐边整块;过渡=溶解为点再凝回':'本形状已回到点阵'); });
   $('selRScale').addEventListener('change',e=>{ pushUndo();
     const v=parseFloat(e.target.value);
     if(isFinite(v)&&v>0.05&&Math.abs(v-1)>0.01) sel.rscale=Math.min(4,v); else delete sel.rscale;
@@ -183,9 +194,6 @@ export function initInspector(){
   $('stName').addEventListener('input',e=>{ cur().name=e.target.value||'未命名'; renderStrip(); });
   $('stColor').addEventListener('input',e=>{ cur().color=e.target.value;
     tintGhost(cur()); updateThumb(cur()); store.seqDirty=true; });
-  $('stSolid').addEventListener('change',e=>{ pushUndo(); cur().solid=e.target.checked;
-    rasterize(cur()); store.seqDirty=true; // rasterize 顺带算/清 _sdf
-    setHint(e.target.checked?'🧱 实心:停留=锐利整块;过渡=溶解为点再凝回':'已回到点阵显示'); });
   $('stHold').addEventListener('input',e=>{ cur().hold=parseFloat(e.target.value);
     $('vHold').textContent=cur().hold.toFixed(1); store.seqDirty=true; });
   $('stDur').addEventListener('input',e=>{ cur().dur=parseFloat(e.target.value);
