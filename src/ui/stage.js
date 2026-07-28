@@ -316,6 +316,19 @@ function overlayDims(){
   }
 }
 
+// 光标下是否有图案(形状):已选形状的缩放手柄/路径锚点,或任一未隐藏未锁形状的包围盒。
+// 供"图案优先于取景框"判定用 —— 与下方形状命中逻辑同规则。
+function shapeUnder(p,s){
+  if(store.sel){
+    if(handlePts(store.sel).some(([hx,hy])=>Math.abs(p.x-hx)<7&&Math.abs(p.y-hy)<7)) return store.sel;
+    if(store.sel.type==='path' && store.sel.points.some(pt=>Math.hypot(p.x-pt.x,p.y-pt.y)<7)) return store.sel;
+  }
+  for(let i=s.shapes.length-1;i>=0;i--){ const sh=s.shapes[i];
+    if(sh.hidden||sh.locked) continue;
+    if(p.x>=sh.x&&p.x<=sh.x+sh.w&&p.y>=sh.y&&p.y<=sh.y+sh.h) return sh; }
+  return null;
+}
+
 function onPointerDown(e){
   if(store.mode==='play') return;
   const p=ptr(e), s=cur();
@@ -325,17 +338,21 @@ function onPointerDown(e){
   // 放在 shift 手势之前 —— 选中取景框后 Shift+拖角要走等比缩放,而非形状框选。
   if($('showSkin')?.checked){
     const sel=getSelSkin();
+    // 图案优先:光标下有图案(或已选图案的手柄/锚点)时,取景框的"边框移动/点选"一律让位 ——
+    // UV 参考是最底层背景,盖住图案也不夺取选择;只有角/边手柄缩放(在框轮廓上,刻意抓取)才生效。
+    const shapeHere = P.tool==='sel' && !!shapeUnder(p,s);
     const startWin=(win,mode)=>{ skinPushUndo(); store.dragAct='skinwin';
       store.dragNow={p:win, mode, offX:p.x-win.cx*W, offY:p.y-win.cy*H,
         sx:win.cx, sy:win.cy, sw:win.cw, sh:win.ch, aspect:win.cw/Math.max(1e-6,win.ch)}; };
     if(sel){ const m=skinHandleAt(sel,p.x,p.y);
-      if(m){ startWin(sel,m); return; } }
-    const hit=skinWindowAt(p.x,p.y);
+      if(m==='move'){ if(!shapeHere){ startWin(sel,'move'); return; } }   // 边框移动让位图案
+      else if(m){ startWin(sel,m); return; } }                            // 角/边手柄缩放照旧
+    const hit=(!shapeHere)?skinWindowAt(p.x,p.y):null;
     if(hit){ selectSkin(hit); store.sel=null; store.selMulti=[]; updateSelBox();
       startWin(hit, skinHandleAt(hit,p.x,p.y)||'move');
-      setHint('已选中取景框 — 拖动=移动 · 拖角/边=缩放 · Shift+角=等比 · Delete 删除 · Ctrl+Z 撤销 · Esc 取消');
+      setHint('已选中取景框 — 拖边框=移动 · 拖角/边手柄=缩放 · Shift+角=等比 · Delete 删除 · Ctrl+Z 撤销 · Esc 取消 ·(框内可直接选/画图案)');
       return; }
-    if(sel && !e.shiftKey){ clearSkinSel(); } // 点空处取消取景框选中(不拦截后续绘制/框选)
+    if(sel && !e.shiftKey){ clearSkinSel(); } // 点框内/图案上取消取景框选中(不拦截后续绘制/框选)
   }
   setSkinFocus(false); // 走到这说明本次按下不是取景框操作 → 离开取景框语境,Ctrl+Z 回到形状
   if(e.shiftKey){

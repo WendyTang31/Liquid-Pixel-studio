@@ -68,15 +68,19 @@ export function deleteSelSkin(){
 
 // ── 命中测试 ──
 const HR=7; // 手柄热区
-// 选中框的手柄/主体:8 手柄缩放,内部=移动。返回 'nw|ne|sw|se|n|e|s|w|move' 或 null。
+// 选中框的操作命中:仅 8 个离散角/边手柄=缩放、边框线(≤6px)=移动;
+// **内部一律返回 null** —— UV 参考是最底层背景,框内点击直接穿透到图案(形状)选择,
+// 不再"框盖满画布就选不了图案"。返回 'nw|ne|sw|se|n|e|s|w|move' 或 null。
 export function skinHandleAt(p,x,y){
   const px=p.cx*W, py=p.cy*H, pw=p.cw*W, ph=p.ch*H;
-  if(x<px-HR||x>px+pw+HR||y<py-HR||y>py+ph+HR) return null;
-  const L=Math.abs(x-px)<HR, R=Math.abs(x-(px+pw))<HR, T=Math.abs(y-py)<HR, B=Math.abs(y-(py+ph))<HR;
-  if(T&&L)return 'nw'; if(T&&R)return 'ne'; if(B&&L)return 'sw'; if(B&&R)return 'se';
-  if(L)return 'w'; if(R)return 'e'; if(T)return 'n'; if(B)return 's';
-  if(x>px&&x<px+pw&&y>py&&y<py+ph) return 'move';
-  return null;
+  const hs=[['nw',px,py],['n',px+pw/2,py],['ne',px+pw,py],['w',px,py+ph/2],
+            ['e',px+pw,py+ph/2],['sw',px,py+ph],['s',px+pw/2,py+ph],['se',px+pw,py+ph]];
+  for(const [m,hx,hy] of hs) if(Math.abs(x-hx)<HR&&Math.abs(y-hy)<HR) return m; // 手柄方块
+  const E=6; // 边框线带 → 移动(仅贴着轮廓,不含内部)
+  const onV=(Math.abs(x-px)<E||Math.abs(x-(px+pw))<E)&&y>py-E&&y<py+ph+E;
+  const onH=(Math.abs(y-py)<E||Math.abs(y-(py+ph))<E)&&x>px-E&&x<px+pw+E;
+  if(onV||onH) return 'move';
+  return null; // 内部穿透:点击落到图案上
 }
 // 未选中时的选择命中:点边框带(6px)或名字标签 → 返回该 patch(用于点选)。
 export function skinWindowAt(x,y){
