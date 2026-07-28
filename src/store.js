@@ -11,6 +11,7 @@ export const store = {
   undoStack:[], redoStack:[],
   hideOverlays:false,              // 录制/导出时隐藏洋葱皮等叠加层
   dragAct:null, dragStart:null, dragNow:null,
+  penPts:null, penCursor:null,       // 贝塞尔钢笔:正在放置的锚点数组 + 当前光标(橡皮筋预览)
   recorder:null, chunks:[], exporting:false,
 };
 

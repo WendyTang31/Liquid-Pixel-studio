@@ -13,7 +13,7 @@ import { decodeImageShape } from '../image.js';
 import { updateSelBox, deleteSel } from './inspector.js';
 import { renderStrip } from './filmstrip.js';
 import { setTool } from './toolbar.js';
-import { rdpSimplify, pathBBox, fillSmoothClosedPath } from '../path.js';
+import { pathBBox, traceShapePath } from '../path.js';
 import { applyShapeBBox } from '../shapes.js';
 import { drawSkinRef, skinWindowAt, skinHandleAt, skinCursorAt, getSelSkin, selectSkin,
   clearSkinSel, skinPushUndo, skinUndo, deleteSelSkin, persistSkin, skinFocus, setSkinFocus,
@@ -27,8 +27,12 @@ const gpuOn=()=> glRender && $('useGpu')?.checked && !store.forceCpu; // 录制 
 
 const HANDLE=5;
 const handlePts=s=>[[s.x,s.y],[s.x+s.w,s.y],[s.x,s.y+s.h],[s.x+s.w,s.y+s.h]];
-const PEN_MIN_STEP=2.5;   // 原始轨迹节流:相邻捕获点最小间距(px),避免密集到没法简化
-const PEN_EPSILON=2.5;    // RDP 简化容差(px):越大锚点越少、越粗糙
+// 路径锚点变换(保留贝塞尔控制柄):平移 / 按框缩放。移动/缩放路径时不能丢柄。
+const translatePt=(pt,tx,ty)=>{ const o={x:pt.x+tx,y:pt.y+ty};
+  if(pt.hIn) o.hIn={x:pt.hIn.x+tx,y:pt.hIn.y+ty};
+  if(pt.hOut) o.hOut={x:pt.hOut.x+tx,y:pt.hOut.y+ty}; return o; };
+const scalePt=(pt,ox,oy,sx,sy,nx,ny)=>{ const S=(q)=>({x:nx+(q.x-ox)*sx, y:ny+(q.y-oy)*sy});
+  const o=S(pt); if(pt.hIn)o.hIn=S(pt.hIn); if(pt.hOut)o.hOut=S(pt.hOut); return o; };
 
 // 智能吸附:移动中的形状的 左/中/右(上/中/下)贴近画布中线或其它形状的边与中心 4px 内
 // 时磁吸到位,同时记录参考线供叠加层高亮 —— PPT/Figma 式对齐体验。
@@ -136,12 +140,17 @@ function overlaySelection(){
   if(!store.sel) return;
   const sel=store.sel;
   if(sel.type==='path'){
-    // 描边显示实际会被填充的平滑曲线,再逐锚点画小圆手柄(区别于下方整体缩放的方块手柄)
-    if(fillSmoothClosedPath(ctx, sel.points)){
+    // 描边显示实际会被填充的曲线,再逐锚点画手柄(区别于下方整体缩放的方块手柄)
+    if(traceShapePath(ctx, sel)){
       ctx.strokeStyle='rgba(120,180,255,0.85)'; ctx.lineWidth=1; ctx.stroke();
     }
-    ctx.fillStyle='#7ab4ff';
-    for(const p of sel.points){ ctx.beginPath(); ctx.arc(p.x,p.y,3.2,0,7); ctx.fill(); }
+    for(const p of sel.points){
+      if(sel.bezier) for(const hk of ['hIn','hOut']){ const h=p[hk]; if(!h) continue;
+        ctx.strokeStyle='rgba(255,214,120,0.7)'; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(h.x,h.y); ctx.stroke();
+        ctx.fillStyle='#ffd678'; ctx.beginPath(); ctx.arc(h.x,h.y,2.8,0,7); ctx.fill(); }
+      ctx.fillStyle='#7ab4ff'; ctx.beginPath(); ctx.arc(p.x,p.y,3.2,0,7); ctx.fill();
+    }
   }
   ctx.strokeStyle='rgba(120,180,255,0.95)'; ctx.lineWidth=1;
   ctx.strokeRect(sel.x,sel.y,sel.w,sel.h);
@@ -184,13 +193,7 @@ function tick(now){
       else ctx.ellipse((x0+x1)/2,(y0+y1)/2,Math.abs(x1-x0)/2,Math.abs(y1-y0)/2,0,0,7);
       ctx.stroke(); ctx.setLineDash([]);
     }
-    if(store.dragAct==='pen'&&store.dragNow?.strokePts?.length>1){
-      const pts=store.dragNow.strokePts;
-      ctx.strokeStyle='rgba(152,245,208,0.85)'; ctx.lineWidth=1.3;
-      ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
-      for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
-      ctx.stroke();
-    }
+    if(store.penPts?.length) overlayPen();
     // 中线(青色长虚线 + 位置标注)
     if(!store.hideOverlays) for(const g of cur().guides||[]){
       ctx.strokeStyle='rgba(120,230,255,0.55)'; ctx.setLineDash([9,6]); ctx.lineWidth=1;
@@ -322,6 +325,41 @@ function overlayDims(){
 
 // 光标下是否有图案(形状):已选形状的缩放手柄/路径锚点,或任一未隐藏未锁形状的包围盒。
 // 供"图案优先于取景框"判定用 —— 与下方形状命中逻辑同规则。
+// 钢笔进行中的预览:已放锚点的贝塞尔折线 + 控制柄 + 从末锚点到光标的橡皮筋;起点高亮(可闭合)。
+function overlayPen(){
+  const pts=store.penPts, cur2=store.penCursor;
+  ctx.strokeStyle='rgba(152,245,208,0.9)'; ctx.lineWidth=1.4; ctx.beginPath();
+  ctx.moveTo(pts[0].x,pts[0].y);
+  for(let i=1;i<pts.length;i++){ const a=pts[i-1], b=pts[i], c1=a.hOut||a, c2=b.hIn||b;
+    ctx.bezierCurveTo(c1.x,c1.y,c2.x,c2.y,b.x,b.y); }
+  ctx.stroke();
+  if(cur2){ const a=pts[pts.length-1], c1=a.hOut||a; // 橡皮筋(到光标,尊重末锚点出柄)
+    ctx.strokeStyle='rgba(152,245,208,0.45)'; ctx.setLineDash([4,3]); ctx.beginPath();
+    ctx.moveTo(a.x,a.y); ctx.bezierCurveTo(c1.x,c1.y,cur2.x,cur2.y,cur2.x,cur2.y); ctx.stroke(); ctx.setLineDash([]); }
+  for(const p of pts){
+    for(const hk of ['hIn','hOut']){ const h=p[hk]; if(!h) continue;
+      ctx.strokeStyle='rgba(255,214,120,0.7)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(h.x,h.y); ctx.stroke();
+      ctx.fillStyle='#ffd678'; ctx.beginPath(); ctx.arc(h.x,h.y,2.6,0,7); ctx.fill(); }
+    ctx.fillStyle='#98f5d0'; ctx.beginPath(); ctx.arc(p.x,p.y,3,0,7); ctx.fill();
+  }
+  // 起点强调:光标靠近时提示可闭合
+  ctx.strokeStyle='#98f5d0'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.arc(pts[0].x,pts[0].y, cur2&&Math.hypot(cur2.x-pts[0].x,cur2.y-pts[0].y)<9?6:4,0,7); ctx.stroke();
+}
+
+function finishPen(s){
+  const pts=store.penPts; store.penPts=null; store.penCursor=null; store.dragAct=null;
+  if(pts && pts.length>=2){
+    pushUndo();
+    const sh={id:store.shapeId++, type:'path', bezier:true, points:pts, bool:P.bool, solidFill:true, ...pathBBox(pts)};
+    s.shapes.push(sh); store.sel=sh; store.selMulti=[sh]; updateSelBox(); shapesChanged(s);
+    setHint(`✓ 贝塞尔轮廓完成(${pts.length} 锚点)· ➤ 拖锚点/黄色控制柄精修 · Alt 拖柄断开对称`);
+  }
+}
+function cancelPen(){ store.penPts=null; store.penCursor=null;
+  if(store.dragAct==='penpull') store.dragAct=null; setHint('已取消钢笔'); }
+
 function shapeUnder(p,s){
   if(store.sel){
     if(handlePts(store.sel).some(([hx,hy])=>Math.abs(p.x-hx)<7&&Math.abs(p.y-hy)<7)) return store.sel;
@@ -336,6 +374,7 @@ function shapeUnder(p,s){
 function onPointerDown(e){
   if(store.mode==='play') return;
   const p=ptr(e), s=cur();
+  if(store.penPts && P.tool!=='pen') finishPen(s); // 切了别的工具还有半截钢笔 → 先收尾
   // Shift = 选择手势,任意工具通用:松手时移动 <4px 判点选切换,否则判框选加选。
   // 不再要求先切 ➤ 工具、也不再要求从空白处起手 —— 画布被大形状铺满时依然可框选。
   // 车面取景框(UV 读画区):点选 → 拖动=移动 / 拖角边=缩放 / Shift+角=等比;独立撤销/删除。
@@ -365,11 +404,14 @@ function onPointerDown(e){
     return;
   }
   if(P.tool==='sel'){
-    // 中线拖动 / CAD 边拾取(优先级低于已选形状的锚点与缩放手柄,见下)
-    const ep=(!store.sel || !(function(){ // 已选形状手柄区内不抢
-        const hs=handlePts(store.sel);
-        return hs.some(([hx,hy])=>Math.abs(p.x-hx)<7&&Math.abs(p.y-hy)<7); })())
-      ? pickEdgeAt(p,s) : null;
+    // 中线拖动 / CAD 边拾取:优先级低于已选形状的缩放手柄、路径锚点/贝塞尔控制柄 ——
+    // 否则路径包围盒的边会盖住落在其上的锚点(如左上锚点),导致锚点拖不动。
+    const onResizeHandle = store.sel && handlePts(store.sel).some(([hx,hy])=>Math.abs(p.x-hx)<7&&Math.abs(p.y-hy)<7);
+    const onPathVertex = store.sel?.type==='path' && store.sel.points.some(pt=>{
+      if(Math.hypot(p.x-pt.x,p.y-pt.y)<7) return true;
+      return store.sel.bezier && ['hIn','hOut'].some(hk=>pt[hk]&&Math.hypot(p.x-pt[hk].x,p.y-pt[hk].y)<6);
+    });
+    const ep=(!store.sel || (!onResizeHandle && !onPathVertex)) ? pickEdgeAt(p,s) : null;
     if(ep?.g){ pushUndo(); store.dragAct='guidedrag'; store.dragNow={g:ep.g}; return; }
     if(ep?.sh){
       edgePick=ep; store.sel=ep.sh;
@@ -381,11 +423,22 @@ function onPointerDown(e){
   }
   if(P.tool==='sel'){
     // 锁定的选中形状不给任何手柄/拖动入口(面板选中锁定形状时,画布只读)
-    if(store.sel&&!store.sel.locked&&store.sel.type==='path'){ // 锚点手柄优先于整体缩放/移动判定
+    if(store.sel&&!store.sel.locked&&store.sel.type==='path'){
       const pts=store.sel.points;
+      // 贝塞尔控制柄优先(拖柄=调曲率;Alt=断开对称,单独调一侧)
+      if(store.sel.bezier){
+        for(let i=0;i<pts.length;i++) for(const hk of ['hOut','hIn']){
+          const h=pts[i][hk];
+          if(h&&Math.hypot(p.x-h.x,p.y-h.y)<6){
+            pushUndo(); store.dragAct='handle'; store.dragStart=p;
+            store.dragNow={i,hk,sym:!e.altKey}; return; }
+        }
+      }
+      // 再判锚点(拖锚点=移动该点连同其两根柄)
       for(let i=0;i<pts.length;i++)
         if(Math.hypot(p.x-pts[i].x,p.y-pts[i].y)<7){
-          pushUndo(); store.dragAct='pathpt'+i; store.dragStart=p; return; }
+          pushUndo(); store.dragAct='pathpt'; store.dragStart=p;
+          store.dragNow={i, orig:JSON.parse(JSON.stringify(pts[i]))}; return; }
     }
     if(store.sel&&!store.sel.locked){
       const hs=handlePts(store.sel);
@@ -417,7 +470,14 @@ function onPointerDown(e){
         points:sh.type==='path'?sh.points.map(pt=>({...pt})):null}))};
   }
   else if(P.tool==='rect'||P.tool==='ell'){ store.dragAct='draw'; store.dragStart=p; store.dragNow=p; }
-  else if(P.tool==='pen'){ store.dragAct='pen'; store.dragStart=p; store.dragNow={strokePts:[p]}; }
+  else if(P.tool==='pen'){
+    // AE 式贝塞尔钢笔:点=放尖角锚点,点后拖=拉出对称控制柄(光滑点);点回起点或 Enter/双击=闭合完成。
+    const pen=store.penPts;
+    if(pen && pen.length>=2 && Math.hypot(p.x-pen[0].x,p.y-pen[0].y)<9){ finishPen(s); return; }
+    if(!store.penPts){ store.penPts=[]; setHint('钢笔:点=尖角 · 点后拖=曲线柄 · 点回起点/Enter/双击=闭合 · Esc 取消'); }
+    const a={x:p.x,y:p.y}; store.penPts.push(a);
+    store.dragAct='penpull'; store.dragStart=p; store.dragNow={anchor:a};
+  }
   else if(P.tool==='text'){
     pushUndo();
     const txt=$('txtWord').value||'GO', h=P.font, w=measureText(txt,h);
@@ -436,6 +496,7 @@ function onPointerDown(e){
 }
 function onPointerMove(e){
   const p=ptr(e), s=cur();
+  if(P.tool==='pen'&&store.penPts) store.penCursor=p; // 钢笔橡皮筋:随时记录光标
   if(!store.dragAct){
     // 悬停反馈:车面取景框(移动/缩放)、可拾取的边、可拖的中线
     if(store.mode!=='edit'){ cv.style.cursor=''; return; }
@@ -447,13 +508,26 @@ function onPointerMove(e){
     return;
   }
   if(store.dragAct==='draw'){ store.dragNow=p; }
-  else if(store.dragAct==='pen'){
-    const pts=store.dragNow.strokePts, last=pts[pts.length-1];
-    if(Math.hypot(p.x-last.x,p.y-last.y)>=PEN_MIN_STEP) pts.push(p); // 节流,避免原始轨迹过密
+  else if(store.dragAct==='penpull'&&store.dragNow.anchor){
+    // 点后拖:拉出对称控制柄(光滑锚点);拖动幅度太小则保持尖角
+    const a=store.dragNow.anchor;
+    if(Math.hypot(p.x-store.dragStart.x,p.y-store.dragStart.y)>3){
+      a.hOut={x:p.x,y:p.y}; a.hIn={x:2*a.x-p.x, y:2*a.y-p.y};
+    } else { delete a.hOut; delete a.hIn; }
   }
-  else if(store.dragAct.startsWith('pathpt')&&store.sel){
-    const i=+store.dragAct.slice(6);
-    store.sel.points[i]={x:p.x,y:p.y};
+  else if(store.dragAct==='handle'&&store.sel){
+    const {i,hk,sym}=store.dragNow, a=store.sel.points[i];
+    a[hk]={x:p.x,y:p.y};
+    if(sym){ const other=hk==='hOut'?'hIn':'hOut'; a[other]={x:2*a.x-p.x, y:2*a.y-p.y}; } // 对称联动
+    Object.assign(store.sel, pathBBox(store.sel.points));
+    shapesChanged(s,true);
+  }
+  else if(store.dragAct==='pathpt'&&store.sel){
+    const {i,orig}=store.dragNow, a=store.sel.points[i];
+    const dx=p.x-store.dragStart.x, dy=p.y-store.dragStart.y;
+    a.x=orig.x+dx; a.y=orig.y+dy;                              // 锚点连同两根柄整体平移
+    if(orig.hIn) a.hIn={x:orig.hIn.x+dx, y:orig.hIn.y+dy};
+    if(orig.hOut) a.hOut={x:orig.hOut.x+dx, y:orig.hOut.y+dy};
     Object.assign(store.sel, pathBBox(store.sel.points));
     shapesChanged(s,true);
   }
@@ -496,13 +570,13 @@ function onPointerMove(e){
     store.snapGuides=snapped.guides;
     const tx=snapped.x-store.dragNow.ox, ty=snapped.y-store.dragNow.oy;
     if(store.sel.type==='path'&&store.dragNow.origPoints){
-      store.sel.points=store.dragNow.origPoints.map(pt=>({x:pt.x+tx,y:pt.y+ty}));
+      store.sel.points=store.dragNow.origPoints.map(pt=>translatePt(pt,tx,ty));
       Object.assign(store.sel, pathBBox(store.sel.points));
     } else {
       store.sel.x=store.dragNow.ox+tx; store.sel.y=store.dragNow.oy+ty;
     }
     for(const m of store.dragNow.multi||[]){ // 多选:其余成员同位移
-      if(m.points){ m.sh.points=m.points.map(pt=>({x:pt.x+tx,y:pt.y+ty}));
+      if(m.points){ m.sh.points=m.points.map(pt=>translatePt(pt,tx,ty));
         Object.assign(m.sh, pathBBox(m.sh.points)); }
       else { m.sh.x=m.x+tx; m.sh.y=m.y+ty; }
     }
@@ -519,7 +593,7 @@ function onPointerMove(e){
     else if(sel.type==='path'&&store.dragNow?.origPoints){
       const {origX,origY,origW,origH,origPoints}=store.dragNow;
       const sx=origW<1e-6?1:nw/origW, sy=origH<1e-6?1:nh/origH;
-      sel.points=origPoints.map(pt=>({x:nx+(pt.x-origX)*sx, y:ny+(pt.y-origY)*sy}));
+      sel.points=origPoints.map(pt=>scalePt(pt,origX,origY,sx,sy,nx,ny));
     }
     sel.x=nx; sel.y=ny; sel.w=nw; sel.h=nh;
     shapesChanged(s,true); updateSelBox();
@@ -537,9 +611,10 @@ function onPointerUp(e){
     const p=ptr(e);
     if(Math.abs(p.x-store.dragStart.x)>3||Math.abs(p.y-store.dragStart.y)>3){
       pushUndo();
+      // 新矩形/椭圆默认实心矢量填充(不是点阵);想要点阵取消 🧱实心
       const sh={id:store.shapeId++, type:P.tool==='rect'?'rect':'ellipse',
         x:Math.min(store.dragStart.x,p.x), y:Math.min(store.dragStart.y,p.y),
-        w:Math.abs(p.x-store.dragStart.x), h:Math.abs(p.y-store.dragStart.y), bool:P.bool};
+        w:Math.abs(p.x-store.dragStart.x), h:Math.abs(p.y-store.dragStart.y), bool:P.bool, solidFill:true};
       s.shapes.push(sh); store.sel=sh; updateSelBox(); shapesChanged(s);
     }
   } else if(store.dragAct==='marquee'||store.dragAct==='shiftsel'){
@@ -577,14 +652,8 @@ function onPointerUp(e){
       }
     }
     updateSelBox();
-  } else if(store.dragAct==='pen'){
-    const simplified=rdpSimplify(store.dragNow.strokePts, PEN_EPSILON);
-    if(simplified.length>=3){
-      pushUndo();
-      const sh={id:store.shapeId++, type:'path', points:simplified, bool:P.bool, ...pathBBox(simplified)};
-      s.shapes.push(sh); store.sel=sh; updateSelBox(); shapesChanged(s);
-      setHint(`已画一条轮廓(${simplified.length} 个锚点)· ➤ 工具可拖动锚点精修`);
-    }
+  } else if(store.dragAct==='penpull'){
+    // 锚点已提交进 store.penPts,松手保持钢笔进行中(等待下一个点或闭合)
   } else { shapesChanged(s); }
   store.dragAct=null; store.dragStart=null; store.dragNow=null; store.snapGuides=null;
 }
@@ -625,6 +694,12 @@ function onKeyDown(e){
     setHint(`已粘贴 ${made.length} 个形状(含实心/采样等属性)`);
     e.preventDefault(); return;
   }
+  // 钢笔进行中:Enter 闭合完成,Esc 取消(优先于普通工具切换/取消)
+  if(store.penPts){
+    if(e.key==='Enter'){ finishPen(cur()); e.preventDefault(); return; }
+    if(e.key==='Escape'){ cancelPen(); e.preventDefault(); return; }
+  }
+  if(store.penPts && 'vretdp'.includes(k)) finishPen(cur()); // 切工具键先收尾钢笔
   if(k==='v')setTool('sel'); else if(k==='r')setTool('rect');
   else if(k==='e')setTool('ell'); else if(k==='t')setTool('text');
   else if(k==='d')setTool('dot'); else if(k==='p')setTool('pen');
@@ -645,13 +720,25 @@ function onKeyDown(e){
   }
 }
 
-// 双击编辑路径锚点:双击已有手柄=删除该点(至少保留 3 点);双击轮廓线段=在该处插入新锚点。
+// 双击:钢笔进行中=闭合完成;否则编辑选中路径的锚点 ——
+// 双击锚点=删(至少留 2/贝塞尔 2、平滑 3);双击贝塞尔尖角锚点=切换尖角⇄光滑;双击轮廓线段=插入锚点。
 function onDblClick(e){
-  if(store.mode==='play'||P.tool!=='sel'||!store.sel||store.sel.type!=='path'||store.sel.locked) return;
-  const p=ptr(e), sel=store.sel, s=cur();
+  if(store.mode==='play') return;
+  if(store.penPts){ finishPen(cur()); return; }
+  if(P.tool!=='sel'||!store.sel||store.sel.type!=='path'||store.sel.locked) return;
+  const p=ptr(e), sel=store.sel, s=cur(), min=sel.bezier?2:3;
   for(let i=0;i<sel.points.length;i++){
-    if(Math.hypot(p.x-sel.points[i].x,p.y-sel.points[i].y)<7){
-      if(sel.points.length<=3){ setHint('轮廓至少保留 3 个锚点'); return; }
+    const a=sel.points[i];
+    if(Math.hypot(p.x-a.x,p.y-a.y)<7){
+      if(sel.bezier && (a.hIn||a.hOut)){ // 光滑锚点 → 双击转尖角
+        pushUndo(); delete a.hIn; delete a.hOut; shapesChanged(s); setHint('锚点已转为尖角'); return; }
+      if(sel.bezier){ // 尖角锚点 → 双击生成对称柄(转光滑)
+        const prev=sel.points[(i-1+sel.points.length)%sel.points.length], nx=sel.points[(i+1)%sel.points.length];
+        const tx=(nx.x-prev.x)*0.18, ty=(nx.y-prev.y)*0.18;
+        pushUndo(); a.hOut={x:a.x+tx,y:a.y+ty}; a.hIn={x:a.x-tx,y:a.y-ty};
+        shapesChanged(s); setHint('锚点已转为光滑(拖黄色控制柄调曲率)'); return;
+      }
+      if(sel.points.length<=min){ setHint(`轮廓至少保留 ${min} 个锚点`); return; }
       pushUndo(); sel.points.splice(i,1); Object.assign(sel, pathBBox(sel.points));
       updateSelBox(); shapesChanged(s); return;
     }

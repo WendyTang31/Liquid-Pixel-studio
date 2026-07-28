@@ -52,3 +52,24 @@ export function fillSmoothClosedPath(ctx, points){
   ctx.closePath();
   return true;
 }
+
+// AE 式贝塞尔闭合路径:每个锚点可带 hIn/hOut(绝对坐标控制柄);无柄锚点=尖角(直线相接)。
+// 段 a→b 的三次控制点取 a.hOut(缺省=a)与 b.hIn(缺省=b)—— 与 AE/Illustrator 钢笔一致:
+// 不拖柄就是直线折点,拖柄就是光滑曲线。环形闭合。
+export function fillBezierPath(ctx, pts){
+  const n=pts.length; if(n<2) return false;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for(let i=0;i<n;i++){
+    const a=pts[i], b=pts[(i+1)%n];
+    const c1=a.hOut||a, c2=b.hIn||b;
+    ctx.bezierCurveTo(c1.x,c1.y, c2.x,c2.y, b.x,b.y);
+  }
+  ctx.closePath();
+  return true;
+}
+
+// 统一入口:贝塞尔路径走 fillBezierPath,老的手绘/平滑路径走 fillSmoothClosedPath(向后兼容)。
+export function traceShapePath(ctx, sh){
+  return sh.bezier ? fillBezierPath(ctx, sh.points) : fillSmoothClosedPath(ctx, sh.points);
+}

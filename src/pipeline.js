@@ -5,7 +5,7 @@ import { P } from './config.js';
 import { store } from './store.js';
 import { $, FONT, hex2rgb } from './utils.js';
 import { SAMPLERS, sampleDots, samplePtsFit, distanceField } from './samplers.js';
-import { fillSmoothClosedPath } from './path.js';
+import { fillSmoothClosedPath, traceShapePath } from './path.js';
 import { binarize, grayscaleize, quantizeColors } from './image.js';
 import { solveConstraints } from './constraints.js';
 
@@ -52,7 +52,7 @@ export function paintShapes(c, shapes, colorCtx=null){
     if(sh.type==='rect') c.fillRect(sh.x,sh.y,sh.w,sh.h);
     else if(sh.type==='ellipse'){ c.beginPath();
       c.ellipse(sh.x+sh.w/2,sh.y+sh.h/2,sh.w/2,sh.h/2,0,0,7); c.fill(); }
-    else if(sh.type==='path'){ if(fillSmoothClosedPath(c,sh.points)) c.fill(); }
+    else if(sh.type==='path'){ if(traceShapePath(c,sh)) c.fill(); }
     else if(sh.type==='image'){
       if(!sh._img) continue; // 尚未解码完成(工程刚打开/撤销刚发生),跳过这一帧,解码完会再刷一次
       const tw=Math.max(1,Math.round(sh.w)), th=Math.max(1,Math.round(sh.h));
@@ -98,7 +98,7 @@ export function paintShapes(c, shapes, colorCtx=null){
       if(sh.type==='rect') colorCtx.fillRect(sh.x,sh.y,sh.w,sh.h);
       else if(sh.type==='ellipse'){ colorCtx.beginPath();
         colorCtx.ellipse(sh.x+sh.w/2,sh.y+sh.h/2,sh.w/2,sh.h/2,0,0,7); colorCtx.fill(); }
-      else if(sh.type==='path'){ if(fillSmoothClosedPath(colorCtx,sh.points)) colorCtx.fill(); }
+      else if(sh.type==='path'){ if(traceShapePath(colorCtx,sh)) colorCtx.fill(); }
       else { colorCtx.font=FONT(sh.h); colorCtx.textAlign='center'; colorCtx.textBaseline='middle';
         colorCtx.fillText(sh.text, sh.x+sh.w/2, sh.y+sh.h/2); }
       colorCtx.restore();
