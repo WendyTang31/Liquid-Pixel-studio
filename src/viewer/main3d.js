@@ -41,13 +41,14 @@ async function idbDel(key){ const db=await idbOpen(); return new Promise((res,re
   tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
 
 /* ══════════════ 动画组 ══════════════ */
-const TEXW=1440, TEXH=840; // 贴图分辨率(保持 12:7 与编辑器一致);更高 → 边缘更细
-// 贴图边缘平滑:三线性 + mipmap + 各向异性过滤 —— 车身是曲面且常以掠射角观看,
-// 各向异性过滤是消除"锯齿边"的关键(远不止提高分辨率)。CanvasTexture 每帧更新会重建 mipmap。
+const TEXW=960, TEXH=560; // 贴图分辨率(保持 12:7 与编辑器一致)
+// 贴图边缘平滑:各向异性过滤 —— 车身曲面常以掠射角观看,这是消"锯齿边"的关键。
+// 只设 anisotropy + 双线性(不强制 mipmap):mipmap 对每帧更新的 CanvasTexture 有兼容/性能风险,
+// 曾疑似导致 UV 直贴网格材质异常(前盖消失),故不用。anisotropy 只是采样提示,绝不会让网格消失。
 let MAXANISO=8; // 渲染器建好后置为硬件上限
 function smoothTex(t){
-  t.magFilter=THREE.LinearFilter; t.minFilter=THREE.LinearMipmapLinearFilter;
-  t.generateMipmaps=true; t.anisotropy=MAXANISO; t.needsUpdate=true; return t;
+  t.magFilter=THREE.LinearFilter; t.minFilter=THREE.LinearFilter;
+  t.generateMipmaps=false; t.anisotropy=MAXANISO; t.needsUpdate=true; return t;
 }
 function makeGroup(name){
   const texCanvas=document.createElement('canvas'); texCanvas.width=TEXW; texCanvas.height=TEXH;
