@@ -15,6 +15,8 @@ export function updateSelBox(){
   renderLayers(); // 图层面板与选中状态同源刷新(选中高亮/行数变化都走这一个口)
   const box=$('selBox'); const sel=store.sel;
   if(!sel){ box.innerHTML='<span class="small">（未选中 — ➤ 工具点击形状）</span>'; return; }
+  const multiNote=store.selMulti?.length>1
+    ? `<div class="small" style="color:var(--mint)">已多选 ${store.selMulti.length} 个 — 「排列」区可对齐/等距/等尺寸/阵列</div>` : '';
   const name={rect:'矩形',ellipse:'椭圆',text:`文字 "${sel.text}"`,
     path:`自由轮廓 · ${sel.points?.length||0} 个锚点(双击线段加点/双击手柄删点)`,
     image:`图片蒙版${sel.useAlpha?' · 按透明通道':' · 按亮度'}`}[sel.type];
@@ -42,7 +44,7 @@ export function updateSelBox(){
       <input type="text" id="selRScale" value="${sel.rscale||''}" style="width:40px" placeholder="1.0">
     </div>`;
   const num=(id,v)=>`<input type="text" id="${id}" value="${Math.round(v)}" style="width:44px">`;
-  box.innerHTML=`<div>${name}</div>
+  box.innerHTML=`${multiNote}<div>${name}</div>
     <div class="row" title="精确数值定位;方向键微移 1px,Shift=10px">
       <label style="min-width:auto">X</label>${num('selX',sel.x)}
       <label style="min-width:auto">Y</label>${num('selY',sel.y)}
@@ -96,11 +98,12 @@ export function updateSelBox(){
 }
 export function deleteSel(){
   if(!store.sel||store.mode==='play') return;
-  if(store.sel.locked){ setHint('形状已锁定 — 图层面板点 🔒 解锁后再删'); return; }
+  const list=(store.selMulti?.length?store.selMulti:[store.sel]).filter(sh=>!sh.locked);
+  if(!list.length){ setHint('形状已锁定 — 图层面板点 🔒 解锁后再删'); return; }
   pushUndo();
-  const s=cur(), i=s.shapes.indexOf(store.sel);
-  if(i>=0) s.shapes.splice(i,1);
-  store.sel=null; updateSelBox(); shapesChanged(s);
+  const s=cur();
+  for(const sh of list){ const i=s.shapes.indexOf(sh); if(i>=0) s.shapes.splice(i,1); }
+  store.sel=null; store.selMulti=[]; updateSelBox(); shapesChanged(s);
 }
 
 // ── 参数 UI 回填(打开工程后同步滑块/下拉显示)──

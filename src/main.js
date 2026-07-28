@@ -13,6 +13,7 @@ import { initAutosave, autosaveNow } from './autosave.js';
 import { initSkinRef } from './ui/skinRef.js';
 import { initTimeline } from './ui/timeline.js';
 import { renderLayers } from './ui/layers.js';
+import { initArrange } from './ui/arrange.js';
 import { initI18n } from './i18n.js';
 
 // ── 顶栏:组操作 + 工程 ──
@@ -79,12 +80,37 @@ function tryRestoreAutosave(){
   }catch(_){ return false; }
 }
 
+// ── 右栏分区折叠:把每个 .sec 标题与其后的兄弟节点包成一组,点标题开合,状态入 localStorage。
+//    在 DOM 上动态包裹而非改写 index.html —— 各控件 id 与既有绑定完全不动。──
+function initFoldableSections(){
+  const props=document.querySelector('.props');
+  const secs=[...props.querySelectorAll(':scope > .sec')];
+  let folds={}; try{ folds=JSON.parse(localStorage.getItem('morph-folds')||'{}'); }catch(_){}
+  secs.forEach((sec,i)=>{
+    const body=document.createElement('div'); body.className='secbody';
+    let n=sec.nextSibling;
+    while(n && !(n.nodeType===1 && n.classList?.contains('sec'))){
+      const nx=n.nextSibling;
+      if(n.nodeType===1 && n.classList?.contains('divider')) break; // 分隔线留在组外
+      body.appendChild(n); n=nx;
+    }
+    sec.after(body);
+    const apply=f=>{ body.classList.toggle('folded',f); sec.classList.toggle('folded',f); };
+    apply(!!folds[i]);
+    sec.addEventListener('click',()=>{ folds[i]=!body.classList.contains('folded');
+      apply(folds[i]);
+      try{ localStorage.setItem('morph-folds', JSON.stringify(folds)); }catch(_){} });
+  });
+}
+
 initToolbar();
 initInspector();
 initStage();
 initTopbar();
 initSkinRef();
 initTimeline();
+initArrange();
+initFoldableSections();
 const restored=tryRestoreAutosave();
 if(!restored) seedExample();
 renderStrip(); syncStateUI(); syncUI(); renderLayers();

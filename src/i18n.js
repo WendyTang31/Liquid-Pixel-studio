@@ -42,6 +42,18 @@ const EXACT = {
     'Drag = scrub · drag segment edge = duration · dbl-click hold = edit that state',
   '已调整图层顺序(上=前)':'Layer order changed (top = front)',
   '形状已锁定 — 图层面板点 🔒 解锁后再删':'Shape locked — unlock 🔒 in Layers first',
+  // ── 排列(计算式) ──
+  '排列(计算式)':'ARRANGE (computed)',
+  '⋯等距':'⋯space', '⋮等距':'⋮space', '=宽':'=W', '=高':'=H',
+  '⧉ 左右镜像':'⧉ Mirror H', '⧉ 上下镜像':'⧉ Mirror V',
+  '阵列':'Array', '生成':'Make',
+  '对齐需要多选 ≥2(Shift+点选或框选)':'Align needs ≥2 selected (Shift+click or marquee)',
+  '等距需要多选 ≥3':'Distribute needs ≥3 selected',
+  '等尺寸需要多选 ≥2':'Equal size needs ≥2 selected',
+  '先选中要镜像的形状':'Select shapes to mirror first',
+  '先选中要阵列的形状':'Select shapes to array first',
+  '阵列数量需为 2~60':'Array count must be 2~60',
+  'ΔX/ΔY 至少一项非 0(像素)':'ΔX/ΔY: at least one non-zero (px)',
   // ── 选中对象 ──
   '选中对象':'SELECTION', '（未选中 — ➤ 工具点击形状）':'(none — click a shape with ➤)',
   '宽':'W', '高':'H', '阈值':'Threshold', '黑场':'Black floor',

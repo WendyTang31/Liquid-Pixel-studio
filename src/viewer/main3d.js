@@ -259,12 +259,39 @@ function buildWrap(d){
 
 /* ── UV 直贴(Blender 展开工作流):动画按网格自带 UV 直接作为其材质 ——
    零投影畸变,连续性由 Blender 里的展开质量决定;UV 线框同步给 2D 编辑器当底图。── */
-const uvOrig=new Map(); // mesh → 原材质(删除 UV 图层时还原)
+const uvOrig=new Map();    // mesh → 原材质(删除 UV 图层时还原)
+const uvOrigAttr=new Map();// mesh → 原始 UV 数组备份(取景窗口重映射的基准,幂等)
+let uvSyncTimer=null;
 function applyUvLayer(d){
   if(!d.mesh) return;
-  if(!d.mesh.geometry?.attributes?.uv){ hint('⚠ 该网格没有 UV,请在 Blender 里展开后重新导出'); return; }
+  const uv=d.mesh.geometry?.attributes?.uv;
+  if(!uv){ hint('⚠ 该网格没有 UV,请在 Blender 里展开后重新导出'); return; }
   if(!uvOrig.has(d.mesh)) uvOrig.set(d.mesh, d.mesh.material);
+  if(!uvOrigAttr.has(d.mesh)) uvOrigAttr.set(d.mesh, uv.array.slice());
   d.mesh.material=groups[d.group].matUV;
+  // 取景窗口重映射:画布上 (cx,cy,cw,ch) 这块区域喂给 UV 岛 —— 分区切割器里拖框 =
+  // 把这块部件的"读画区"挪到画布任意位置(默认全幅)。始终从原始备份重算,幂等无漂移。
+  // matUV 的纹理 flipY=false,v 与画布同向(v=0 顶行),故 v'=cy+v·ch 直加。
+  const o=uvOrigAttr.get(d.mesh);
+  for(let i=0;i<uv.count;i++)
+    uv.setXY(i, d.cx+o[i*2]*d.cw, d.cy+o[i*2+1]*d.ch);
+  uv.needsUpdate=true;
+  // 编辑器底图条目跟着窗口走(防抖:切割器拖动中 90ms 一次 projectDecal,别每次都写大 dataURL)
+  clearTimeout(uvSyncTimer);
+  uvSyncTimer=setTimeout(()=>syncUvLayoutEntry(d), 250);
+}
+// 把本 UV 层的取景框写进 morph-uvlayout(保留既有线框快照),2D 编辑器"车面"底图即时跟移。
+function syncUvLayoutEntry(d){
+  if(!d.mesh) return;
+  try{
+    const key=`🧩 UV · ${d.mesh.name||'mesh'}`;
+    const layout=JSON.parse(localStorage.getItem('morph-uvlayout')||'{"patches":[]}');
+    let p=layout.patches.find(q=>q.name===key);
+    if(!p){ p={name:key, color:'#9affe2', meshName:'', snap:uvWireframe(d.mesh)}; layout.patches.push(p); }
+    p.cx=d.cx; p.cy=d.cy; p.cw=d.cw; p.ch=d.ch;
+    layout.ts=performance.now();
+    localStorage.setItem('morph-uvlayout', JSON.stringify(layout));
+  }catch(_){}
 }
 // UV 线框(编辑器底图):把网格的 UV 三角边画成 480×280 线稿。大网格隔三角抽稀。
 function uvWireframe(mesh){
@@ -301,15 +328,7 @@ function createUvLayer(mesh){
   const d={kind:'uv', group:activeGroup, mesh, localPoint:null, localNormal:null,
     sz:1.2, rot:0, du:0, dv:0, cx:0, cy:0, cw:1, ch:1, obj:null};
   decals.push(d); activeDecal=decals.length-1;
-  applyUvLayer(d);
-  try{
-    const layout=JSON.parse(localStorage.getItem('morph-uvlayout')||'{"patches":[]}');
-    layout.ts=performance.now();
-    layout.patches=layout.patches.filter(p=>p.name!==`🧩 UV · ${mesh.name||'mesh'}`);
-    layout.patches.push({cx:0,cy:0,cw:1,ch:1, color:'#9affe2',
-      name:`🧩 UV · ${mesh.name||'mesh'}`, meshName:'', snap:uvWireframe(mesh)});
-    localStorage.setItem('morph-uvlayout', JSON.stringify(layout));
-  }catch(_){}
+  applyUvLayer(d); syncUvLayoutEntry(d);
   selected=true; syncPanel(); saveViewState(); setMode3('sel');
   hint(uvWarn || `🧩 「${mesh.name||'部件'}」已按自带 UV 直贴 — 2D 编辑器勾「车面」即见 UV 线框底图`);
   return true;
@@ -372,6 +391,9 @@ async function restoreView(s){
   decals.length=0;
   for(const [mesh,mat] of uvOrig) mesh.material=mat; // 先还原 UV 直贴材质再重放
   uvOrig.clear();
+  for(const [mesh,arr] of uvOrigAttr){ const uv=mesh.geometry?.attributes?.uv; // 取景窗口重映射同步还原
+    if(uv){ uv.array.set(arr); uv.needsUpdate=true; } }
+  uvOrigAttr.clear();
   for(const sd of s.decals){
     const gi=Math.min(sd.group||0, groups.length-1);
     const d=sd.kind==='wrap'?newWrap(gi):newDecal(gi);
@@ -729,8 +751,11 @@ function delActiveDecal(){
   if(decals.length<=1){ hint('至少保留一块投影面'); return; }
   pushViewUndo();
   const d=decals[activeDecal];
-  if(d.kind==='uv' && d.mesh && uvOrig.has(d.mesh)){ // 还原网格原材质
+  if(d.kind==='uv' && d.mesh && uvOrig.has(d.mesh)){ // 还原网格原材质 + 原 UV
     d.mesh.material=uvOrig.get(d.mesh); uvOrig.delete(d.mesh);
+    const arr=uvOrigAttr.get(d.mesh), uv=d.mesh.geometry?.attributes?.uv;
+    if(arr&&uv){ uv.array.set(arr); uv.needsUpdate=true; }
+    uvOrigAttr.delete(d.mesh);
   }
   removeObj(d); decals.splice(activeDecal,1);
   activeDecal=Math.min(activeDecal,decals.length-1);
@@ -917,6 +942,11 @@ $('bakeBtn').onclick=()=>{
     meshName:d.mesh?.name||'',
     snap:d.kind==='wrap'?null:bakePatchSnapshot(d) })); // 环绕面无单一视角,只送框与标签
   hidden.forEach(o=>o.visible=true);
+  // UV 直贴层没有 obj,但同样要进布局(线框底图 + 取景框),否则一按同步就被抹掉
+  for(const d of decals) if(d.kind==='uv'&&d.mesh)
+    patches.push({ i:decals.indexOf(d), group:d.group, groupName:groups[d.group].name,
+      cx:d.cx, cy:d.cy, cw:d.cw, ch:d.ch, color:'#9affe2',
+      name:`🧩 UV · ${d.mesh.name||'mesh'}`, meshName:'', snap:uvWireframe(d.mesh) });
   try{ localStorage.setItem('morph-uvlayout', JSON.stringify({ts:Date.now(), patches})); }catch(_){}
   hint(`🗺 已同步 ${patches.length} 块面的布局与表面快照 — 编辑器勾选「车面」即可对着画`);
 };

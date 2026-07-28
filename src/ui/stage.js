@@ -119,7 +119,18 @@ function overlayCamFrame(){
   ctx.restore();
 }
 function overlaySelection(){
-  if(!store.sel||store.mode==='play') return;
+  if(store.mode==='play') return;
+  // 多选成员薄框 + 框选进行中的虚线矩形
+  for(const sh of store.selMulti||[]){ if(sh===store.sel) continue;
+    ctx.strokeStyle='rgba(120,180,255,0.5)'; ctx.lineWidth=1;
+    ctx.strokeRect(sh.x,sh.y,sh.w,sh.h); }
+  if(store.dragAct==='marquee'&&store.dragStart&&store.dragNow){
+    ctx.strokeStyle='rgba(152,245,208,0.7)'; ctx.setLineDash([4,3]); ctx.lineWidth=1;
+    ctx.strokeRect(Math.min(store.dragStart.x,store.dragNow.x), Math.min(store.dragStart.y,store.dragNow.y),
+      Math.abs(store.dragNow.x-store.dragStart.x), Math.abs(store.dragNow.y-store.dragStart.y));
+    ctx.setLineDash([]);
+  }
+  if(!store.sel) return;
   const sel=store.sel;
   if(sel.type==='path'){
     // 描边显示实际会被填充的平滑曲线,再逐锚点画小圆手柄(区别于下方整体缩放的方块手柄)
@@ -182,7 +193,7 @@ export function startLoop(){ store.last=performance.now(); requestAnimationFrame
 // ══════════════ 模式切换 ══════════════
 export function setMode(m){ store.mode=m;
   $('mPlay').classList.toggle('active',m==='play');
-  if(m==='play'){ store.sel=null; updateSelBox();
+  if(m==='play'){ store.sel=null; store.selMulti=[]; updateSelBox();
     resampleAll(); rebuildSequence(); store.g=0;
     store.playing=true; $('playBtn').textContent='⏸ 暂停';
     $('mPlay').textContent='✏ 回到编辑';
@@ -221,14 +232,31 @@ function onPointerDown(e){
             : null;
           return; }
     }
-    store.sel=null;
+    let hit=null;
     for(let i=s.shapes.length-1;i>=0;i--){ const sh=s.shapes[i];
       if(sh.hidden||sh.locked) continue; // 隐藏/锁定的形状画布上不参与命中
-      if(p.x>=sh.x&&p.x<=sh.x+sh.w&&p.y>=sh.y&&p.y<=sh.y+sh.h){ store.sel=sh; break; } }
+      if(p.x>=sh.x&&p.x<=sh.x+sh.w&&p.y>=sh.y&&p.y<=sh.y+sh.h){ hit=sh; break; } }
+    if(e.shiftKey){ // Shift+点选:进出多选集合,不启动拖动
+      if(hit){
+        const i=store.selMulti.indexOf(hit);
+        if(i>=0){ store.selMulti.splice(i,1); if(store.sel===hit) store.sel=store.selMulti[store.selMulti.length-1]||null; }
+        else { store.selMulti.push(hit); store.sel=hit; }
+      }
+      updateSelBox(); return;
+    }
+    store.sel=hit;
+    if(!hit){ // 空处按下 = 框选(松手时圈中的进多选)
+      store.selMulti=[]; updateSelBox();
+      store.dragAct='marquee'; store.dragStart=p; store.dragNow=p; return;
+    }
+    if(!store.selMulti.includes(hit)) store.selMulti=[hit];
     updateSelBox();
-    if(store.sel){ pushUndo(); store.dragAct='move'; store.dragStart=p;
-      store.dragNow={ox:store.sel.x,oy:store.sel.y,
-        origPoints:store.sel.type==='path'?store.sel.points.map(pt=>({...pt})):null}; }
+    pushUndo(); store.dragAct='move'; store.dragStart=p;
+    store.dragNow={ox:hit.x,oy:hit.y,
+      origPoints:hit.type==='path'?hit.points.map(pt=>({...pt})):null,
+      // 多选整体拖动:记全体初始包围盒,同位移一起走
+      multi:store.selMulti.filter(sh=>sh!==hit&&!sh.locked).map(sh=>({sh,x:sh.x,y:sh.y,
+        points:sh.type==='path'?sh.points.map(pt=>({...pt})):null}))};
   }
   else if(P.tool==='rect'||P.tool==='ell'){ store.dragAct='draw'; store.dragStart=p; store.dragNow=p; }
   else if(P.tool==='pen'){ store.dragAct='pen'; store.dragStart=p; store.dragNow={strokePts:[p]}; }
@@ -260,6 +288,7 @@ function onPointerMove(e){
     Object.assign(store.sel, pathBBox(store.sel.points));
     shapesChanged(s,true);
   }
+  else if(store.dragAct==='marquee'){ store.dragNow=p; }
   else if(store.dragAct==='move'&&store.sel){
     const dx=p.x-store.dragStart.x, dy=p.y-store.dragStart.y;
     const snapped=snapMove(store.sel, store.dragNow.ox+dx, store.dragNow.oy+dy);
@@ -270,6 +299,11 @@ function onPointerMove(e){
       Object.assign(store.sel, pathBBox(store.sel.points));
     } else {
       store.sel.x=store.dragNow.ox+tx; store.sel.y=store.dragNow.oy+ty;
+    }
+    for(const m of store.dragNow.multi||[]){ // 多选:其余成员同位移
+      if(m.points){ m.sh.points=m.points.map(pt=>({x:pt.x+tx,y:pt.y+ty}));
+        Object.assign(m.sh, pathBBox(m.sh.points)); }
+      else { m.sh.x=m.x+tx; m.sh.y=m.y+ty; }
     }
     shapesChanged(s,true);
   }
@@ -302,6 +336,16 @@ function onPointerUp(e){
         w:Math.abs(p.x-store.dragStart.x), h:Math.abs(p.y-store.dragStart.y), bool:P.bool};
       s.shapes.push(sh); store.sel=sh; updateSelBox(); shapesChanged(s);
     }
+  } else if(store.dragAct==='marquee'){
+    const p=ptr(e), x0=Math.min(store.dragStart.x,p.x), x1=Math.max(store.dragStart.x,p.x);
+    const y0=Math.min(store.dragStart.y,p.y), y1=Math.max(store.dragStart.y,p.y);
+    if(x1-x0>4||y1-y0>4){
+      store.selMulti=s.shapes.filter(sh=>!sh.hidden&&!sh.locked&&
+        sh.x<x1&&sh.x+sh.w>x0&&sh.y<y1&&sh.y+sh.h>y0);
+      store.sel=store.selMulti[store.selMulti.length-1]||null;
+      if(store.selMulti.length>1) setHint(`已框选 ${store.selMulti.length} 个形状 — 右栏「排列」可对齐/等距/阵列`);
+    }
+    updateSelBox();
   } else if(store.dragAct==='pen'){
     const simplified=rdpSimplify(store.dragNow.strokePts, PEN_EPSILON);
     if(simplified.length>=3){
@@ -323,7 +367,7 @@ function onKeyDown(e){
   else if(k==='e')setTool('ell'); else if(k==='t')setTool('text');
   else if(k==='d')setTool('dot'); else if(k==='p')setTool('pen');
   else if(e.key==='Delete'||e.key==='Backspace'){ deleteSel(); e.preventDefault(); }
-  else if(e.key==='Escape'){ store.sel=null; updateSelBox(); }
+  else if(e.key==='Escape'){ store.sel=null; store.selMulti=[]; updateSelBox(); }
   else if(e.key.startsWith('Arrow') && store.sel && !store.sel.locked && store.mode==='edit'){
     const step=e.shiftKey?10:1;
     const dx=e.key==='ArrowLeft'?-step:e.key==='ArrowRight'?step:0;
@@ -332,7 +376,8 @@ function onKeyDown(e){
     const now=performance.now();
     if(!store._lastNudge || now-store._lastNudge>800) pushUndo();
     store._lastNudge=now;
-    applyShapeBBox(store.sel, store.sel.x+dx, store.sel.y+dy, store.sel.w, store.sel.h);
+    const list=store.selMulti?.length?store.selMulti.filter(sh=>!sh.locked):[store.sel];
+    for(const sh of list) applyShapeBBox(sh, sh.x+dx, sh.y+dy, sh.w, sh.h);
     shapesChanged(cur()); updateSelBox();
     e.preventDefault();
   }

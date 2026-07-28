@@ -78,6 +78,13 @@
           max-height:660px; overflow-y:auto;}
   .props::-webkit-scrollbar{width:6px} .props::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
   .sec{font-size:10.5px; color:var(--dim); letter-spacing:.12em; margin-top:4px;}
+  /* 右栏分区可折叠:标题即开关 */
+  .props > .sec{cursor:pointer; user-select:none;}
+  .props > .sec::before{content:'▾ '; color:var(--dim); font-size:9px;}
+  .props > .sec.folded::before{content:'▸ ';}
+  .props > .sec:hover{color:var(--ink);}
+  .secbody{display:flex; flex-direction:column; gap:8px;}
+  .secbody.folded{display:none;}
   .row{display:flex; align-items:center; gap:7px; flex-wrap:wrap;}
   .row label{font-size:11.5px; color:var(--dim); min-width:56px;}
   .row .val{font-size:11px; color:var(--mint); min-width:34px; text-align:right; font-variant-numeric:tabular-nums;}
@@ -216,6 +223,30 @@
     <div class="divider"></div>
     <div class="sec">选中对象</div>
     <div class="selbox" id="selBox"><span class="small">（未选中 — ➤ 工具点击形状）</span></div>
+
+    <div class="divider"></div>
+    <div class="sec" title="多选:Shift+点选 或 空处拖框选。所有操作数学精确 —— 手画的三条线一键变成严格等距等宽">排列(计算式)</div>
+    <div class="row" style="gap:4px">
+      <button id="alL" title="左对齐(多选≥2)">⇤</button><button id="alC" title="水平居中">↔</button><button id="alR" title="右对齐">⇥</button>
+      <button id="alT" title="顶对齐">⤒</button><button id="alM" title="垂直居中">↕</button><button id="alB" title="底对齐">⤓</button>
+    </div>
+    <div class="row" style="gap:4px">
+      <button id="dsH" title="水平等距分布(多选≥3,首尾定住中心等差)">⋯等距</button>
+      <button id="dsV" title="垂直等距分布(多选≥3)">⋮等距</button>
+      <button id="eqW" title="等宽:全部改成主选中的宽度">=宽</button>
+      <button id="eqH" title="等高:全部改成主选中的高度(同笔画粗细)">=高</button>
+    </div>
+    <div class="row" style="gap:4px">
+      <button id="mrH" title="镜像复制:按画布竖直中线复制出左右对称件" style="flex:1">⧉ 左右镜像</button>
+      <button id="mrV" title="镜像复制:按画布水平中线复制出上下对称件" style="flex:1">⧉ 上下镜像</button>
+    </div>
+    <div class="row" title="从选中形状出发按位移重复成 N 个 —— 三条等距横线 = 画一条 → N=3 ΔY=24 → 生成">
+      <label style="min-width:auto">阵列</label>
+      <input type="text" id="arrN" value="3" style="width:28px" title="总数量">
+      <label style="min-width:auto">ΔX</label><input type="text" id="arrDX" value="0" style="width:34px">
+      <label style="min-width:auto">ΔY</label><input type="text" id="arrDY" value="24" style="width:34px">
+      <button id="arrGo">生成</button>
+    </div>
 
     <div class="divider"></div>
     <div class="sec">文字工具</div>
