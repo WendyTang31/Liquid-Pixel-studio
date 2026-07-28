@@ -54,7 +54,14 @@ buildSequence 严格一致;隐藏形状不进蒙版不出点,锁定形状画布�
 - 已知验证技巧:隐藏标签页 rAF 不触发,用 window.__morph(编辑器)/window.__morph3d(3D,含 step/place/uvLayer 等)探针驱动;
   Vite 对已编辑模块加 ?t= 时间戳,外部 import 拿到的是不同实例,读状态必须走探针。
 
-**2026-07-28 批次**:① UV 直贴取景窗口 —— UV 层的 cx/cy/cw/ch 经 applyUvLayer 重映射网格 UV
+**2026-07-28 批次 B**:取景框(车面 UV 窗口)在 2D 编辑器可点选/移动/拖角边缩放/Shift 等比/
+Delete 删除/独立撤销栈(skinRef.js skinFocus 焦点路由 —— 删除后仍能 Ctrl+Z);修满宽窗口
+横向锁死的 clamp bug;CAD 式尺寸标注(点边 1→Shift+点边 2/中线→输入距离→Enter→edgegap 持久
+约束,画布 fx 风格标注线,中线可拖且约束实时跟随,constraints.js edgegap/gref);逐形状
+🧱实心 v2(移到"选中对象-采样"行 sh.solidFill,实心蒙版内点 r×√(1−w) 抑制根治毛边+边界卡顿);
+Ctrl+C/V 跨状态复制形状;工作区放大(布局 min(2400px,98vw)、面板 82vh)。
+
+**2026-07-28 批次 A**:① UV 直贴取景窗口 —— UV 层的 cx/cy/cw/ch 经 applyUvLayer 重映射网格 UV
 (原始 UV 备份幂等重算,删除/换模还原),分区切割器拖框即"把该部件的读画区挪到画布任意处",
 morph-uvlayout 条目防抖跟写(线框底图即时跟移),🗺同步不再抹掉 UV 条目;② 排列工具
 (src/ui/arrange.js,计算式绘图 v1):多选(Shift+点选/空处框选,整体拖动/微移/删除),
