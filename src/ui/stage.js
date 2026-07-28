@@ -157,8 +157,9 @@ function tick(now){
         else{ store.g=store.SEQ.T; store.playing=false; $('playBtn').textContent='▶ 播放'; } } }
     $('tVal').textContent=store.g.toFixed(1)+'s';
     const fr=sampleFrame(store.SEQ, store.states, store.g, store.clock, P);
-    if(gpuOn()){ glCv.style.display='block'; glRender(fr.balls, fr.col, P); ctx.clearRect(0,0,W,H); }
-    else { if(glCv) glCv.style.display='none'; previewRender(fr.balls, fr.col, P); }
+    // 实心场是 CPU 采样(SDF 纹理未进 GL 着色器),该帧有实心即回退 CPU 渲染
+    if(gpuOn() && !fr.solids?.length){ glCv.style.display='block'; glRender(fr.balls, fr.col, P); ctx.clearRect(0,0,W,H); }
+    else { if(glCv) glCv.style.display='none'; previewRender(fr.balls, fr.col, P, fr.solids, fr.cam); }
     overlayTraj(fr.balls, fr.seg, fr.cam); overlayFrameGuide();
   } else {
     const s=cur();

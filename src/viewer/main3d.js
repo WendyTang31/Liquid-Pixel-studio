@@ -16,7 +16,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { W, H, P as P_DEFAULT } from '../config.js';
 import { buildSequence, sampleFrame } from '../engine.js';
 import { createSizedRenderer } from '../render.js';
-import { stateDots } from '../pipeline.js';
+import { stateDots, shapesSdf } from '../pipeline.js';
 import { decodeImageShape } from '../image.js';
 import { downloadBlob } from '../utils.js';
 import { initI18n } from '../i18n.js';
@@ -88,6 +88,7 @@ async function loadProjectData(data, gi=0){
     out.push({name:d.name, color:d.color, hold:d.hold, dur:d.dur, trans:d.trans||{},
       cam:d.cam||null, // 镜头随工程走:车身贴图里同样推拉摇移
       isPose:d.isPose||false, loop:d.loop||null, // 子循环同样随工程走(buildSequence 统一处理)
+      solid:d.solid||false, _sdf:d.solid?shapesSdf(d.shapes):null, // 实心显示:车身贴图同样锐利边缘
       dots:stateDots(d.shapes, d.manual||[], gr.P)}); // 与编辑器同一采样核心(彩色/逐形状覆盖同步生效)
   }
   gr.states=out; gr.SEQ=buildSequence(out, true, gr.P);
@@ -1094,7 +1095,7 @@ function frame(now){
   for(const gr of groups){
     if(!gr.SEQ) continue;
     const fr=sampleFrame(gr.SEQ, gr.states, g%gr.SEQ.T, clock, gr.P);
-    gr.renderTex(fr.balls, fr.col, gr.P);
+    gr.renderTex(fr.balls, fr.col, gr.P, fr.solids, fr.cam);
     gr.screenTex.needsUpdate=true; gr.screenTexUV.needsUpdate=true;
   }
   if($('spinCk').checked && !gizmoDrag && !painting) carGroup.rotation.y+=dt*0.12;

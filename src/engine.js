@@ -238,6 +238,14 @@ export function camPt(x,y,cam){
   const dx=(x-cm.x)*W, dy=(y-cm.y)*H;
   return [0.5+(dx*cos-dy*sin)*cm.z/W, 0.5+(dx*sin+dy*cos)*cm.z/H];
 }
+// 逆镜头变换:渲染像素(归一化)→ 画布源坐标。实心场(SDF)在源空间采样,
+// 经此逆变换后与已被镜头变换的球画面严格对齐(含旋转)。
+export function camPtInv(x,y,cam){
+  if(camIdentity(cam)) return [x,y];
+  const cm={...DEF_CAM,...cam}, cos=Math.cos(-cm.rot), sin=Math.sin(-cm.rot);
+  const dx=(x-0.5)*W/cm.z, dy=(y-0.5)*H/cm.z;
+  return [cm.x+(dx*cos-dy*sin)/W, cm.y+(dx*sin+dy*cos)/H];
+}
 export function applyCam(balls, cam){
   if(camIdentity(cam)) return balls;
   const cm={...DEF_CAM,...cam}, cos=Math.cos(cm.rot), sin=Math.sin(cm.rot);
@@ -255,7 +263,25 @@ export function camAt(seg, states, lt){
   return lerpCam(states[seg.a].cam, states[seg.b].cam, EASE.smootherstep(lt));
 }
 
-// 采样一帧:全局时间 g → {seg, balls, col, cam}。预览与导出共用同一函数。
+// ── 实心显示(solid)──
+// 实心状态停留时按蒙版距离场(SDF)渲染:边缘是矢量形状本来的直线/曲线,不是点凑的。
+// 过渡时实心场在头/尾各 35% 窗口内平滑升降(smoothstep),中段纯点阵 —— "整块溶解成
+// 点飞走、再凝回整块"。窗口两端与停留段严丝合缝(w=1 时内部早已饱和,点在蒙版内,
+// 边缘由实心场主导,亮度无跳变)。纯函数,返回 [{si,w}]。
+export function solidWeights(seg, states, lt){
+  const out=[];
+  if(seg.type==='hold'){ if(states[seg.si].solid) out.push({si:seg.si, w:1}); }
+  else {
+    const WIN=0.35, ss=EASE.smoothstep;
+    if(states[seg.a].solid){ const w=ss(Math.max(0,Math.min(1,1-lt/WIN))); if(w>0) out.push({si:seg.a, w}); }
+    if(states[seg.b].solid){ const w=ss(Math.max(0,Math.min(1,(lt-(1-WIN))/WIN))); if(w>0) out.push({si:seg.b, w}); }
+  }
+  return out;
+}
+const solidsOf=(seg,states,lt)=>solidWeights(seg,states,lt)
+  .filter(s=>states[s.si]._sdf).map(s=>({sdf:states[s.si]._sdf, w:s.w}));
+
+// 采样一帧:全局时间 g → {seg, balls, col, cam, solids}。预览与导出共用同一函数。
 export function sampleFrame(SEQ, states, g, time, P){
   const {segs,T}=SEQ;
   g=Math.max(0,Math.min(T-1e-6,g));
@@ -271,16 +297,18 @@ export function sampleFrame(SEQ, states, g, time, P){
       const cycles=Math.max(1, Math.round(seg.dur/LT));
       const tau=Math.min(LT-1e-6, (lt*cycles*LT)%LT);
       const sub=sampleFrame(seg.loop.SEQ, seg.loop.states, tau, time, P);
-      return {seg, col:sub.col, cam:camIdentity(cam)?null:cam, balls:applyCam(sub.balls, cam)};
+      return {seg, col:sub.col, cam:camIdentity(cam)?null:cam, balls:applyCam(sub.balls, cam),
+        solids:sub.solids};
     }
     return {seg, col:hex2rgb(st.color), cam:camIdentity(cam)?null:cam,
+      solids:solidsOf(seg,states,0),
       balls:applyCam(st.dots.map(b=>{ const ph=dotPhase(b.x,b.y);
         return {x:b.x+P.amp*drift(ph,time,P), y:b.y+P.amp*drift(ph+3.1,time,P), r:b.r, c:b.c}; }), cam)};
   } else {
     const lt=(g-seg.t0)/seg.dur, ca=hex2rgb(states[seg.a].color), cb=hex2rgb(states[seg.b].color);
     const e=EASE.smoothstep(lt), cam=camAt(seg,states,lt);
     return {seg, balls:applyCam(transBalls(seg.pairs,lt,time,segParams(P,seg.ov)), cam),
-      cam:camIdentity(cam)?null:cam,
+      cam:camIdentity(cam)?null:cam, solids:solidsOf(seg,states,lt),
       col:[ca[0]+(cb[0]-ca[0])*e, ca[1]+(cb[1]-ca[1])*e, ca[2]+(cb[2]-ca[2])*e]};
   }
 }

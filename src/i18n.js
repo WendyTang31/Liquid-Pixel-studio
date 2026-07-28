@@ -12,6 +12,9 @@ const EXACT = {
   // ── 当前状态 ──
   '当前状态':'CURRENT STATE', '名称':'Name', '颜色':'Color', '背景':'BG',
   '停留 (秒)':'Hold (s)', '过渡 (秒)':'Trans (s)',
+  '🧱 实心显示(整块填充,过渡时溶解为点)':'🧱 Solid fill (dissolves to dots in transitions)',
+  '🧱 实心:停留=锐利整块;过渡=溶解为点再凝回':'🧱 Solid: crisp block on hold; dissolves to dots in transitions',
+  '已回到点阵显示':'Back to dot rendering',
   '本段过渡覆盖(→ 下一状态)':'Per-transition override (→ next)',
   '⧉ 复制':'⧉ Duplicate', '删除状态':'Delete State',
   '(跟随全局)':'(inherit global)',

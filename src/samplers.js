@@ -4,7 +4,7 @@
 import { W, H } from './config.js';
 
 // 两遍 chamfer 3/4 距离场:每个内部像素到最近边界的距离(×3 存储)。smart/strokes 共用。
-function distanceField(on){
+export function distanceField(on){
   const INF=1e9, D=new Float32Array(W*H);
   for(let y=0;y<H;y++)for(let x=0;x<W;x++) D[y*W+x]=on(x,y)?INF:0;
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){        // 前向遍历

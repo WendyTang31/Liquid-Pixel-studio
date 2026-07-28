@@ -4,7 +4,7 @@ import { W, H } from './config.js';
 import { P } from './config.js';
 import { store } from './store.js';
 import { $, FONT, hex2rgb } from './utils.js';
-import { SAMPLERS, sampleDots, samplePtsFit } from './samplers.js';
+import { SAMPLERS, sampleDots, samplePtsFit, distanceField } from './samplers.js';
 import { fillSmoothClosedPath } from './path.js';
 import { binarize, grayscaleize, quantizeColors } from './image.js';
 import { solveConstraints } from './constraints.js';
@@ -107,9 +107,17 @@ export function paintShapes(c, shapes, colorCtx=null){
 }
 
 // 光栅化一个状态:形状 → 蒙版,并刷新幽灵与缩略图。
+// 实心状态同步重算蒙版距离场(_sdf,运行时字段不入档)—— 实心渲染的边缘数据源。
 export function rasterize(s){
   paintShapes(s.mctx, s.shapes);
+  s._sdf = s.solid ? distanceField(maskReaderFor(s.mctx)) : null;
   tintGhost(s); updateThumb(s);
+}
+
+// 任意形状列表 → 距离场(3D 预览器载入工程时用,编辑器直接走 rasterize)。
+export function shapesSdf(shapes){
+  paintShapes(_smActx, shapes);
+  return distanceField(maskReaderFor(_smActx));
 }
 
 // 幽灵:半透明染色版蒙版,编辑时叠加做洋葱皮/参考。

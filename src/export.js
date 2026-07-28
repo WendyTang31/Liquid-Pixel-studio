@@ -31,8 +31,8 @@ export async function exportPNG(){
   for(let f=0;f<frames;f++){
     const g=f/P.fps;
     const fr=sampleFrame(store.SEQ, store.states, g, g, P); // 导出与预览共用 sampleFrame
-    if(ss===2){ renderToImageData(bctx,EW*2,EH*2,fr.balls,fr.col,P); ectx.drawImage(big,0,0,EW,EH); }
-    else renderToImageData(ectx,EW,EH,fr.balls,fr.col,P);
+    if(ss===2){ renderToImageData(bctx,EW*2,EH*2,fr.balls,fr.col,P,fr.solids,fr.cam); ectx.drawImage(big,0,0,EW,EH); }
+    else renderToImageData(ectx,EW,EH,fr.balls,fr.col,P,fr.solids,fr.cam);
     if(P.glow>0){
       glowCtx.clearRect(0,0,EW,EH); glowCtx.drawImage(ec,0,0);
       ectx.save();

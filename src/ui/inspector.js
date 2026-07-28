@@ -183,6 +183,9 @@ export function initInspector(){
   $('stName').addEventListener('input',e=>{ cur().name=e.target.value||'未命名'; renderStrip(); });
   $('stColor').addEventListener('input',e=>{ cur().color=e.target.value;
     tintGhost(cur()); updateThumb(cur()); store.seqDirty=true; });
+  $('stSolid').addEventListener('change',e=>{ pushUndo(); cur().solid=e.target.checked;
+    rasterize(cur()); store.seqDirty=true; // rasterize 顺带算/清 _sdf
+    setHint(e.target.checked?'🧱 实心:停留=锐利整块;过渡=溶解为点再凝回':'已回到点阵显示'); });
   $('stHold').addEventListener('input',e=>{ cur().hold=parseFloat(e.target.value);
     $('vHold').textContent=cur().hold.toFixed(1); store.seqDirty=true; });
   $('stDur').addEventListener('input',e=>{ cur().dur=parseFloat(e.target.value);

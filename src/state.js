@@ -23,7 +23,7 @@ export function makeState(name,color){
 // 序列化:只留数据字段,深拷贝 shapes/manual。cam/isPose/loop 缺省时不写入,老工程原样可读。
 export const serializeStates=()=>store.states.map(s=>({id:s.id,name:s.name,color:s.color,hold:s.hold,dur:s.dur,
   trans:JSON.parse(JSON.stringify(s.trans||{})), cam:s.cam?{...s.cam}:undefined,
-  isPose:s.isPose||undefined, loop:s.loop?{...s.loop}:undefined,
+  isPose:s.isPose||undefined, loop:s.loop?{...s.loop}:undefined, solid:s.solid||undefined,
   guides:s.guides?.length?JSON.parse(JSON.stringify(s.guides)):undefined,
   shapes:JSON.parse(JSON.stringify(s.shapes)), manual:JSON.parse(JSON.stringify(s.manual))}));
 const snapshot=()=>({states:serializeStates(), active:store.active});
@@ -38,7 +38,7 @@ export function hydrate(data){
     const s=makeState(d.name,d.color);
     Object.assign(s,{id:d.id,hold:d.hold,dur:d.dur,shapes:d.shapes,manual:d.manual,
       trans:d.trans||{}, cam:d.cam||null, isPose:d.isPose||false, loop:d.loop||null,
-      guides:d.guides||[]});
+      solid:d.solid||false, guides:d.guides||[]});
     return s;
   });
   store.stateId=Math.max(1,...store.states.map(s=>s.id))+1;

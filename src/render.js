@@ -5,8 +5,33 @@
 // 预览版(固定 W×H、复用缓冲)与导出版(任意尺寸 + 适配映射)共用同一 fieldLoop 内核。
 import { W, H } from './config.js';
 import { hex2rgb } from './utils.js';
+import { camPtInv } from './engine.js';
 
 const TS=24; // tile 边长
+
+// ── 实心场采样(solid 显示):SDF(chamfer,3≈1px)→ 场值。EDGE 控制边缘陡度:
+// 越小越锐利;1.2px 时软边约 2px,矢量边缘在任何导出分辨率下都笔直(双线性采样)。──
+const SEDGE=3*1.2; // chamfer 单位
+function bilin(D,x,y){
+  const x0=Math.max(0,Math.min(W-2,x|0)), y0=Math.max(0,Math.min(H-2,y|0));
+  const fx=Math.min(1,Math.max(0,x-x0)), fy=Math.min(1,Math.max(0,y-y0));
+  const i=y0*W+x0;
+  return (D[i]*(1-fx)+D[i+1]*fx)*(1-fy) + (D[i+W]*(1-fx)+D[i+W+1]*fx)*fy;
+}
+// 目标像素 → 源画布像素(经逆镜头)→ 各实心场加权求和(单位:thr 的倍数)。
+// invX/invY 把目标像素映射回归一化画布坐标(处理 stretch/fit 与任意分辨率)。
+function makeSolidSampler(solids, cam, invX, invY, thr){
+  if(!solids||!solids.length) return null;
+  return (x,y)=>{
+    let u=invX(x,y), v=invY(x,y);
+    if(cam){ const p=camPtInv(u,v,cam); u=p[0]; v=p[1]; }
+    const sx=u*W, sy=v*H;
+    if(sx<-1||sy<-1||sx>W||sy>H) return 0;
+    let f=0;
+    for(const s of solids) f+=s.w*Math.min(8, bilin(s.sdf,sx,sy)/SEDGE);
+    return f*thr;
+  };
+}
 
 // 球颜色打包:任一球带 c → Float32Array(3n)(无 c 的球用帧色补),否则 null(旧路径)。
 function packColors(balls, col){
@@ -22,7 +47,7 @@ function packColors(balls, col){
 }
 
 // 场求值 + 出像素。bx/by 已是目标像素坐标,br2 是半径平方(像素),bins 复用清零。
-function fieldLoop(d, EW, EH, tc, tr, bins, bx, by, br2, n, col, bg, P, cols){
+function fieldLoop(d, EW, EH, tc, tr, bins, bx, by, br2, n, col, bg, P, cols, solidSamp){
   for(const b of bins) b.length=0;
   for(let i=0;i<n;i++){
     const r=Math.sqrt(br2[i]), cut=Math.max(r*6,14);
@@ -37,6 +62,8 @@ function fieldLoop(d, EW, EH, tc, tr, bins, bx, by, br2, n, col, bg, P, cols){
     for(let x=0;x<EW;x++){
       const list=bins[trow+((x/TS)|0)];
       let f=0, cr=0, cg=0, cb=0;
+      if(solidSamp){ const fs=solidSamp(x,y);
+        if(fs>0){ f+=fs; if(cols){ cr+=fs*col[0]; cg+=fs*col[1]; cb+=fs*col[2]; } } }
       if(cols){
         for(let j=0;j<list.length;j++){
           const i=list[j], dx=x-bx[i], dy=y-by[i];
@@ -62,12 +89,13 @@ export function createPreviewRenderer(ctx){
   const img=ctx.createImageData(W,H);
   const tc=Math.ceil(W/TS), tr=Math.ceil(H/TS);
   const bins=Array.from({length:tc*tr},()=>[]);
-  return function render(balls,col,P){
+  return function render(balls,col,P,solids,cam){
     const n=balls.length, bg=hex2rgb(P.colBg);
     const bx=new Float32Array(n), by=new Float32Array(n), br2=new Float32Array(n);
     for(let i=0;i<n;i++){ bx[i]=balls[i].x*W; by[i]=balls[i].y*H;
       const r=balls[i].r*W; br2[i]=r*r; }
-    fieldLoop(img.data, W,H, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col));
+    const ss=makeSolidSampler(solids, cam, x=>x/W, (x,y)=>y/H, P.thr);
+    fieldLoop(img.data, W,H, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col), ss);
     ctx.putImageData(img,0,0);
   };
 }
@@ -79,29 +107,33 @@ export function createSizedRenderer(ctx, EW, EH){
   const tc=Math.ceil(EW/TS), tr=Math.ceil(EH/TS);
   const bins=Array.from({length:tc*tr},()=>[]);
   const rScale=Math.sqrt((EW*EH)/(W*H));
-  return function render(balls,col,P){
+  return function render(balls,col,P,solids,cam){
     const n=balls.length, bg=hex2rgb(P.colBg);
     const bx=new Float32Array(n), by=new Float32Array(n), br2=new Float32Array(n);
     for(let i=0;i<n;i++){ bx[i]=balls[i].x*EW; by[i]=balls[i].y*EH;
       const r=balls[i].r*W*rScale; br2[i]=r*r; }
-    fieldLoop(img.data, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col));
+    const ss=makeSolidSampler(solids, cam, x=>x/EW, (x,y)=>y/EH, P.thr);
+    fieldLoop(img.data, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col), ss);
     ctx.putImageData(img,0,0);
   };
 }
 
 // 导出渲染器:任意尺寸,stretch(拉伸填满)或 fit(等比留黑)映射。半径按面积比缩放。
-export function renderToImageData(ectx, EW, EH, balls, col, P){
+export function renderToImageData(ectx, EW, EH, balls, col, P, solids, cam){
   const eimg=ectx.createImageData(EW,EH), d=eimg.data, bg=hex2rgb(P.colBg);
-  let mapX,mapY,rScale;
-  if(P.fit==='stretch'){ mapX=x=>x*EW; mapY=y=>y*EH; rScale=Math.sqrt((EW*EH)/(W*H)); }
+  let mapX,mapY,rScale,invX,invY;
+  if(P.fit==='stretch'){ mapX=x=>x*EW; mapY=y=>y*EH; rScale=Math.sqrt((EW*EH)/(W*H));
+    invX=x=>x/EW; invY=(x,y)=>y/EH; }
   else{ const s=Math.min(EW/W,EH/H), ox=(EW-W*s)/2, oy=(EH-H*s)/2;
-        mapX=x=>ox+x*W*s; mapY=y=>oy+y*H*s; rScale=s; }
+        mapX=x=>ox+x*W*s; mapY=y=>oy+y*H*s; rScale=s;
+        invX=x=>(x-ox)/(W*s); invY=(x,y)=>(y-oy)/(H*s); }
   const n=balls.length;
   const bx=new Float32Array(n), by=new Float32Array(n), br2=new Float32Array(n);
   const tc=Math.ceil(EW/TS), tr=Math.ceil(EH/TS);
   const bins=Array.from({length:tc*tr},()=>[]);
   for(let i=0;i<n;i++){ bx[i]=mapX(balls[i].x); by[i]=mapY(balls[i].y);
     const r=balls[i].r*W*rScale; br2[i]=r*r; }
-  fieldLoop(d, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col));
+  const ss=makeSolidSampler(solids, cam, invX, invY, P.thr);
+  fieldLoop(d, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col), ss);
   ectx.putImageData(eimg,0,0);
 }
