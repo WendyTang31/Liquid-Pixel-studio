@@ -59,7 +59,7 @@ function seedExample(){
   s1.shapes.push({id:store.shapeId++, type:'ellipse', x:W/2-70, y:H/2-70, w:140, h:140, bool:'add'});
   const s2=makeState('通行','#7dffb0');
   const w2=measureText('GO',130);
-  s2.shapes.push({id:store.shapeId++, type:'text', text:'GO', x:W/2-w2/2, y:H/2-65, w:w2, h:130, bool:'add'});
+  s2.shapes.push({id:store.shapeId++, type:'text', text:'GO', x:W/2-w2/2, y:H/2-65, w:w2, h:130, bool:'add', solidFill:true});
   const s3=makeState('注意','#ffd479');
   s3.shapes.push({id:store.shapeId++, type:'rect', x:W/2-150, y:H/2-16, w:300, h:32, bool:'add'});
   store.states=[s1,s2,s3];

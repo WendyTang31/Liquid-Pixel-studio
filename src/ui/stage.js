@@ -417,8 +417,10 @@ function onPointerDown(e){
   else if(P.tool==='text'){
     pushUndo();
     const txt=$('txtWord').value||'GO', h=P.font, w=measureText(txt,h);
-    // 新文字默认用"笔画"采样 —— 沿字形骨架布珠,自适应笔画粗细,小字号也可读
-    const sh={id:store.shapeId++, type:'text', text:txt, x:p.x-w/2, y:p.y-h/2, w, h, bool:P.bool, sampler:'strokes'};
+    // 新文字默认"实心字形填充":停留期按矢量字形路径实心显示(边缘清晰锐利,如印刷字),
+    // 过渡时整块溶解成点云飞向下一状态 —— 采样继承全局(面填充,溶解均匀)。
+    // 想要纯点阵文字:取消勾选 🧱实心,并把采样改回"笔画·文字"。
+    const sh={id:store.shapeId++, type:'text', text:txt, x:p.x-w/2, y:p.y-h/2, w, h, bool:P.bool, solidFill:true};
     s.shapes.push(sh); store.sel=sh; updateSelBox(); shapesChanged(s);
   }
   else if(P.tool==='dot'){
