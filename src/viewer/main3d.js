@@ -88,6 +88,7 @@ async function loadProjectData(data, gi=0){
     out.push({name:d.name, color:d.color, hold:d.hold, dur:d.dur, trans:d.trans||{},
       cam:d.cam||null, // 镜头随工程走:车身贴图里同样推拉摇移
       isPose:d.isPose||false, loop:d.loop||null, // 子循环同样随工程走(buildSequence 统一处理)
+      fx:d.fx||{}, // 动态几何随工程走:车身贴图里同样波浪/弹簧/波纹/微光
       // 🧱 实心(逐形状 solidFill;老档 state 级 d.solid 视为全形状实心):车身贴图同样锐利边缘
       ...(()=>{ const sh=d.shapes.map(x=>d.solid&&x.bool!=='sub'?{...x,solidFill:true}:x);
         const so=sh.filter(x=>x.solidFill&&x.bool!=='sub');

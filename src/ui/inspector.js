@@ -230,6 +230,18 @@ export function initInspector(){
   $('camY').addEventListener('input',e=>{ const c=camGet(); c.y=parseFloat(e.target.value); camSet(c); camUI(); });
   $('camRot').addEventListener('input',e=>{ const c=camGet(); c.rot=parseFloat(e.target.value)*Math.PI/180; camSet(c); camUI(); });
   $('camReset').onclick=()=>{ cur().cam=null; store.seqDirty=true; syncStateUI(); };
+  // ── 🌊 动态几何:写 cur().fx[key];sampleFrame 每帧现读 states[].fx,无需重建/重采样。──
+  const fxSet=(key,v)=>{ const fx=cur().fx||(cur().fx={});
+    if(v) fx[key]=v; else delete fx[key]; };
+  for(const [id,key,valId,dp] of [
+    ['fxFreq','freq','vFxFreq',2],['fxSlosh','slosh','vFxSlosh',2],['fxSpring','spring','vFxSpring',2],
+    ['fxLiquid','liquid','vFxLiquid',2],['fxRipple','ripple','vFxRipple',2],['fxTwinkle','twinkle','vFxTwinkle',2],
+  ]){
+    $(id).addEventListener('input',e=>{ const v=parseFloat(e.target.value);
+      $(valId).textContent=v.toFixed(dp);
+      // 频率始终写(共享);幅度为 0 时删键(hasFx 判定干净)。sampleFrame 现读 fx,无需 seqDirty。
+      if(key==='freq') fxSet('freq', v); else fxSet(key, v>0?v:0); });
+  }
 
   // 复制状态:插到组尾之后(直接插 active+1 会落进"主状态与其姿态"之间抢走姿态)
   $('stDup').onclick=()=>{ pushUndo();

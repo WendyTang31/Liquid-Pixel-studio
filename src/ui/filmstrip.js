@@ -46,6 +46,12 @@ export function syncStateUI(){
       : hasPoses ? '停留期间按整数圈循环:基→姿态→…→基,与前后过渡无缝'
       : '给本状态加"循环姿态"可做眨眼/走路等微动作(在停留期间循环)';
   }
+  // 🌊 动态几何回填
+  const fx=s.fx||{};
+  const fxg=(id,valId,k,def)=>{ const v=fx[k]??def; $(id).value=v; $(valId).textContent=(+v).toFixed(2); };
+  fxg('fxFreq','vFxFreq','freq',0.6); fxg('fxSlosh','vFxSlosh','slosh',0);
+  fxg('fxSpring','vFxSpring','spring',0); fxg('fxLiquid','vFxLiquid','liquid',0);
+  fxg('fxRipple','vFxRipple','ripple',0); fxg('fxTwinkle','vFxTwinkle','twinkle',0);
   // 📷 本状态镜头回填
   const cm=s.cam||{x:0.5,y:0.5,z:1,rot:0};
   $('camZ').value=cm.z;   $('vCamZ').textContent=(+cm.z).toFixed(2)+'×';

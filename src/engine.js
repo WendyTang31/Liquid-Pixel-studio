@@ -123,14 +123,52 @@ export function makePairs(dotsA,dotsB,P){
 // 双正弦低频漂移:停留态的"呼吸",幅度极小(乘 P.amp)。
 export function drift(ph,time,P){return Math.sin(time*P.freq*6.283+ph)*.7+Math.sin(time*P.freq*3.33+ph*1.7)*.3;}
 
+// ── 动态几何(行为修饰器):停留期给单个状态叠加的程序化位移场,纯函数、确定性。
+// 全部按"点的基础坐标 + 全局时间"求值 —— 与漂移同构,故过渡时按端点 e 插值即天然连续。
+// 光敏红线:所有振荡频率硬性 ≤2.5Hz;twinkle 逐点异相异频,聚合亮度平滑,绝非全局频闪。
+export const hasFx=fx=>!!(fx&&(fx.slosh||fx.spring||fx.liquid||fx.ripple||fx.twinkle));
+const FXB=0.04; // 位移基准幅度(归一化画布)
+export function behaviorDisp(x,y,cx,cy,t,fx){
+  let dx=0,dy=0,rf=1;
+  const f=Math.min(2.5, fx.freq||0.6), w=6.283185307*f*t;
+  if(fx.slosh){ // 水平面波浪:整体左右晃 + 液面行波,越靠上晃幅越大(容器晃动)
+    const a=fx.slosh*FXB, depth=1-Math.min(1,Math.max(0,y));
+    dx += a*(Math.sin(w)*(0.5+0.9*depth) + 0.35*Math.sin(1.7*w+7*x));
+    dy += a*0.25*Math.sin(1.3*w+5*x)*depth;
+  }
+  if(fx.spring){ // 弹簧挤压/拉伸:绕质心体积守恒缩放,波形带过冲更弹
+    const s=fx.spring*0.3, wv=Math.sin(w)+0.3*Math.sin(2*w), sy=1+s*wv, sx=1/sy;
+    dx += (x-cx)*(sx-1); dy += (y-cy)*(sy-1);
+  }
+  if(fx.liquid){ // 液态线:横向行波沿形体流动的起伏
+    const a=fx.liquid*FXB;
+    dy += a*Math.sin(6.2*(x-cx)-w);
+    dx += a*0.4*Math.sin(5.0*(y-cy)-1.1*w);
+  }
+  if(fx.ripple){ // 从中心向外辐射的同心波纹
+    const a=fx.ripple*FXB, rx=x-cx, ry=y-cy, d=Math.hypot(rx,ry)+1e-5;
+    const disp=a*Math.sin(w-14*d);
+    dx += rx/d*disp; dy += ry/d*disp;
+  }
+  if(fx.twinkle){ // 逐点低频微光闪(相位/频率由坐标哈希;各点异相 → 闪烁而非频闪)
+    const h=Math.sin(x*127.1+y*311.7)*43758.5453, fr=h-Math.floor(h);
+    const fdot=Math.min(2.5, 0.3+2.2*fr);
+    rf *= 1 + fx.twinkle*0.6*Math.sin(6.283185307*fdot*t + fr*6.283);
+  }
+  return {dx,dy,rf};
+}
+const FX0={dx:0,dy:0,rf:1};
+const centroidPt=dots=>{ let x=0,y=0,n=dots.length||1; for(const b of dots){x+=b.x;y+=b.y;} return {x:x/n,y:y/n}; };
+
 // 过渡帧:每个点独立按错峰相位 p.d 延迟进入缓动,叠加双轴漂移。
 // 漂移相位在 phaseA(=离开时的停留相位)与 phaseB(=到达时的停留相位)间按同一个 e 插值,
 // e=0/1 时分别精确退化为源/目标停留态的相位 —— 与相邻停留段严丝合缝,无跳变。
 // P.stretch>0 时,运动中的球沿速度反方向甩出两颗递减拖尾球 —— metaball 场把三球融成
 // 胶囊状,即 squash & stretch 的"拉伸"近似;速度由缓动的数值微分给出,错峰使各球
 // 拉伸时刻互不相同。头部球始终在结果数组前 N 位,与 pairs 下标对齐(轨迹叠加层依赖此约定)。
-export function transBalls(pairs,t,time,P){
+export function transBalls(pairs,t,time,P,fxc){
   const ease=EASE[P.ease], span=Math.max(1e-6,1-P.stag), stretch=P.stretch||0, flow=P.flow||0;
+  const fxOn=fxc&&(hasFx(fxc.fxA)||hasFx(fxc.fxB)); // 动态几何:两端各自求值后按 e 插值(端点连续)
   const out=new Array(pairs.length); const trails=[];
   for(let i=0;i<pairs.length;i++){
     const p=pairs[i];
@@ -152,6 +190,12 @@ export function transBalls(pairs,t,time,P){
       const th=2.4*Math.sin(5.1*mx+3.3*my)+1.9*Math.cos(3.7*mx-4.1*my)+0.6*Math.sin(p.phaseA);
       const env=Math.sin(Math.PI*lt)*flow*0.08;
       ball.x+=Math.cos(th)*env; ball.y+=Math.sin(th)*env;
+    }
+    if(fxOn){ // 动态几何:两端各按自己质心/参数求位移,按同一 e 插值 → e=0/1 精确匹配相邻停留态
+      const dA=hasFx(fxc.fxA)?behaviorDisp(p.a.x,p.a.y,fxc.cA.x,fxc.cA.y,time,fxc.fxA):FX0;
+      const dB=hasFx(fxc.fxB)?behaviorDisp(p.b.x,p.b.y,fxc.cB.x,fxc.cB.y,time,fxc.fxB):FX0;
+      ball.x+=dA.dx+(dB.dx-dA.dx)*e; ball.y+=dA.dy+(dB.dy-dA.dy)*e;
+      ball.r*=dA.rf+(dB.rf-dA.rf)*e;
     }
     out[i]=ball;
     if(stretch>0 && lt>0 && lt<1 && ball.r>0){
@@ -317,16 +361,22 @@ export function sampleFrame(SEQ, states, g, time, P){
       return {seg, col:sub.col, cam:camIdentity(cam)?null:cam, balls:applyCam(sub.balls, cam),
         solids:sub.solids};
     }
+    const fx=st.fx, fxOn=hasFx(fx), fc=fxOn?centroidPt(st.dots):null;
     return {seg, col:hex2rgb(st.color), cam:camIdentity(cam)?null:cam,
       solids:solidsOf(seg,states,0),
       balls:applyCam(suppressSolidDots(st.dots.map(b=>{ const ph=dotPhase(b.x,b.y);
-        return {x:b.x+P.amp*drift(ph,time,P), y:b.y+P.amp*drift(ph+3.1,time,P), r:b.r, c:b.c, sfA:b.sf};
+        let X=b.x+P.amp*drift(ph,time,P), Y=b.y+P.amp*drift(ph+3.1,time,P), R=b.r;
+        if(fxOn){ const d=behaviorDisp(b.x,b.y,fc.x,fc.y,time,fx); X+=d.dx; Y+=d.dy; R*=d.rf; }
+        return {x:X, y:Y, r:R, c:b.c, sfA:b.sf};
       }), seg, states, 0), cam)};
   } else {
     const lt=(g-seg.t0)/seg.dur, ca=hex2rgb(states[seg.a].color), cb=hex2rgb(states[seg.b].color);
     const e=EASE.smoothstep(lt), cam=camAt(seg,states,lt);
+    const fxA=states[seg.a].fx, fxB=states[seg.b].fx;
+    const fxc=(hasFx(fxA)||hasFx(fxB))
+      ? {fxA,fxB,cA:centroidPt(states[seg.a].dots),cB:centroidPt(states[seg.b].dots)} : null;
     return {seg, balls:applyCam(suppressSolidDots(
-        transBalls(seg.pairs,lt,time,segParams(P,seg.ov)), seg, states, lt), cam),
+        transBalls(seg.pairs,lt,time,segParams(P,seg.ov),fxc), seg, states, lt), cam),
       cam:camIdentity(cam)?null:cam, solids:solidsOf(seg,states,lt),
       col:[ca[0]+(cb[0]-ca[0])*e, ca[1]+(cb[1]-ca[1])*e, ca[2]+(cb[2]-ca[2])*e]};
   }

@@ -213,6 +213,15 @@
       </div>
       <div class="small" id="loopHint"></div>
     </div>
+    <div class="selbox" title="本状态停留期的程序化动态几何(纯数学位移场,与过渡端点连续)。频率为所有效果共用,已硬性限制 ≤2.5Hz —— 光敏安全:微光是逐点异相低频闪,聚合亮度平滑,不产生 3–30Hz 频闪。">
+      <div class="small">🌊 动态几何(停留期)</div>
+      <div class="row"><label title="所有动态效果的振荡频率;≤2.5Hz(光敏红线)">频率 Hz</label><input type="range" id="fxFreq" min="0.1" max="2.5" step="0.05" value="0.6"><div class="val" id="vFxFreq">0.60</div></div>
+      <div class="row"><label title="水平面波浪:液体在容器里晃动(整体左右晃+液面行波,越靠上晃幅越大)">波浪</label><input type="range" id="fxSlosh" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxSlosh">0.00</div></div>
+      <div class="row"><label title="弹簧挤压/拉伸:图形绕质心体积守恒地缩放,波形带过冲更弹">弹簧</label><input type="range" id="fxSpring" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxSpring">0.00</div></div>
+      <div class="row"><label title="液态线:横向行波沿形体流动的起伏(路径液态动画)">液态线</label><input type="range" id="fxLiquid" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxLiquid">0.00</div></div>
+      <div class="row"><label title="从中心向外辐射的同心波纹">波纹</label><input type="range" id="fxRipple" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxRipple">0.00</div></div>
+      <div class="row"><label title="微光闪烁:逐点各自低频、异相闪(≤2.5Hz)—— 闪烁质感而非频闪,光敏安全">微光</label><input type="range" id="fxTwinkle" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxTwinkle">0.00</div></div>
+    </div>
     <div class="row">
       <button id="stLeft" title="前移">←</button>
       <button id="stRight" title="后移">→</button>

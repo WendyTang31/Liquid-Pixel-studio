@@ -23,6 +23,9 @@ const EXACT = {
   '🔁 状态内循环(眨眼/走路)':'🔁 IN-STATE LOOP (blink / walk)',
   '＋ 循环姿态(复制当前画面)':'+ Loop pose (copy current)',
   '基姿态停留':'Base hold', '去程过渡':'To-pose trans',
+  '🌊 动态几何(停留期)':'🌊 DYNAMIC GEOMETRY (hold)',
+  '频率 Hz':'Freq Hz', '波浪':'Slosh', '弹簧':'Spring', '液态线':'Liquid line',
+  '波纹':'Ripple', '微光':'Twinkle',
   '停留期间按整数圈循环:基→姿态→…→基,与前后过渡无缝':
     'Loops whole cycles during hold: base→poses→base, seamless with transitions',
   '正在编辑循环姿态:上方"停留/过渡"= 本姿态在循环内的时长(眨眼闭合可设 0.05/0.1)':
