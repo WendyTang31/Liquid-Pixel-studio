@@ -99,7 +99,14 @@ sampleFrame 现读):波浪 slosh/弹簧 spring/液态线 liquid/波纹 ripple/�
 **用户 2026-07-28 选定:做 Full AE 关联图层模型(#2)——一个形状作为贯穿多关键帧的"图层",
 新时间轴逐帧编辑其形状,轮廓直接矢量插值(实心填充,不散点)。这是多步骤大改,需分阶段:
 ① 数据模型:layer 贯穿多 state,逐关键帧 geometry;② 关键帧时间轴 UI;③ 轮廓插值+实心渲染
-(过渡时路径重采样等锚点数插值,替代点阵溶解);④ 与现有 state/dot 系统并存。尚未开工。**
+(过渡时路径重采样等锚点数插值,替代点阵溶解);④ 与现有 state/dot 系统并存。
+
+**阶段一 已完成(d8acd3d)**:③+④+最小 ① —— src/vector.js:layerId 形状=关联图层,
+脱离点阵(不进 stateDots/静态_sdf),outline() 规范化轮廓(N=120 弧长重采样/统一绕向/
+质心+x 对齐)、computeVectorPolys 停留静态+过渡同 layerId 逐点 smootherstep 插值(端点零跳变)、
+rasterizeVectorSolids→SDF solid 复用实心渲染;stage/export 集成;UI「🔑 转为矢量图层/打关键帧」
+标记 layerId+下一状态生成关键帧。**待办:② 专门的关键帧时间轴(逐图层轨道/加删关键帧/
+逐帧编辑),text 矢量变形,轮廓对应更鲁棒(拓扑差异大时),viewer 端矢量图层支持。**
 
 
 已评估结论:AE 借"版面"(图层+时间轴),动画模型学 Rive(状态内子循环)而非 AE 全局关键帧;
