@@ -46,6 +46,7 @@ export function hydrate(data){
   });
   store.stateId=Math.max(1,...store.states.map(s=>s.id))+1;
   store.shapeId=Math.max(1,...store.states.flatMap(s=>s.shapes.map(sh=>sh.id||0)))+1;
+  store.layerSeq=Math.max(0,...store.states.flatMap(s=>s.shapes.map(sh=>sh.layerId||0))); // 关联图层号续接,防冲突
   store.active=Math.min(data.active??0, store.states.length-1);
   store.sel=null; updateSelBox();
   store.states.forEach(s=>{rasterize(s); resample(s);});

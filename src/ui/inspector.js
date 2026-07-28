@@ -66,7 +66,10 @@ export function updateSelBox(){
     <div style="display:flex;gap:6px">
       <button id="selBool" style="flex:1">${sel.bool==='add'?'➕ 添加':'➖ 挖除'}</button>
       <button id="selDel" style="flex:1">删除 (Del)</button>
-    </div>`;
+    </div>
+    ${sel.type!=='image'?`<div style="display:flex;gap:6px">
+      <button id="selKey" style="flex:1" title="${sel.layerId?'把本图层复制成下一状态的关键帧(去那里改形状,轮廓会直接矢量变形过去,不散成点)':'把本形状变成 AE 式关联图层:它将贯穿多个状态作为同一个东西,轮廓在关键帧之间直接矢量变形(实心填充,不散成点)。点击会在下一状态生成同一图层的关键帧。'}">${sel.layerId?'🔑 打关键帧到下一状态':'🔑 转为矢量图层(可关键帧变形)'}</button>
+    </div>`:''}`;
   for(const [id,apply] of [
     ['selX',v=>applyShapeBBox(sel,v,sel.y,sel.w,sel.h)],
     ['selY',v=>applyShapeBBox(sel,sel.x,v,sel.w,sel.h)],
@@ -80,6 +83,27 @@ export function updateSelBox(){
   }
   $('selBool').onclick=()=>{ pushUndo(); sel.bool=sel.bool==='add'?'sub':'add';
     updateSelBox(); shapesChanged(cur()); };
+  // 🔑 矢量图层关键帧:标记本形状为关联图层(layerId),并在下一状态生成同一图层的关键帧。
+  //    去下一状态改它的形状 → 停留/过渡时该图层轮廓直接矢量变形(实心填充,不散成点)。
+  if($('selKey')) $('selKey').onclick=()=>{
+    pushUndo();
+    if(!sel.layerId){ sel.layerId=store.layerSeq=(store.layerSeq||0)+1;
+      if(!('solidFill' in sel)) sel.solidFill=true; }
+    // 目标 = 下一状态(组尾之后),不存在则新建
+    let ni=groupTail(store.active)+1;
+    if(ni>=store.states.length){
+      store.states.splice(ni,0,makeState(cur().name+' ▸帧', cur().color));
+    }
+    const next=store.states[ni];
+    // 该图层在下一状态若尚无关键帧,则复制一份(同 layerId)供改形状
+    if(!next.shapes.some(sh=>sh.layerId===sel.layerId)){
+      const c=JSON.parse(JSON.stringify({...sel, id:undefined})); c.id=store.shapeId++;
+      next.shapes.push(c); rasterize(next); resample(next);
+    }
+    shapesChanged(cur());
+    setActive(ni); renderStrip();
+    setHint('🔑 已在下一状态生成该图层关键帧 —— 现在改这里的形状,轮廓会矢量变形过去(实心,不散点)');
+  };
   if(sel.rel){
     $('relOff').onclick=()=>{ pushUndo(); delete sel.rel; updateSelBox(); shapesChanged(cur()); };
     for(const [id,k] of [['relDX','dx'],['relDY','dy']]){

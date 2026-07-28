@@ -112,7 +112,8 @@ export function rasterize(s){
   paintShapes(s.mctx, s.shapes);
   // 🧱 实心是逐形状选项(sh.solidFill):SDF 只由实心形状(带全部 sub)构成,
   // 与其它形状/采样算法互不干扰;state.solid 为派生标记(供引擎权重窗口用)。
-  const solids=s.shapes.filter(sh=>sh.solidFill&&sh.bool!=='sub'&&!sh.hidden);
+  // 矢量图层(layerId)由 vector.js 独立处理,不进这里的点阵/静态 SDF。
+  const solids=s.shapes.filter(sh=>sh.solidFill&&sh.bool!=='sub'&&!sh.hidden&&!sh.layerId);
   s.solid=solids.length>0;
   s._sdf = s.solid ? shapesSdf([...solids, ...s.shapes.filter(sh=>sh.bool==='sub')]) : null;
   tintGhost(s); updateThumb(s);
@@ -160,7 +161,7 @@ const _scActx=_scA.getContext('2d',{willReadFrequently:true});
 // 覆盖形状各自单独光栅化(带全部 sub 形状)后用自己的采样器/点数取点;其余走全局设置。
 // 编辑器 resample 与 3D 预览器共用,保证两端 dots 一致。
 export function stateDots(shapes, manual, Pp){
-  shapes=shapes.filter(sh=>!sh.hidden); // 隐藏形状连"逐形状覆盖采样"通道也不走
+  shapes=shapes.filter(sh=>!sh.hidden && !sh.layerId); // 隐藏 + 矢量图层不出点(矢量图层走 vector.js)
   const hasOv=sh=>sh.sampler||sh.count||(sh.rscale&&Math.abs(sh.rscale-1)>0.01);
   const subs=shapes.filter(sh=>sh.bool==='sub');
   const overridden=shapes.filter(sh=>sh.bool!=='sub' && hasOv(sh));

@@ -19,6 +19,7 @@ import { drawSkinRef, skinWindowAt, skinHandleAt, skinCursorAt, getSelSkin, sele
   clearSkinSel, skinPushUndo, skinUndo, deleteSelSkin, persistSkin, skinFocus, setSkinFocus,
   skinHasUndo } from './skinRef.js';
 import { tlTick } from './timeline.js';
+import { computeVectorPolys, staticVectorPolys, rasterizeVectorSolids } from '../vector.js';
 
 let cv, ctx, previewRender, glRender=null, glCv=null;
 // #cv 缓冲用 2× 逻辑分辨率(960×560)提升基础清晰度;叠加层用 VS 缩放变换按逻辑坐标绘制。
@@ -174,15 +175,19 @@ function tick(now){
         else{ store.g=store.SEQ.T; store.playing=false; $('playBtn').textContent='▶ 播放'; } } }
     $('tVal').textContent=store.g.toFixed(1)+'s';
     const fr=sampleFrame(store.SEQ, store.states, store.g, store.clock, P);
+    // 矢量图层(AE 关联图层):独立于点阵,轮廓直接插值 → SDF solid,并入实心渲染
+    const solids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(store.states, store.SEQ, store.g)));
     // 实心场是 CPU 采样(SDF 纹理未进 GL 着色器),该帧有实心即回退 CPU 渲染
-    if(gpuOn() && !fr.solids?.length){ glCv.style.display='block'; glRender(fr.balls, fr.col, P); ctx.clearRect(0,0,W,H); }
-    else { if(glCv) glCv.style.display='none'; previewRender(fr.balls, fr.col, P, fr.solids, fr.cam); }
+    if(gpuOn() && !solids.length){ glCv.style.display='block'; glRender(fr.balls, fr.col, P); ctx.clearRect(0,0,W,H); }
+    else { if(glCv) glCv.style.display='none'; previewRender(fr.balls, fr.col, P, solids.length?solids:null, fr.cam); }
     overlayTraj(fr.balls, fr.seg, fr.cam); overlayFrameGuide();
   } else {
     const s=cur();
     // 实心状态在编辑模式也按 SDF 显示(此前只在播放/导出/3D 生效 → 勾了实心编辑时仍看到笔画黑团)。
     // 实心蒙版内的点抑制(r=0),边缘由矢量 SDF 主导;编辑态不套镜头,SDF 与点同在画布坐标系。
-    const solid = s.solid && s._sdf ? [{sdf:s._sdf, w:1}] : null;
+    let solid = s.solid && s._sdf ? [{sdf:s._sdf, w:1}] : [];
+    solid=solid.concat(rasterizeVectorSolids(staticVectorPolys(s))); // 矢量图层静态轮廓
+    if(!solid.length) solid=null;
     const editBalls=s.dots.map((b,i)=>({x:b.x+P.amp*drift(i*2.3,store.clock,P),y:b.y+P.amp*drift(i*2.3+3,store.clock,P),
       r:(solid&&b.sf)?0:b.r, c:b.c}));
     if(gpuOn() && !solid){ glCv.style.display='block'; glRender(editBalls, hex2rgb(s.color), P); ctx.clearRect(0,0,W,H); }

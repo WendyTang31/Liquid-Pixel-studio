@@ -7,6 +7,7 @@ import { P } from './config.js';
 import { store } from './store.js';
 import { $, getExpSize, setHint, downloadBlob, toBlobP, nextFrame } from './utils.js';
 import { sampleFrame } from './engine.js';
+import { computeVectorPolys, rasterizeVectorSolids } from './vector.js';
 import { renderToImageData } from './render.js';
 import { rebuildSequence } from './sequence.js';
 import { resampleAll } from './pipeline.js';
@@ -25,8 +26,9 @@ function makeOfflineRenderer(EW, EH){
   function drawFrame(f){
     const g=f/P.fps;
     const fr=sampleFrame(store.SEQ, store.states, g, g, P); // g 同时作墙钟 → 导出确定
-    if(ss===2){ renderToImageData(bctx,EW*2,EH*2,fr.balls,fr.col,P,fr.solids,fr.cam); ectx.drawImage(big,0,0,EW,EH); }
-    else renderToImageData(ectx,EW,EH,fr.balls,fr.col,P,fr.solids,fr.cam);
+    const solids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(store.states, store.SEQ, g)));
+    if(ss===2){ renderToImageData(bctx,EW*2,EH*2,fr.balls,fr.col,P,solids,fr.cam); ectx.drawImage(big,0,0,EW,EH); }
+    else renderToImageData(ectx,EW,EH,fr.balls,fr.col,P,solids,fr.cam);
     if(P.glow>0){
       glowCtx.clearRect(0,0,EW,EH); glowCtx.drawImage(ec,0,0);
       ectx.save();
