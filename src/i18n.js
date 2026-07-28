@@ -122,6 +122,8 @@ const EXACT = {
 };
 
 const PATTERNS_ZH_EN = [
+  [/^已选 (\d+) 个形状 — 右栏「排列」可对齐\/等距\/阵列$/, 'Selected $1 shapes — ARRANGE panel: align/space/array'],
+  [/^已选 (\d+) 个形状(Shift\+点选可继续增减)$/, 'Selected $1 shapes (Shift+click to add/remove)'],
   [/^🧩 UV · (.+)$/, '🧩 UV · $1'],
   [/^投影面 (\d+)(.*)$/, 'Patch $1$2'],
   [/^🌀 环绕 (\d+)$/, '🌀 Wrap $1'],

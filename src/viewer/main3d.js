@@ -807,27 +807,65 @@ function drawCut(){
     cutCtx.fillText(String(i+1), x+4, y+12);
   });
 }
+// 命中测试:边/角热区(7px)优先于内部移动,自上而下。角=双向缩放,边=单向缩放。
+// 这是"满幅 UV 窗口拖不动"的根治:满幅时移动无处可去(数学上被夹死),
+// 但四条边/四个角随时可抓 —— 先缩小,自然就能挪。
+function cutHitTest(mx,my){
+  const E=7;
+  for(let i=decals.length-1;i>=0;i--){
+    const d=decals[i]; if(d.group!==activeGroup) continue;
+    const x=d.cx*CUTW, y=d.cy*CUTH, w=d.cw*CUTW, h=d.ch*CUTH;
+    if(mx<x-E||mx>x+w+E||my<y-E||my>y+h+E) continue;
+    const nl=Math.abs(mx-x)<E, nr=Math.abs(mx-(x+w))<E;
+    const nt=Math.abs(my-y)<E, nb=Math.abs(my-(y+h))<E;
+    let mode=null;
+    if(nr&&nb) mode='br'; else if(nl&&nt) mode='tl';
+    else if(nr&&nt) mode='tr'; else if(nl&&nb) mode='bl';
+    else if(nl) mode='l'; else if(nr) mode='r';
+    else if(nt) mode='t'; else if(nb) mode='b';
+    else if(mx>=x&&mx<=x+w&&my>=y&&my<=y+h) mode='move';
+    if(mode) return {i, mode};
+  }
+  return null;
+}
+const CUT_CURSOR={move:'move', l:'ew-resize', r:'ew-resize', t:'ns-resize', b:'ns-resize',
+  br:'nwse-resize', tl:'nwse-resize', tr:'nesw-resize', bl:'nesw-resize'};
 cutCv.addEventListener('pointerdown',e=>{
   const r=cutCv.getBoundingClientRect();
   const mx=(e.clientX-r.left)/r.width*CUTW, my=(e.clientY-r.top)/r.height*CUTH;
-  const a=decals[activeDecal];
-  if(a.group===activeGroup){
-    const ax=a.cx*CUTW, ay=a.cy*CUTH, aw=a.cw*CUTW, ah=a.ch*CUTH;
-    if(Math.abs(mx-(ax+aw))<9 && Math.abs(my-(ay+ah))<9){
-      pushViewUndo(); cutDrag={type:'resize'}; cutCv.setPointerCapture(e.pointerId); return;
+  const hit=cutHitTest(mx,my);
+  if(!hit) return;
+  const d=decals[hit.i];
+  activeDecal=hit.i; selected=!!d.obj; syncPanel();
+  pushViewUndo();
+  // 记下拖动前的四边;同组里与"将要动的边"重合的邻框边一并记下 ——
+  // 拖一条共享边 = 两侧窗口一个变大一个变小,始终保持相邻(可见、可操作)。
+  const edges={L:d.cx, R:d.cx+d.cw, T:d.cy, B:d.cy+d.ch};
+  const movingE={move:[], l:['L'], r:['R'], t:['T'], b:['B'],
+    br:['R','B'], tl:['L','T'], tr:['R','T'], bl:['L','B']}[hit.mode];
+  const neighbors=[];
+  for(const ek of movingE){
+    const v0=edges[ek], horiz=(ek==='L'||ek==='R');
+    for(const o of decals){ if(o===d||o.group!==d.group) continue;
+      if(horiz){
+        if(Math.abs(o.cx-v0)<0.006) neighbors.push({o, ek, side:'lo'});          // 邻框左边贴着
+        if(Math.abs(o.cx+o.cw-v0)<0.006) neighbors.push({o, ek, side:'hi'});     // 邻框右边贴着
+      } else {
+        if(Math.abs(o.cy-v0)<0.006) neighbors.push({o, ek, side:'lo'});
+        if(Math.abs(o.cy+o.ch-v0)<0.006) neighbors.push({o, ek, side:'hi'});
+      }
     }
   }
-  for(let i=decals.length-1;i>=0;i--){
-    const d=decals[i];
-    if(d.group!==activeGroup) continue;
-    const x=d.cx*CUTW, y=d.cy*CUTH, w=d.cw*CUTW, h=d.ch*CUTH;
-    if(mx>=x&&mx<=x+w&&my>=y&&my<=y+h){
-      activeDecal=i; selected=!!d.obj; syncPanel();
-      pushViewUndo();
-      cutDrag={type:'move', offX:mx-x, offY:my-y};
-      cutCv.setPointerCapture(e.pointerId); return;
-    }
-  }
+  cutDrag={mode:hit.mode, offX:mx-d.cx*CUTW, offY:my-d.cy*CUTH, edges, neighbors};
+  cutCv.setPointerCapture(e.pointerId);
+});
+// 悬停光标反馈:角/边/内部各给对应缩放/移动光标,一眼可见"这里能拖"。
+cutCv.addEventListener('pointermove',e=>{
+  if(cutDrag) return; // 拖动中由拖动处理器接管
+  const r=cutCv.getBoundingClientRect();
+  const mx=(e.clientX-r.left)/r.width*CUTW, my=(e.clientY-r.top)/r.height*CUTH;
+  const hit=cutHitTest(mx,my);
+  cutCv.style.cursor=hit?CUT_CURSOR[hit.mode]:'default';
 });
 // 取景框边缘磁吸:贴近同组其它框的边或画布边(2% 内)时精确对齐 ——
 // "77% vs 77.3%"这种手抖零头正是跨面接不上的常见根因,吸附让相邻严格成立。
@@ -843,22 +881,54 @@ function snapCut(d, key, val){
   }
   return best;
 }
+// 单条边的移动解算:目标值 → 磁吸 → 被"本框最小尺寸 + 所有贴边邻框最小尺寸"共同夹紧,
+// 然后写回本框与邻框 —— 相邻窗口一侧变大另一侧就变小,永远不会被挤没(MIN=0.05)。
+const CUT_MIN=0.05;
+function cutMoveEdge(d, ek, val){
+  const horiz=(ek==='L'||ek==='R');
+  val=snapCut(d, horiz?'cx':'cy', val); // 复用磁吸(边贴边/贴画布)
+  let lo=0, hi=1;
+  if(ek==='L'){ hi=Math.min(hi, d.cx+d.cw-CUT_MIN); }
+  if(ek==='R'){ lo=Math.max(lo, d.cx+CUT_MIN); }
+  if(ek==='T'){ hi=Math.min(hi, d.cy+d.ch-CUT_MIN); }
+  if(ek==='B'){ lo=Math.max(lo, d.cy+CUT_MIN); }
+  for(const nb of cutDrag.neighbors){ if(nb.ek!==ek) continue;
+    const o=nb.o;
+    if(horiz){ if(nb.side==='lo') hi=Math.min(hi, o.cx+o.cw-CUT_MIN); else lo=Math.max(lo, o.cx+CUT_MIN); }
+    else     { if(nb.side==='lo') hi=Math.min(hi, o.cy+o.ch-CUT_MIN); else lo=Math.max(lo, o.cy+CUT_MIN); }
+  }
+  val=Math.min(hi, Math.max(lo, val));
+  if(ek==='L'){ d.cw=d.cx+d.cw-val; d.cx=val; }
+  else if(ek==='R'){ d.cw=val-d.cx; }
+  else if(ek==='T'){ d.ch=d.cy+d.ch-val; d.cy=val; }
+  else { d.ch=val-d.cy; }
+  for(const nb of cutDrag.neighbors){ if(nb.ek!==ek) continue;
+    const o=nb.o;
+    if(horiz){ if(nb.side==='lo'){ o.cw=o.cx+o.cw-val; o.cx=val; } else { o.cw=val-o.cx; } }
+    else     { if(nb.side==='lo'){ o.ch=o.cy+o.ch-val; o.cy=val; } else { o.ch=val-o.cy; } }
+  }
+}
 cutCv.addEventListener('pointermove',e=>{
   if(!cutDrag) return;
   const r=cutCv.getBoundingClientRect();
   const mx=(e.clientX-r.left)/r.width*CUTW, my=(e.clientY-r.top)/r.height*CUTH;
   const d=decals[activeDecal];
-  if(cutDrag.type==='move'){
+  if(cutDrag.mode==='move'){
     d.cx=Math.min(Math.max(0, snapCut(d,'cx',(mx-cutDrag.offX)/CUTW)), 1-d.cw);
     d.cy=Math.min(Math.max(0, snapCut(d,'cy',(my-cutDrag.offY)/CUTH)), 1-d.ch);
   } else {
-    d.cw=Math.min(Math.max(0.05, snapCut(d,'cw',mx/CUTW)-d.cx), 1-d.cx);
-    d.ch=Math.min(Math.max(0.05, snapCut(d,'ch',my/CUTH)-d.cy), 1-d.cy);
+    const movingE={l:['L'], r:['R'], t:['T'], b:['B'],
+      br:['R','B'], tl:['L','T'], tr:['R','T'], bl:['L','B']}[cutDrag.mode];
+    for(const ek of movingE)
+      cutMoveEdge(d, ek, (ek==='L'||ek==='R') ? mx/CUTW : my/CUTH);
   }
   const now=performance.now();
   if(now-projThrottle>90){ projThrottle=now; projectDecal(d); }
 });
-cutCv.addEventListener('pointerup',()=>{ if(cutDrag){ projectDecal(decals[activeDecal]);
+cutCv.addEventListener('pointerup',()=>{ if(cutDrag){
+  projectDecal(decals[activeDecal]);
+  const touched=new Set(cutDrag.neighbors.map(nb=>nb.o));
+  for(const o of touched) projectDecal(o); // 被联动的邻框松手时统一重投影
   cutDrag=null; saveViewState(); } });
 
 /* ══════════════ Bloom / 视图 ══════════════ */

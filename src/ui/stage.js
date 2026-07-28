@@ -124,7 +124,7 @@ function overlaySelection(){
   for(const sh of store.selMulti||[]){ if(sh===store.sel) continue;
     ctx.strokeStyle='rgba(120,180,255,0.5)'; ctx.lineWidth=1;
     ctx.strokeRect(sh.x,sh.y,sh.w,sh.h); }
-  if(store.dragAct==='marquee'&&store.dragStart&&store.dragNow){
+  if((store.dragAct==='marquee'||store.dragAct==='shiftsel')&&store.dragStart&&store.dragNow){
     ctx.strokeStyle='rgba(152,245,208,0.7)'; ctx.setLineDash([4,3]); ctx.lineWidth=1;
     ctx.strokeRect(Math.min(store.dragStart.x,store.dragNow.x), Math.min(store.dragStart.y,store.dragNow.y),
       Math.abs(store.dragNow.x-store.dragStart.x), Math.abs(store.dragNow.y-store.dragStart.y));
@@ -213,6 +213,13 @@ function ptr(e){ const r=cv.getBoundingClientRect();
 function onPointerDown(e){
   if(store.mode==='play') return;
   const p=ptr(e), s=cur();
+  // Shift = 选择手势,任意工具通用:松手时移动 <4px 判点选切换,否则判框选加选。
+  // 不再要求先切 ➤ 工具、也不再要求从空白处起手 —— 画布被大形状铺满时依然可框选。
+  if(e.shiftKey){
+    store.dragAct='shiftsel'; store.dragStart=p; store.dragNow=p;
+    store._shiftBase=[...(store.selMulti||[])];
+    return;
+  }
   if(P.tool==='sel'){
     // 锁定的选中形状不给任何手柄/拖动入口(面板选中锁定形状时,画布只读)
     if(store.sel&&!store.sel.locked&&store.sel.type==='path'){ // 锚点手柄优先于整体缩放/移动判定
@@ -236,14 +243,6 @@ function onPointerDown(e){
     for(let i=s.shapes.length-1;i>=0;i--){ const sh=s.shapes[i];
       if(sh.hidden||sh.locked) continue; // 隐藏/锁定的形状画布上不参与命中
       if(p.x>=sh.x&&p.x<=sh.x+sh.w&&p.y>=sh.y&&p.y<=sh.y+sh.h){ hit=sh; break; } }
-    if(e.shiftKey){ // Shift+点选:进出多选集合,不启动拖动
-      if(hit){
-        const i=store.selMulti.indexOf(hit);
-        if(i>=0){ store.selMulti.splice(i,1); if(store.sel===hit) store.sel=store.selMulti[store.selMulti.length-1]||null; }
-        else { store.selMulti.push(hit); store.sel=hit; }
-      }
-      updateSelBox(); return;
-    }
     store.sel=hit;
     if(!hit){ // 空处按下 = 框选(松手时圈中的进多选)
       store.selMulti=[]; updateSelBox();
@@ -288,7 +287,7 @@ function onPointerMove(e){
     Object.assign(store.sel, pathBBox(store.sel.points));
     shapesChanged(s,true);
   }
-  else if(store.dragAct==='marquee'){ store.dragNow=p; }
+  else if(store.dragAct==='marquee'||store.dragAct==='shiftsel'){ store.dragNow=p; }
   else if(store.dragAct==='move'&&store.sel){
     const dx=p.x-store.dragStart.x, dy=p.y-store.dragStart.y;
     const snapped=snapMove(store.sel, store.dragNow.ox+dx, store.dragNow.oy+dy);
@@ -336,14 +335,31 @@ function onPointerUp(e){
         w:Math.abs(p.x-store.dragStart.x), h:Math.abs(p.y-store.dragStart.y), bool:P.bool};
       s.shapes.push(sh); store.sel=sh; updateSelBox(); shapesChanged(s);
     }
-  } else if(store.dragAct==='marquee'){
+  } else if(store.dragAct==='marquee'||store.dragAct==='shiftsel'){
     const p=ptr(e), x0=Math.min(store.dragStart.x,p.x), x1=Math.max(store.dragStart.x,p.x);
     const y0=Math.min(store.dragStart.y,p.y), y1=Math.max(store.dragStart.y,p.y);
-    if(x1-x0>4||y1-y0>4){
-      store.selMulti=s.shapes.filter(sh=>!sh.hidden&&!sh.locked&&
+    const moved=(x1-x0>4||y1-y0>4);
+    if(moved){
+      const inBox=s.shapes.filter(sh=>!sh.hidden&&!sh.locked&&
         sh.x<x1&&sh.x+sh.w>x0&&sh.y<y1&&sh.y+sh.h>y0);
+      // Shift 框选 = 在原有选择上加选;普通框选 = 重选
+      const base=store.dragAct==='shiftsel'?(store._shiftBase||[]):[];
+      store.selMulti=[...base, ...inBox.filter(sh=>!base.includes(sh))];
       store.sel=store.selMulti[store.selMulti.length-1]||null;
-      if(store.selMulti.length>1) setHint(`已框选 ${store.selMulti.length} 个形状 — 右栏「排列」可对齐/等距/阵列`);
+      if(store.selMulti.length>1) setHint(`已选 ${store.selMulti.length} 个形状 — 右栏「排列」可对齐/等距/阵列`);
+    } else if(store.dragAct==='shiftsel'){
+      // Shift+点选:命中即切换进出多选集合
+      let hit=null;
+      for(let i=s.shapes.length-1;i>=0;i--){ const sh=s.shapes[i];
+        if(sh.hidden||sh.locked) continue;
+        if(p.x>=sh.x&&p.x<=sh.x+sh.w&&p.y>=sh.y&&p.y<=sh.y+sh.h){ hit=sh; break; } }
+      if(hit){
+        const i=store.selMulti.indexOf(hit);
+        if(i>=0){ store.selMulti.splice(i,1);
+          if(store.sel===hit) store.sel=store.selMulti[store.selMulti.length-1]||null; }
+        else { store.selMulti.push(hit); store.sel=hit; }
+        if(store.selMulti.length>1) setHint(`已选 ${store.selMulti.length} 个形状(Shift+点选可继续增减)`);
+      }
     }
     updateSelBox();
   } else if(store.dragAct==='pen'){
