@@ -41,28 +41,35 @@ async function idbDel(key){ const db=await idbOpen(); return new Promise((res,re
   tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
 
 /* ══════════════ 动画组 ══════════════ */
-const TEXW=960, TEXH=560;
+const TEXW=1440, TEXH=840; // 贴图分辨率(保持 12:7 与编辑器一致);更高 → 边缘更细
+// 贴图边缘平滑:三线性 + mipmap + 各向异性过滤 —— 车身是曲面且常以掠射角观看,
+// 各向异性过滤是消除"锯齿边"的关键(远不止提高分辨率)。CanvasTexture 每帧更新会重建 mipmap。
+let MAXANISO=8; // 渲染器建好后置为硬件上限
+function smoothTex(t){
+  t.magFilter=THREE.LinearFilter; t.minFilter=THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps=true; t.anisotropy=MAXANISO; t.needsUpdate=true; return t;
+}
 function makeGroup(name){
   const texCanvas=document.createElement('canvas'); texCanvas.width=TEXW; texCanvas.height=TEXH;
   const texCtx=texCanvas.getContext('2d');
   texCtx.fillStyle='#0a0a0a'; texCtx.fillRect(0,0,TEXW,TEXH);
   texCtx.fillStyle='#98f5d0'; texCtx.font='30px system-ui'; texCtx.textAlign='center';
   texCtx.fillText('等待工程…', TEXW/2, TEXH/2);
-  const screenTex=new THREE.CanvasTexture(texCanvas);
+  const screenTex=smoothTex(new THREE.CanvasTexture(texCanvas));
   screenTex.colorSpace=THREE.SRGBColorSpace;
   const maskCanvas=document.createElement('canvas'); maskCanvas.width=TEXW; maskCanvas.height=TEXH;
   const maskCtx=maskCanvas.getContext('2d');
   maskCtx.fillStyle='#fff'; maskCtx.fillRect(0,0,TEXW,TEXH);
-  const maskTex=new THREE.CanvasTexture(maskCanvas);
+  const maskTex=smoothTex(new THREE.CanvasTexture(maskCanvas)); // 蒙版=剪影边缘,平滑它才消锯齿
   const mat=new THREE.MeshBasicMaterial({map:screenTex, alphaMap:maskTex, toneMapped:false,
     vertexColors:true, // RGBA 顶点色:alpha 通道做边缘羽化(消除"硬切"的贴片边界)
     transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-4});
   // UV 直贴材质:glTF 的 UV 原点在左上(v 向下),需 flipY=false 的纹理对;
   // 无顶点色/无深度偏移 —— 它就是该网格的"正式材质",不是叠加贴花。
-  const screenTexUV=new THREE.CanvasTexture(texCanvas);
+  const screenTexUV=smoothTex(new THREE.CanvasTexture(texCanvas));
   screenTexUV.colorSpace=THREE.SRGBColorSpace; screenTexUV.flipY=false;
   screenTexUV.wrapS=THREE.RepeatWrapping; screenTexUV.wrapT=THREE.RepeatWrapping; // UV 越界时平铺而非拉丝
-  const maskTexUV=new THREE.CanvasTexture(maskCanvas); maskTexUV.flipY=false;
+  const maskTexUV=smoothTex(new THREE.CanvasTexture(maskCanvas)); maskTexUV.flipY=false;
   maskTexUV.wrapS=THREE.RepeatWrapping; maskTexUV.wrapT=THREE.RepeatWrapping;
   const matUV=new THREE.MeshBasicMaterial({map:screenTexUV, alphaMap:maskTexUV,
     toneMapped:false, transparent:true});
@@ -109,6 +116,10 @@ camera.position.set(-5.2, 2.4, 5.4);
 const renderer=new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+// 各向异性上限(硬件相关,通常 16)→ 应用到已建组的贴图(makeGroup 在 renderer 之前跑过)
+MAXANISO=renderer.capabilities.getMaxAnisotropy();
+for(const gr of groups) for(const t of [gr.screenTex,gr.maskTex,gr.screenTexUV,gr.maskTexUV]){
+  t.anisotropy=MAXANISO; t.needsUpdate=true; }
 renderer.toneMapping=THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure=1.15;
 $('scene').appendChild(renderer.domElement);
