@@ -60,6 +60,9 @@ Delete 删除/独立撤销栈(skinRef.js skinFocus 焦点路由 —— 删除后
 约束,画布 fx 风格标注线,中线可拖且约束实时跟随,constraints.js edgegap/gref);逐形状
 🧱实心 v2(移到"选中对象-采样"行 sh.solidFill,实心蒙版内点 r×√(1−w) 抑制根治毛边+边界卡顿);
 Ctrl+C/V 跨状态复制形状;工作区放大(布局 min(2400px,98vw)、面板 82vh)。
+🎬 MP4 导出(export.js exportMP4:WebCodecs H.264 + mp4-muxer,与 PNG 同一 sampleFrame
+离线管线确定性逐帧,pickAvcCodec 自适应 level、偶数边长、码率自适配、每秒关键帧、
+背压;无 WebCodecs 回退 PNG;+mp4-muxer 依赖;nextFrame 加 setTimeout 兜底防后台卡死)。
 
 **2026-07-28 批次 A**:① UV 直贴取景窗口 —— UV 层的 cx/cy/cw/ch 经 applyUvLayer 重映射网格 UV
 (原始 UV 备份幂等重算,删除/换模还原),分区切割器拖框即"把该部件的读画区挪到画布任意处",
