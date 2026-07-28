@@ -38,7 +38,12 @@
   .toolbar .gap{height:8px}
   .center{flex:1; min-width:340px; display:flex; flex-direction:column; gap:8px;}
   .stage{position:relative; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#000;}
+  .cwrap{position:relative; width:100%; transform-origin:0 0; will-change:transform;}
   canvas#cv{display:block; width:100%; aspect-ratio:480/280; cursor:crosshair;}
+  .zoombar{position:absolute; right:8px; bottom:8px; display:flex; gap:2px; align-items:center; z-index:5;
+    background:rgba(20,20,20,.78); border:1px solid var(--line); border-radius:6px; padding:2px 4px;}
+  .zoombar button{padding:1px 7px; font-size:13px;}
+  .zoombar span{font-size:11px; color:var(--dim); min-width:40px; text-align:center; font-variant-numeric:tabular-nums;}
   .hint{position:absolute; left:10px; bottom:8px; font-size:11px; color:var(--dim); pointer-events:none; max-width:92%;}
   .tlbar{ background:var(--panel); border:1px solid var(--line); border-radius:8px;
           padding:8px 12px; display:flex; align-items:center; gap:9px;}
@@ -150,9 +155,17 @@
   <!-- 中:画布 + 时间轴 -->
   <div class="center">
     <div class="stage">
-      <canvas id="cvgl" width="1440" height="840" style="position:absolute;left:0;top:0;width:100%;height:100%;"></canvas>
-      <canvas id="cv" width="480" height="280" style="position:relative;"></canvas>
+      <div class="cwrap" id="cwrap">
+        <canvas id="cvgl" width="1440" height="840" style="position:absolute;left:0;top:0;width:100%;height:100%;"></canvas>
+        <canvas id="cv" width="960" height="560" style="position:relative;"></canvas>
+      </div>
       <div class="hint" id="hint">点上方缩略图选状态编辑;▶ 预览整条序列</div>
+      <div class="zoombar" id="zoombar">
+        <button id="zoomOut" title="缩小">−</button>
+        <span id="zoomVal" title="滚轮=以光标为中心缩放 · 中键/空格拖=平移 · ⟲=复位">100%</span>
+        <button id="zoomIn" title="放大">＋</button>
+        <button id="zoomReset" title="复位到适应窗口">⟲</button>
+      </div>
     </div>
     <div class="tlbar">
       <button id="playBtn">▶ 播放</button>

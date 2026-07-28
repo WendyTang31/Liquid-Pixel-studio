@@ -3,7 +3,7 @@
 import { W, H, P } from '../config.js';
 import { store, cur } from '../store.js';
 import { $, hex2rgb, setHint, getExpSize } from '../utils.js';
-import { createPreviewRenderer } from '../render.js';
+import { createSizedRenderer } from '../render.js';
 import { createGLRenderer } from '../render-gl.js';
 import { sampleFrame, drift, camPt, camIdentity } from '../engine.js';
 import { rebuildSequence } from '../sequence.js';
@@ -21,6 +21,8 @@ import { drawSkinRef, skinWindowAt, skinHandleAt, skinCursorAt, getSelSkin, sele
 import { tlTick } from './timeline.js';
 
 let cv, ctx, previewRender, glRender=null, glCv=null;
+// #cv 缓冲用 2× 逻辑分辨率(960×560)提升基础清晰度;叠加层用 VS 缩放变换按逻辑坐标绘制。
+const BW=W*2, BH=H*2, VS=2;
 // 双画布:#cvgl(WebGL 高分辨率场渲染,垫底)+ #cv(2D,GPU 模式下只画叠加层)。
 // gpuOn 时 2D 画布每帧 clearRect 保持透明,场画面从下层透出;CPU 回退时行为与旧版一致。
 const gpuOn=()=> glRender && $('useGpu')?.checked && !store.forceCpu; // 录制 WebM 时强制 CPU(captureStream 抓 2D 画布)
@@ -162,6 +164,9 @@ function overlaySelection(){
 // ══════════════ 主循环 ══════════════
 function tick(now){
   const dt=(now-store.last)/1000; store.last=now; store.clock+=dt;
+  // 叠加层按逻辑坐标(480×280)绘制,统一 VS 缩放到 960×560 缓冲;
+  // previewRender 的 putImageData 忽略变换、直接铺满缓冲,不受影响。
+  ctx.setTransform(VS,0,0,VS,0,0);
   if(store.mode==='play'){
     if(store.seqDirty) rebuildSequence();
     if(store.playing){ store.g+=dt;
@@ -372,6 +377,11 @@ function shapeUnder(p,s){
 }
 
 function onPointerDown(e){
+  // 平移手势(中键 或 空格+左键)优先,且两种模式都可用
+  if(e.button===1 || (store.spaceHeld && e.button===0)){
+    store.panning=true; store._panStart={x:e.clientX,y:e.clientY,px:store.view.px,py:store.view.py};
+    if(cv) cv.style.cursor='grabbing'; e.preventDefault(); return;
+  }
   if(store.mode==='play') return;
   const p=ptr(e), s=cur();
   if(store.penPts && P.tool!=='pen') finishPen(s); // 切了别的工具还有半截钢笔 → 先收尾
@@ -495,6 +505,11 @@ function onPointerDown(e){
   }
 }
 function onPointerMove(e){
+  if(store.panning&&store._panStart){ // 平移画布视图
+    store.view.px=store._panStart.px+(e.clientX-store._panStart.x);
+    store.view.py=store._panStart.py+(e.clientY-store._panStart.y);
+    clampPan(); applyView(); return;
+  }
   const p=ptr(e), s=cur();
   if(P.tool==='pen'&&store.penPts) store.penCursor=p; // 钢笔橡皮筋:随时记录光标
   if(!store.dragAct){
@@ -600,6 +615,8 @@ function onPointerMove(e){
   }
 }
 function onPointerUp(e){
+  if(store.panning){ store.panning=false; store._panStart=null;
+    if(cv) cv.style.cursor=store.spaceHeld?'grab':''; return; }
   if(!store.dragAct) return;
   const s=cur();
   if(store.dragAct==='skinwin'){ persistSkin();
@@ -750,9 +767,32 @@ function onDblClick(e){
   }
 }
 
+// ── 画布缩放/平移(矢量数据 → 放大只是看得更细,不改数据;CSS 变换,ptr() 经 rect 自适应)──
+function applyView(){
+  const v=store.view, wrap=$('cwrap');
+  if(wrap) wrap.style.transform=`translate(${v.px}px,${v.py}px) scale(${v.z})`;
+  const zv=$('zoomVal'); if(zv) zv.textContent=Math.round(v.z*100)+'%';
+}
+function clampPan(){
+  const v=store.view, st=$('cwrap')?.parentElement; if(!st) return;
+  const w=st.clientWidth, h=st.clientHeight;
+  v.px=Math.min(0, Math.max(w-w*v.z, v.px));   // 保证画布始终盖满舞台,不露黑边
+  v.py=Math.min(0, Math.max(h-h*v.z, v.py));
+  if(v.z<=1){ v.px=0; v.py=0; }
+}
+function zoomAt(clientX, clientY, factor){
+  const st=$('cwrap')?.parentElement; if(!st) return;
+  const r=st.getBoundingClientRect(), cx=clientX-r.left, cy=clientY-r.top, v=store.view;
+  const nz=Math.max(1, Math.min(8, v.z*factor));
+  const lx=(cx-v.px)/v.z, ly=(cy-v.py)/v.z;  // 光标下的画布局部点(缩放前)
+  v.z=nz; v.px=cx-lx*nz; v.py=cy-ly*nz;       // 保持该点在光标下不动
+  clampPan(); applyView();
+}
+function resetView(){ store.view={z:1,px:0,py:0}; applyView(); }
+
 export function initStage(){
   cv=$('cv'); ctx=cv.getContext('2d');
-  previewRender=createPreviewRenderer(ctx);
+  previewRender=createSizedRenderer(ctx, BW, BH); // 2× 缓冲,基础更清晰
   glCv=$('cvgl');
   if(glCv){ glRender=createGLRenderer(glCv);
     if(!glRender){ const ck=$('useGpu'); if(ck){ ck.checked=false; ck.disabled=true; ck.parentElement.title='此浏览器不支持 WebGL2,已回退 CPU 渲染'; } } }
@@ -761,6 +801,16 @@ export function initStage(){
   cv.addEventListener('dblclick',onDblClick);
   window.addEventListener('pointerup',onPointerUp);
   window.addEventListener('keydown',onKeyDown);
+  // 缩放/平移:滚轮(以光标为中心)、中键/空格拖平移、按钮
+  const st=$('cwrap')?.parentElement;
+  if(st) st.addEventListener('wheel',e=>{ e.preventDefault();
+    zoomAt(e.clientX,e.clientY, e.deltaY<0?1.15:1/1.15); }, {passive:false});
+  $('zoomIn').onclick=()=>{ const r=st.getBoundingClientRect(); zoomAt(r.left+r.width/2,r.top+r.height/2,1.25); };
+  $('zoomOut').onclick=()=>{ const r=st.getBoundingClientRect(); zoomAt(r.left+r.width/2,r.top+r.height/2,1/1.25); };
+  $('zoomReset').onclick=resetView;
+  window.addEventListener('keydown',e=>{ if(e.code==='Space'&&e.target.tagName!=='INPUT'){ store.spaceHeld=true; if(cv) cv.style.cursor='grab'; e.preventDefault(); } });
+  window.addEventListener('keyup',e=>{ if(e.code==='Space'){ store.spaceHeld=false; if(cv) cv.style.cursor=''; } });
+  applyView();
   // 播放控制条(时间轴的擦洗/改时长手势在 timeline.js)
   $('mPlay').onclick=()=>setMode(store.mode==='play'?'edit':'play');
   $('playBtn').onclick=()=>{ if(store.mode!=='play'){setMode('play');return;}

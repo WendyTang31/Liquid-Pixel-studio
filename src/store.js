@@ -12,6 +12,8 @@ export const store = {
   hideOverlays:false,              // 录制/导出时隐藏洋葱皮等叠加层
   dragAct:null, dragStart:null, dragNow:null,
   penPts:null, penCursor:null,       // 贝塞尔钢笔:正在放置的锚点数组 + 当前光标(橡皮筋预览)
+  view:{z:1, px:0, py:0},            // 画布视图变换(CSS):缩放 z + 平移 px/py(像素)
+  panning:false, spaceHeld:false,    // 平移中 / 空格按住(空格+拖=平移)
   recorder:null, chunks:[], exporting:false,
 };
 
