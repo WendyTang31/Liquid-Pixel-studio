@@ -166,9 +166,13 @@ function tick(now){
     overlayTraj(fr.balls, fr.seg, fr.cam); overlayFrameGuide();
   } else {
     const s=cur();
-    const editBalls=s.dots.map((b,i)=>({x:b.x+P.amp*drift(i*2.3,store.clock,P),y:b.y+P.amp*drift(i*2.3+3,store.clock,P),r:b.r,c:b.c}));
-    if(gpuOn()){ glCv.style.display='block'; glRender(editBalls, hex2rgb(s.color), P); ctx.clearRect(0,0,W,H); }
-    else { if(glCv) glCv.style.display='none'; previewRender(editBalls, hex2rgb(s.color), P); }
+    // 实心状态在编辑模式也按 SDF 显示(此前只在播放/导出/3D 生效 → 勾了实心编辑时仍看到笔画黑团)。
+    // 实心蒙版内的点抑制(r=0),边缘由矢量 SDF 主导;编辑态不套镜头,SDF 与点同在画布坐标系。
+    const solid = s.solid && s._sdf ? [{sdf:s._sdf, w:1}] : null;
+    const editBalls=s.dots.map((b,i)=>({x:b.x+P.amp*drift(i*2.3,store.clock,P),y:b.y+P.amp*drift(i*2.3+3,store.clock,P),
+      r:(solid&&b.sf)?0:b.r, c:b.c}));
+    if(gpuOn() && !solid){ glCv.style.display='block'; glRender(editBalls, hex2rgb(s.color), P); ctx.clearRect(0,0,W,H); }
+    else { if(glCv) glCv.style.display='none'; previewRender(editBalls, hex2rgb(s.color), P, solid, null); }
     ctx.drawImage(s.ghost,0,0);
     overlayOnion();
     if(!store.hideOverlays && $('showSkin')?.checked) drawSkinRef(ctx); // 车面参考(UV 皮肤式)
