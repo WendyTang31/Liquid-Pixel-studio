@@ -81,6 +81,13 @@ centerV·H 对中/mirrorV·H 对称绑定,中线 guides[] 随状态入档,⟂正
 逐像素同阈值相加 —— 停留=矢量锐边整块(任意分辨率 1px 阶跃),过渡=头尾 35% smoothstep
 窗口溶解为点再凝回;camPtInv 逆镜头对齐;含实心帧 GPU 预览回退 CPU;viewer 走 shapesSdf。
 
+**2026-07-28 批次 C**:🎬 MP4 导出(WebCodecs H.264+mp4-muxer,与 PNG 同一确定性离线管线,
+不支持回退 PNG;nextFrame 加 setTimeout 兜底防后台卡死);UV 参考框改为真正最底层背景
+(内部点击穿透到图案,shapeUnder 图案优先,只边框移动/手柄缩放);🌊 动态几何(state.fx,
+sampleFrame 现读):波浪 slosh/弹簧 spring/液态线 liquid/波纹 ripple/微光 twinkle,
+频率硬性 ≤2.5Hz(光敏),behaviorDisp 纯位移场,停留段叠加、过渡段两端各求值按 e 插值
+边界零跳变,全链路(预览/导出/3D)生效。
+
 ## 待办(2026-07-27 与用户敲定的 AE/程序化路线,按序执行)
 
 已评估结论:AE 借"版面"(图层+时间轴),动画模型学 Rive(状态内子循环)而非 AE 全局关键帧;
