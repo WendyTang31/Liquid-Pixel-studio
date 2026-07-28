@@ -65,7 +65,11 @@ LED 点阵需求;③ 右栏分区标题可折叠(localStorage 记忆,DOM 动态�
 (拖一条贴合边=两侧窗口此消彼长,MIN=0.05 保可操作)——"满幅 UV 窗口拖不动"根治
 (满幅时移动被夹死是数学必然,现在随手抓边缩小即可挪);⑤ Shift=全局选择手势:
 任意工具下 Shift+点=切换选中、Shift+拖=框选加选(<4px 判点选),画布被大形状铺满
-时照样可框选。
+时照样可框选;⑥ 持久约束层(src/constraints.js:sh.rel 有向传播重解,offset 定距/size/
+centerV·H 对中/mirrorV·H 对称绑定,中线 guides[] 随状态入档,⟂正交化钢笔轮廓);
+⑦ 🧱 实心显示(1aff5f2):逐状态开关,蒙版 chamfer SDF(rasterize 时算 _sdf)与点场
+逐像素同阈值相加 —— 停留=矢量锐边整块(任意分辨率 1px 阶跃),过渡=头尾 35% smoothstep
+窗口溶解为点再凝回;camPtInv 逆镜头对齐;含实心帧 GPU 预览回退 CPU;viewer 走 shapesSdf。
 
 ## 待办(2026-07-27 与用户敲定的 AE/程序化路线,按序执行)
 
