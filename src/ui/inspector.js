@@ -6,7 +6,7 @@ import { $, setHint } from '../utils.js';
 import { pushUndo, makeState, groupTail } from '../state.js';
 import { rasterize, resample, resampleAll, updateThumb, tintGhost, shapesChanged } from '../pipeline.js';
 import { renderStrip, setActive, syncStateUI } from './filmstrip.js';
-import { exportPNG, toggleRecord } from '../export.js';
+import { exportPNG, exportMP4, toggleRecord } from '../export.js';
 import { applyShapeBBox } from '../shapes.js';
 import { renderLayers } from './layers.js';
 import { renderGuides } from './arrange.js';
@@ -188,6 +188,7 @@ export function initInspector(){
     $('expW').value=w; $('expH').value=h; };
   ['expW','expH'].forEach(id=>$(id).addEventListener('input',()=>{$('expPreset').value='custom';}));
   $('pngBtn').onclick=exportPNG;
+  $('mp4Btn').onclick=exportMP4;
   $('recBtn').onclick=toggleRecord;
 
   // ── 当前状态属性 ──

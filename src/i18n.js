@@ -95,7 +95,7 @@ const EXACT = {
   '高清 1920×1080':'HD 1920×1080', '自定义…':'Custom…',
   '拉伸填满':'Stretch', '等比留黑':'Fit', '帧率':'FPS',
   '2×超采样':'2× supersample', '辉光':'Glow',
-  '⏺ 录 WebM':'⏺ Rec WebM', '🎞 PNG 序列':'🎞 PNG Seq',
+  '⏺ 录 WebM':'⏺ Rec WebM', '🎞 PNG 序列':'🎞 PNG Seq', '🎬 MP4':'🎬 MP4',
   // ── 3D 预览器 ──
   '3D 车模预览':'3D Car Preview', '📂 工程':'📂 Project', '🚗 车模':'🚗 Model',
   '🗺 同步到编辑器':'🗺 Sync to Editor', '亮度':'Exposure', '环绕':'Orbit',

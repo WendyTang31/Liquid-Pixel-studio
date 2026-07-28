@@ -352,8 +352,11 @@
       <input type="range" id="pGlow" min="0" max="1" step="0.05" value="0"><div class="val" id="vGlow">0.00</div>
     </div>
     <div class="row">
-      <button id="recBtn" style="flex:1">⏺ 录 WebM</button>
+      <button id="mp4Btn" style="flex:1" title="离线逐帧编码 H.264 直出 MP4(与 PNG 同一确定性管线;WebCodecs 不可用时自动回退 PNG 序列)">🎬 MP4</button>
       <button id="pngBtn" style="flex:1">🎞 PNG 序列</button>
+    </div>
+    <div class="row">
+      <button id="recBtn" style="flex:1">⏺ 录 WebM</button>
     </div>
     <div class="small">导出整条序列(勾"无缝"含尾→首过渡,循环播放天衣无缝)。
       PNG → <span style="color:var(--mint)">ffmpeg -framerate 30 -i frame_%04d.png -pix_fmt yuv420p out.mp4</span></div>

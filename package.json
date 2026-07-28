@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "jszip": "^3.10.1",
+    "mp4-muxer": "^5.2.2",
     "three": "^0.185.1"
   },
   "devDependencies": {

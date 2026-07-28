@@ -13,7 +13,12 @@ export const downloadBlob = (blob,name)=>{ const a=document.createElement('a');
   a.href=URL.createObjectURL(blob); a.download=name; a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),5000); };
 export const toBlobP = c => new Promise(res=>c.toBlob(res,'image/png'));
-export const nextFrame = () => new Promise(res=>requestAnimationFrame(res));
+// 让出一帧:rAF 优先(可见时与刷新同步),但隐藏标签页 rAF 不触发 —— 用 setTimeout 兜底,
+// 保证导出/编码循环切到后台标签页也能跑完,不会卡死。
+export const nextFrame = () => new Promise(res=>{
+  let done=false; const go=()=>{ if(!done){ done=true; res(); } };
+  requestAnimationFrame(go); setTimeout(go, 32);
+});
 
 // 导出目标尺寸:下限 16px,非法输入回退到画布尺寸。
 export function getExpSize(){
