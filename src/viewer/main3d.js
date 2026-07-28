@@ -41,14 +41,16 @@ async function idbDel(key){ const db=await idbOpen(); return new Promise((res,re
   tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
 
 /* ══════════════ 动画组 ══════════════ */
-const TEXW=960, TEXH=560; // 贴图分辨率(保持 12:7 与编辑器一致)
-// 贴图边缘平滑:各向异性过滤 —— 车身曲面常以掠射角观看,这是消"锯齿边"的关键。
-// 只设 anisotropy + 双线性(不强制 mipmap):mipmap 对每帧更新的 CanvasTexture 有兼容/性能风险,
-// 曾疑似导致 UV 直贴网格材质异常(前盖消失),故不用。anisotropy 只是采样提示,绝不会让网格消失。
+const TEXW=960, TEXH=560; // 贴图分辨率(保持 12:7 与编辑器一致;不加大 → 存档蒙版尺寸不错位)
+// 贴图边缘平滑:掠射角观看车身曲面 → 贴图缩小走样出锯齿,mipmap+各向异性是消锯齿的关键。
+// 关键区分:形状剪影是【颜色边】(深色形状 / 浅色底),故【颜色贴图】开 mipmap 平滑边缘;
+// 【alpha 蒙版】几乎全白(不透明,只有橡皮擦才改),不开 mipmap —— 避免 mipmap 把"多为透明"的
+// 蒙版在粗糙 mip 层平均成透明、导致 UV 直贴网格整片消失(上次"前盖消失"的真凶是那条路 + 存档尺寸)。
 let MAXANISO=8; // 渲染器建好后置为硬件上限
-function smoothTex(t){
-  t.magFilter=THREE.LinearFilter; t.minFilter=THREE.LinearFilter;
-  t.generateMipmaps=false; t.anisotropy=MAXANISO; t.needsUpdate=true; return t;
+function smoothTex(t, mip){
+  t.magFilter=THREE.LinearFilter;
+  t.minFilter = mip ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
+  t.generateMipmaps = !!mip; t.anisotropy=MAXANISO; t.needsUpdate=true; return t;
 }
 function makeGroup(name){
   const texCanvas=document.createElement('canvas'); texCanvas.width=TEXW; texCanvas.height=TEXH;
@@ -56,21 +58,21 @@ function makeGroup(name){
   texCtx.fillStyle='#0a0a0a'; texCtx.fillRect(0,0,TEXW,TEXH);
   texCtx.fillStyle='#98f5d0'; texCtx.font='30px system-ui'; texCtx.textAlign='center';
   texCtx.fillText('等待工程…', TEXW/2, TEXH/2);
-  const screenTex=smoothTex(new THREE.CanvasTexture(texCanvas));
+  const screenTex=smoothTex(new THREE.CanvasTexture(texCanvas), true); // 颜色贴图:mipmap 平滑形状边
   screenTex.colorSpace=THREE.SRGBColorSpace;
   const maskCanvas=document.createElement('canvas'); maskCanvas.width=TEXW; maskCanvas.height=TEXH;
   const maskCtx=maskCanvas.getContext('2d');
   maskCtx.fillStyle='#fff'; maskCtx.fillRect(0,0,TEXW,TEXH);
-  const maskTex=smoothTex(new THREE.CanvasTexture(maskCanvas)); // 蒙版=剪影边缘,平滑它才消锯齿
+  const maskTex=smoothTex(new THREE.CanvasTexture(maskCanvas), false); // alpha 蒙版:不 mipmap(防整片透明)
   const mat=new THREE.MeshBasicMaterial({map:screenTex, alphaMap:maskTex, toneMapped:false,
     vertexColors:true, // RGBA 顶点色:alpha 通道做边缘羽化(消除"硬切"的贴片边界)
     transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-4});
   // UV 直贴材质:glTF 的 UV 原点在左上(v 向下),需 flipY=false 的纹理对;
   // 无顶点色/无深度偏移 —— 它就是该网格的"正式材质",不是叠加贴花。
-  const screenTexUV=smoothTex(new THREE.CanvasTexture(texCanvas));
+  const screenTexUV=smoothTex(new THREE.CanvasTexture(texCanvas), true); // 颜色贴图:mipmap 平滑
   screenTexUV.colorSpace=THREE.SRGBColorSpace; screenTexUV.flipY=false;
   screenTexUV.wrapS=THREE.RepeatWrapping; screenTexUV.wrapT=THREE.RepeatWrapping; // UV 越界时平铺而非拉丝
-  const maskTexUV=smoothTex(new THREE.CanvasTexture(maskCanvas)); maskTexUV.flipY=false;
+  const maskTexUV=smoothTex(new THREE.CanvasTexture(maskCanvas), false); maskTexUV.flipY=false;
   maskTexUV.wrapS=THREE.RepeatWrapping; maskTexUV.wrapT=THREE.RepeatWrapping;
   const matUV=new THREE.MeshBasicMaterial({map:screenTexUV, alphaMap:maskTexUV,
     toneMapped:false, transparent:true});
@@ -435,7 +437,8 @@ async function restoreView(s){
     if(!groups[i]||!murl) return res();
     const img=new Image();
     img.onload=()=>{ groups[i].maskCtx.clearRect(0,0,TEXW,TEXH);
-      groups[i].maskCtx.drawImage(img,0,0); groups[i].maskTex.needsUpdate=true; res(); };
+      groups[i].maskCtx.drawImage(img,0,0,TEXW,TEXH); // 缩放到当前尺寸,存档蒙版分辨率不一致也不留透明区
+      groups[i].maskTex.needsUpdate=true; groups[i].maskTexUV.needsUpdate=true; res(); };
     img.onerror=res; img.src=murl; })));
   for(const [mesh,mat] of origMats) mesh.material=mat;
   origMats.clear(); carColors.length=0;
