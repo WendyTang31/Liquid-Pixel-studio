@@ -1,146 +1,92 @@
 # PROGRESS — 项目进展快照(供新对话/协作者快速接手)
 
-> 最后更新:2026-07-27。配合 `Claude.md`(项目纲领)与 git log(每个功能一个详细 commit)阅读。
-> 新 Claude 会话:先读 `Claude.md`,再读本文件,即可继续工作。
+> 最后更新:2026-07-28。**新 Claude 会话:先读 `Claude.md`(项目纲领)+ 本文件,再看 git log(每功能一详细 commit)。**
+> 仓库 https://github.com/WendyTang31/metaball-morph-studio (main) · 功能完整、全部已推送。
 
-## 当前状态:功能完整、全部已推送 GitHub
+## 一句话:这是什么
+自动驾驶车尾 LED 点阵灯语(eHMI)的专属动画编辑器。设计师画形状/文字/矢量图形 → 多状态间
+平滑形变(点阵 metaball morph **或** 矢量轮廓变形)→ 导出 PNG 序列/MP4/WebM,或贴到 3D 车模预览。
+美学红线:**"光不闪烁,光生长"** —— 禁硬切/频闪,任何 3–30Hz 亮度振荡是光敏红线。
 
-仓库:https://github.com/WendyTang31/metaball-morph-studio (main)
-产物:`dist/index.html`(2D 编辑器)+ `dist/viewer.html`(3D 车模预览器),均为自包含单文件,可双击运行。
-构建:`npm run dev`(5173,占用时可用 PORT 环境变量改口)· `npm run build`(两次构建出双单文件)· `npm test`(48 项纯函数断言)。
+## 构建/运行
+- `npm run dev`(端口 5173,被占用时 `PORT=xxxx npm run dev`)
+- `npm run build`(出 `dist/index.html` 编辑器 + `dist/viewer.html` 3D 预览器,均自包含单文件,可双击)
+- `npm test`(**76 项**纯函数断言,node --test)
+- 依赖:jszip(PNG zip)、three(3D)、mp4-muxer(MP4)。运行时仅此三个。
 
-## 已实现(按层)
+## 分层实现现状
 
-**采样器家族**(`src/samplers.js`,含逐形状覆盖 sh.sampler/count/rscale):
-grid / hex / poisson / uniform(Lloyd 24 轮,曾有"5 轮停在劣化区"的 bug 已修)/
-smart(中轴结构圆+边缘细化)/ strokes(文字骨架串珠,新文字默认)/
-stipple(Secord 加权点画,照片→单色可读点阵,亮度+边缘增益加权)/ vogel / rings / outline。
+**采样器**(`src/samplers.js`,支持逐形状 sh.sampler/count/rscale):grid/hex/poisson/uniform(Lloyd 24 轮)/
+smart(中轴结构圆)/strokes(文字骨架串珠)/stipple(照片加权点画)/vogel/rings/outline。
 
-**引擎**(`src/engine.js`,纯函数):OT 配对(sliced optimal transport)+ 点数不等时生灭(birth/death)、
-位置哈希呼吸相位(消接缝跳变)、物理缓动(backOut/elasticOut/bounceOut)、拉伸拖尾、相干流场、
-逐段过渡覆盖(state.trans)、逐点颜色插值。
+**引擎**(`src/engine.js`,纯函数,预览=导出的根基):OT 配对(sliced optimal transport)+ 点数不等生灭、
+位置哈希呼吸相位、物理缓动、拉伸拖尾、流场、逐段过渡覆盖(state.trans)、逐点颜色插值;
+`sampleFrame(SEQ,states,g,time,P)` 返回 {seg,balls,col,cam,solids}。虚拟镜头 cam{x,y,z,rot}(过渡 smootherstep+变焦对数插值)、
+子循环 loop(眨眼/走路,整数圈对齐)、动态几何 fx(波浪/弹簧/液态线/波纹/微光,≤2.5Hz)、矢量图层 morphLayers。
 
-**渲染**:CPU tile 场渲染(彩色=场权重混色)+ WebGL2 GPU 预览(render-gl.js,3× 分辨率,导出仍 CPU 保确定性)。
+**渲染**(`src/render.js`):CPU tile 场渲染 + **视口渲染**(createSizedRenderer 接 view={z,ox,oy},只渲可见区
+→ 编辑器缩放清晰、开销恒定)+ WebGL2 预览(render-gl.js,z=1 满幅走 GPU,缩放/含实心回退 CPU)。
+实心/矢量距离场 = 2×(SDFW/SDFH=960×560,消边缘像素感)。
 
-**彩色管线**:图片"彩色"开关 → k-means 主色量化+背景剔除 → 逐点颜色全链路(采样→引擎→双端渲染)。
+**2D 编辑器 UI**:
+- 版面(AE 式):左**图层面板**(src/ui/layers.js,改名/显隐/锁定/拖排序)+ 底**真时间轴**(src/ui/timeline.js,
+  停留+过渡胶囊条,拖=擦洗、拖段缘=改时长、双击=编辑;段划分与 buildSequence 严格一致)+ 右属性栏(可折叠分区)。
+- **贝塞尔钢笔**(src/ui/stage.js):点=尖角/点后拖=对称柄/点回起点·Enter·双击=闭合;➤ 拖锚点(柄随动)、
+  拖黄柄调曲率(Alt 断对称)、双击锚点尖角⇄光滑;path.js fillBezierPath+traceShapePath。
+- **排列/约束**(src/ui/arrange.js + src/constraints.js):多选(Shift 点选/框选)、对齐/等距/等尺寸/镜像/阵列;
+  持久约束 sh.rel(定距/等尺寸/对中/对称,有向传播重解)、中线 guides[]、CAD 尺寸标注(点边→Shift+点边→输数值)。
+- **🧱 实心显示**(逐形状 sh.solidFill):蒙版 chamfer SDF 与点场同阈值相加 → 停留=矢量锐边整块、过渡=溶解为点。
+- **动画方式选择器**(选中对象):① 点阵溶解(墨水)/ ② 矢量变形(木偶,见下)。文字默认实心字形填充。
+- **画布缩放/平移**:滚轮以光标为中心、中键/空格拖平移、缩放条复位。矢量数据放大只是看更细。
+- 其它:图片导入(Otsu/半调/彩色 k-means)、图像序列批量导入、Ctrl+C/V 跨状态复制、PS 式 autosave、中英切换(🌐)。
 
-**2D 编辑器**:钢笔(RDP+锚点编辑)、图片导入(Otsu/半调/彩色)、图像序列批量导入(每张一状态)、
-对齐(数值 XYWH/方向键微移/4px 磁吸参考线)、车面参考底图(3D 同步来的布局+快照+UV 线框)、
-PS 式会话(每次改动即时 autosave,启动恢复)、导出 2×超采样+辉光、中英切换(🌐,src/i18n.js)、
-📷 虚拟镜头(逐状态 cam{x,y,z,rot},过渡间恒用 smootherstep 插值 + 变焦对数插值;
-纯变换在 sampleFrame 内施加 → CPU/GPU 预览、导出、3D 贴图零特判统一生效;
-编辑模式画布显示取景框;旋转在像素坐标系做,W≠H 不剪切变形)、
-AE 式版面(左侧图层面板 src/ui/layers.js:点选/双击改名/👁显隐/🔒锁定/拖动排序,
-顶行=最上层,数据只是 sh.name/hidden/locked 三个普通字段随 shapes 深拷贝入档;
-底部真时间轴 src/ui/timeline.js:状态铺成停留+过渡胶囊条宽∝时长、拖=擦洗、
-拖段右缘=改时长(与右栏滑杆双向同步)、双击停留段=编辑该状态,段划分规则与
-buildSequence 严格一致;隐藏形状不进蒙版不出点,锁定形状画布上不可选)。
+**导出**(src/export.js):PNG 序列(JSZip)、🎬 MP4(WebCodecs H.264+mp4-muxer,与 PNG 同一确定性离线管线,
+不支持回退 PNG)、WebM 实时录制。全部经同一 sampleFrame,所见即所得。
 
-**3D 预览器**(`src/viewer/main3d.js`):三种投影层——
-① 贴花 Decal(点击放置,gumball 操纵球:箭头移/环转/方块缩放,双击重放);
-② 🌀 环绕面(圆柱投影连续皮肤,跨部件无缝);
-③ 🧩 UV 直贴(Blender 展开工作流:按网格自带 UV 贴,越界警告+平铺,UV 线框自动同步 2D 底图)。
-动画组节点(多动画并行,组内共享纹理/时间线/蒙版)、画面分区切割器(取景框+磁吸)、
-🔗均分/🧲衔接(等密度接缝)、软边笔刷/橡皮(按组蒙版)、🎨车身上色、⏸暂停(空格)、
-视图控件(前后左右顶)、中键平移、Blender GLB 导出、IndexedDB 模型持久化、Ctrl+Z 视图撤销。
+**3D 预览器**(`src/viewer/main3d.js`):三种投影 —— ①贴花 Decal(gumball 操纵)②🌀环绕面(圆柱投影)
+③🧩 UV 直贴(Blender 展开);动画组节点、分区切割器、🔗均分/🧲衔接、软边笔刷/橡皮、🎨上色、
+视图控件、Blender GLB 导出、IndexedDB 持久化。**贴图边缘:颜色贴图 mipmap+各向异性(alpha 蒙版不 mipmap,
+否则粗糙 mip 层把透明区平均致整片网格消失="前盖消失"真凶)。**
 
-## 关键架构约定(违反=错误,详见 Claude.md)
+## AE 关联图层 / 矢量变形(用户核心方向)—— 当前进度
 
+**用户 2026-07-28 选定做 Full AE 关联图层模型**:一个形状作为贯穿多关键帧的"图层",轮廓直接矢量插值。
+
+**已完成(src/vector.js)**:
+- `layerId` 形状 = 关联图层。停留/未配对过渡进 `_sdf`(实心显示);出 lid 标记的点(供跨系统溶解)。
+- **木偶/最短路径变形**(909de36):同 layerId 两端路径【锚点数一致】→ 逐锚点(含贝塞尔柄)直线插值再 flatten,
+  每控制点走最短路,小幅连贯(手臂抬起自然)。拓扑不同(矩形↔椭圆/加删锚点)→ 退回弧长轮廓重采样。
+- **矢量图层↔普通帧** = 点阵溶解(engine.morphLayers = 两端 dot lid 交集,按 lid 抑制"两端同层"的点;
+  只在一端的层不抑制 → 照常溶解)。
+- 无残影(48455a5):过渡的实心淡出窗口只用 `_sdfBase`(不含矢量图层),矢量图层由轮廓变形独占。
+- 3D 生效(48455a5):viewer 帧循环并入 computeVectorPolys→rasterizeVectorSolids,states 存 shapes。
+- UI:选中对象「动画」下拉切 ①/②;②模式下「🔑 打关键帧到下一状态」→ 去那里**移动控制点**(别增删锚点)。
+
+**待办(关联图层剩余)**:② 专门的**逐图层关键帧时间轴**(轨道/加删关键帧/逐帧编辑,当前借用 states 当关键帧);
+text 矢量变形;拓扑差异大时的鲁棒轮廓对应;矢量图层的 3D 若掉帧可改"贴图上直接 ctx.fill"(免每帧距离场)。
+
+## 关键架构约定(违反=错误)
 - 引擎纯函数,任意 g 可凭空求值;预览与导出共用 sampleFrame。
-- 蒙版双通道:R=放置(>127),G=亮度(半调);彩色走独立 colorCanvas。
-- dots 逐点携带 r(半径)与可选 c(颜色);采样器可返回 [x,y] 或 [x,y,r]。
-- Lloyd 有 250ms 时间预算护栏(测试用 setLloydBudget 放宽)。
-- 工程文件向后兼容 v3 A/B 与 v4 states;serializeStates 含 trans/sampler/count/rscale/colorful 等。
-- 已知验证技巧:隐藏标签页 rAF 不触发,用 window.__morph(编辑器)/window.__morph3d(3D,含 step/place/uvLayer 等)探针驱动;
-  Vite 对已编辑模块加 ?t= 时间戳,外部 import 拿到的是不同实例,读状态必须走探针。
+- 蒙版 R=放置(>127)/G=亮度(半调);彩色走独立 colorCanvas;dots 逐点带 r 与可选 c。
+- 工程文件向后兼容 v3 A/B 与 v4 states;serializeStates 含 trans/cam/loop/fx/solid/guides/layerId 等(缺省不写)。
+- **性能**:实心/矢量是 CPU 逐像素场,分辨率再高会拖垮帧率(实测 4× 缓冲 ~196ms/帧);"放大也清晰"用
+  视口渲染,不是加大缓冲。
+- **验证技巧**:隐藏标签页 rAF 不触发(用 setTimeout 或探针);window.__morph(编辑器)/window.__morph3d
+  (3D,含 step/place/uvLayer)探针驱动;Vite 给已编辑模块加 ?t= 时间戳,外部 import 拿到的是不同实例、
+  模块级状态(如 selSkin)读不到 → 靠 localStorage 变化或探针验证。
 
-**2026-07-28 批次 B**:取景框(车面 UV 窗口)在 2D 编辑器可点选/移动/拖角边缩放/Shift 等比/
-Delete 删除/独立撤销栈(skinRef.js skinFocus 焦点路由 —— 删除后仍能 Ctrl+Z);修满宽窗口
-横向锁死的 clamp bug;CAD 式尺寸标注(点边 1→Shift+点边 2/中线→输入距离→Enter→edgegap 持久
-约束,画布 fx 风格标注线,中线可拖且约束实时跟随,constraints.js edgegap/gref);逐形状
-🧱实心 v2(移到"选中对象-采样"行 sh.solidFill,实心蒙版内点 r×√(1−w) 抑制根治毛边+边界卡顿);
-Ctrl+C/V 跨状态复制形状;工作区放大(布局 min(2400px,98vw)、面板 82vh)。
-🎬 MP4 导出(export.js exportMP4:WebCodecs H.264 + mp4-muxer,与 PNG 同一 sampleFrame
-离线管线确定性逐帧,pickAvcCodec 自适应 level、偶数边长、码率自适配、每秒关键帧、
-背压;无 WebCodecs 回退 PNG;+mp4-muxer 依赖;nextFrame 加 setTimeout 兜底防后台卡死)。
-
-**2026-07-28 批次 A**:① UV 直贴取景窗口 —— UV 层的 cx/cy/cw/ch 经 applyUvLayer 重映射网格 UV
-(原始 UV 备份幂等重算,删除/换模还原),分区切割器拖框即"把该部件的读画区挪到画布任意处",
-morph-uvlayout 条目防抖跟写(线框底图即时跟移),🗺同步不再抹掉 UV 条目;② 排列工具
-(src/ui/arrange.js,计算式绘图 v1):多选(Shift+点选/空处框选,整体拖动/微移/删除),
-对齐 6 向/等距分布(首尾定住中心等差)/等宽等高(以主选中为准)/镜像复制(画布中线)/
-数值阵列(N+ΔXΔY)—— 结论:约束求解器(Fusion 式)过重,Figma 范式(对齐+阵列+数值)已覆盖
-LED 点阵需求;③ 右栏分区标题可折叠(localStorage 记忆,DOM 动态包裹不改控件 id);④ 切割器手势重做:
-四边+四角均可拖拽缩放(7px 热区,hover 光标反馈 move/ew/ns/nwse/nesw),共享边联动
-(拖一条贴合边=两侧窗口此消彼长,MIN=0.05 保可操作)——"满幅 UV 窗口拖不动"根治
-(满幅时移动被夹死是数学必然,现在随手抓边缩小即可挪);⑤ Shift=全局选择手势:
-任意工具下 Shift+点=切换选中、Shift+拖=框选加选(<4px 判点选),画布被大形状铺满
-时照样可框选;⑥ 持久约束层(src/constraints.js:sh.rel 有向传播重解,offset 定距/size/
-centerV·H 对中/mirrorV·H 对称绑定,中线 guides[] 随状态入档,⟂正交化钢笔轮廓);
-⑦ 🧱 实心显示(1aff5f2):逐状态开关,蒙版 chamfer SDF(rasterize 时算 _sdf)与点场
-逐像素同阈值相加 —— 停留=矢量锐边整块(任意分辨率 1px 阶跃),过渡=头尾 35% smoothstep
-窗口溶解为点再凝回;camPtInv 逆镜头对齐;含实心帧 GPU 预览回退 CPU;viewer 走 shapesSdf。
-
-**2026-07-28 批次 C**:🎬 MP4 导出(WebCodecs H.264+mp4-muxer,与 PNG 同一确定性离线管线,
-不支持回退 PNG;nextFrame 加 setTimeout 兜底防后台卡死);UV 参考框改为真正最底层背景
-(内部点击穿透到图案,shapeUnder 图案优先,只边框移动/手柄缩放);🌊 动态几何(state.fx,
-sampleFrame 现读):波浪 slosh/弹簧 spring/液态线 liquid/波纹 ripple/微光 twinkle,
-频率硬性 ≤2.5Hz(光敏),behaviorDisp 纯位移场,停留段叠加、过渡段两端各求值按 e 插值
-边界零跳变,全链路(预览/导出/3D)生效。
-
-**2026-07-28 批次 D**:文字默认实心字形填充(过渡溶解为点);修实心在编辑模式也渲染
-(此前只播放/导出/3D 生效);AE 式贝塞尔钢笔(点=尖角/点后拖=对称柄/点回起点·Enter·双击=闭合,
-锚点柄编辑 Alt 断对称、双击尖角⇄光滑,path.js fillBezierPath+traceShapePath 分派);新建
-矩形/椭圆/钢笔默认实心矢量填充;画布缩放/平移(#cv 缓冲 2×=960×560,CSS transform 于 #cwrap,
-滚轮以光标为中心/中键·空格拖平移/复位,ptr() 经 rect 自适应缩放精确)。
-
-## 待办(2026-07-27 与用户敲定的 AE/程序化路线,按序执行)
-
-**用户 2026-07-28 选定:做 Full AE 关联图层模型(#2)——一个形状作为贯穿多关键帧的"图层",
-新时间轴逐帧编辑其形状,轮廓直接矢量插值(实心填充,不散点)。这是多步骤大改,需分阶段:
-① 数据模型:layer 贯穿多 state,逐关键帧 geometry;② 关键帧时间轴 UI;③ 轮廓插值+实心渲染
-(过渡时路径重采样等锚点数插值,替代点阵溶解);④ 与现有 state/dot 系统并存。
-
-**阶段二部分(909de36)**:木偶/最短路径变形 —— 同 layerId 两端路径【锚点数一致】时,
-computeVectorPolys 改逐锚点(含贝塞尔柄)直线插值再 flatten(每控制点走最短路,小幅连贯,
-不再弧长重采样打结);拓扑不同才退回弧长。逐形状动画方式选择器(① 点阵溶解 / ② 矢量变形木偶)。
-矢量图层↔普通帧走点阵溶解(engine.morphLayers 按 lid 抑制两端同层的点)。视口渲染(render.js
-createSizedRenderer 加 view={z,ox,oy},只渲可见区 → 编辑器缩放清晰、开销恒定,缩放时强制 CPU)。
-3D 边缘:颜色贴图 mipmap+各向异性(alpha 蒙版不 mipmap 防整片透明);贴图/缓冲分辨率不加大
-(CPU 逐像素扛不住,实测 4× 缓冲 ~196ms/帧)。
-
-**阶段一 已完成(d8acd3d)**:③+④+最小 ① —— src/vector.js:layerId 形状=关联图层,
-脱离点阵(不进 stateDots/静态_sdf),outline() 规范化轮廓(N=120 弧长重采样/统一绕向/
-质心+x 对齐)、computeVectorPolys 停留静态+过渡同 layerId 逐点 smootherstep 插值(端点零跳变)、
-rasterizeVectorSolids→SDF solid 复用实心渲染;stage/export 集成;UI「🔑 转为矢量图层/打关键帧」
-标记 layerId+下一状态生成关键帧。**待办:② 专门的关键帧时间轴(逐图层轨道/加删关键帧/
-逐帧编辑),text 矢量变形,轮廓对应更鲁棒(拓扑差异大时),viewer 端矢量图层支持。**
-
-
-已评估结论:AE 借"版面"(图层+时间轴),动画模型学 Rive(状态内子循环)而非 AE 全局关键帧;
-AE 不能导出代码接入,可行外链 = 渲帧导入(已有图像序列导入);AI 路线 = 让 Claude 写生成器代码。
-
-1. ~~动画内虚拟摄像机(推拉摇移)~~ ✅(📷 本状态镜头)。
-2. ~~AE 式版面:图层面板 + 真时间轴~~ ✅ 2026-07-27。
-3. ~~状态内子循环(核心)~~ ✅ 2026-07-27:姿态=挂 isPose 标记的真实状态(紧跟主状态,
-   胶片条虚线小格 🔁,工具/撤销/图层面板全复用);engine.groupStates 唯一定义分组,
-   buildSequence 给带姿态的主状态停留段挂 seg.loop(基[loop.h0/d0 计时]→各姿态[各自
-   hold/dur]→无缝回基),sampleFrame 递归采样 + **整数圈对齐**(cycles=round(hold/LT),
-   停留头尾精确落在基姿态 → 与相邻过渡零跳变);镜头只在主层套一次(子序列剥 cam);
-   UI:右栏「🔁 状态内循环」＋姿态按钮/基姿态计时,时间轴主段 🔁N 徽标,姿态不占主段;
-   groupTail 保证新建/复制状态不插进组内。眨眼=基+闭眼姿态(hold 0.05/dur 0.1);
-   走路=4~8 姿态。3D 预览器透传 isPose/loop 自动生效。
-4. 行为修饰器:呼吸缩放/摆动/波浪,逐形状参数化,频率上限 2.5Hz(光敏红线)。
-5. 导入为子循环 + 姿态抽稀(打通 AE/Cavalry/Sora 渲帧 → 点阵)。
-6. (可选)生成器状态 API(纯函数 gen(t)→dots,AI 写代码,禁随机/墙钟)。
-7. 多选与群组对齐按钮;贝塞尔缓动编辑器(P2)。
-8. Sidecar JSON / 观看距离模拟 / 闪烁护栏(研究仪器化,论文相关)。
-9. 演出模式(全屏+键盘跳状态,8/22 展览)。
-10. i18n 词典补全(长 tooltip 尚有中文残留)。
+## 待办候选(优先级)
+1. **逐图层关键帧时间轴**(AE 关联图层第②步,最高)。
+2. text 矢量变形;矢量轮廓对应鲁棒性;矢量 3D 掉帧优化。
+3. 导入为子循环 + 姿态抽稀(打通 AE/Cavalry/Sora 渲帧 → 点阵)。
+4. 生成器状态 API(纯函数 gen(t)→dots,让 AI 写代码,禁随机/墙钟)。
+5. 贝塞尔缓动编辑器;演出模式(全屏+键盘跳状态,8/22 展览);i18n 长 tooltip 补全。
+6. 研究仪器化:Sidecar JSON / 观看距离模拟 / 闪烁护栏(论文相关)。
 
 ## 用户工作流备忘
-
-- 照片→点阵:导入图片 → 勾半调 → 阈值≈10 → 采样"灰阶点画·照片";单色=不勾彩色。
-- 文字:新文字默认"笔画"采样;点数留空=全覆盖;"半径×"0.7 更细。
-- Blender UV 工作流:Unwrap → **Pack Islands(必须,0-1 方格)** → 导出 .glb → 3D 里 🧩 点部件 → 2D 勾"车面"对着线框画。
+- **木偶动画(如小人摇手)**:画形状 → 选中对象「动画=②矢量变形」→「🔑 打关键帧到下一状态」→
+  在下一状态**移动控制点**(别增删锚点)→ 轮廓沿最短路平滑变形。
+- 照片→点阵:导入图片 → 勾半调 → 阈值≈10 → 采样"灰阶点画·照片"。
+- 文字:默认实心字形填充(清晰);想要点阵取消 🧱实心 + 采样改"笔画"。
+- Blender UV:Unwrap → **Pack Islands(必须,0-1 方格)** → 导出 .glb → 3D 里 🧩 点部件 → 2D 勾"车面"对着线框画。
 - 跨面跑动:同组多面 + 🔗均分;或 🌀 环绕面;或 UV 直贴(最优)。
