@@ -101,6 +101,14 @@ sampleFrame 现读):波浪 slosh/弹簧 spring/液态线 liquid/波纹 ripple/�
 ① 数据模型:layer 贯穿多 state,逐关键帧 geometry;② 关键帧时间轴 UI;③ 轮廓插值+实心渲染
 (过渡时路径重采样等锚点数插值,替代点阵溶解);④ 与现有 state/dot 系统并存。
 
+**阶段二部分(909de36)**:木偶/最短路径变形 —— 同 layerId 两端路径【锚点数一致】时,
+computeVectorPolys 改逐锚点(含贝塞尔柄)直线插值再 flatten(每控制点走最短路,小幅连贯,
+不再弧长重采样打结);拓扑不同才退回弧长。逐形状动画方式选择器(① 点阵溶解 / ② 矢量变形木偶)。
+矢量图层↔普通帧走点阵溶解(engine.morphLayers 按 lid 抑制两端同层的点)。视口渲染(render.js
+createSizedRenderer 加 view={z,ox,oy},只渲可见区 → 编辑器缩放清晰、开销恒定,缩放时强制 CPU)。
+3D 边缘:颜色贴图 mipmap+各向异性(alpha 蒙版不 mipmap 防整片透明);贴图/缓冲分辨率不加大
+(CPU 逐像素扛不住,实测 4× 缓冲 ~196ms/帧)。
+
 **阶段一 已完成(d8acd3d)**:③+④+最小 ① —— src/vector.js:layerId 形状=关联图层,
 脱离点阵(不进 stateDots/静态_sdf),outline() 规范化轮廓(N=120 弧长重采样/统一绕向/
 质心+x 对齐)、computeVectorPolys 停留静态+过渡同 layerId 逐点 smootherstep 插值(端点零跳变)、
