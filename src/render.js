@@ -107,12 +107,15 @@ export function createSizedRenderer(ctx, EW, EH){
   const tc=Math.ceil(EW/TS), tr=Math.ceil(EH/TS);
   const bins=Array.from({length:tc*tr},()=>[]);
   const rScale=Math.sqrt((EW*EH)/(W*H));
-  return function render(balls,col,P,solids,cam){
+  // view={z,ox,oy}(归一化视口:可见区 [ox,ox+1/z]×[oy,oy+1/z])。缺省=满幅(z=1)。
+  // 视口渲染:同样的缓冲像素只渲可见区 → 缩放后依旧清晰,开销恒定(不随缩放增大)。
+  return function render(balls,col,P,solids,cam,view){
+    const z=view?view.z:1, ox=view?view.ox:0, oy=view?view.oy:0;
     const n=balls.length, bg=hex2rgb(P.colBg);
     const bx=new Float32Array(n), by=new Float32Array(n), br2=new Float32Array(n);
-    for(let i=0;i<n;i++){ bx[i]=balls[i].x*EW; by[i]=balls[i].y*EH;
-      const r=balls[i].r*W*rScale; br2[i]=r*r; }
-    const ss=makeSolidSampler(solids, cam, x=>x/EW, (x,y)=>y/EH, P.thr);
+    for(let i=0;i<n;i++){ bx[i]=(balls[i].x-ox)*z*EW; by[i]=(balls[i].y-oy)*z*EH;
+      const r=balls[i].r*W*rScale*z; br2[i]=r*r; }
+    const ss=makeSolidSampler(solids, cam, x=>ox+x/(EW*z), (x,y)=>oy+y/(EH*z), P.thr);
     fieldLoop(img.data, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col), ss);
     ctx.putImageData(img,0,0);
   };

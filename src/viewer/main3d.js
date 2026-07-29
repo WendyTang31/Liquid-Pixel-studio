@@ -41,7 +41,8 @@ async function idbDel(key){ const db=await idbOpen(); return new Promise((res,re
   tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
 
 /* ══════════════ 动画组 ══════════════ */
-const TEXW=960, TEXH=560; // 贴图分辨率(保持 12:7 与编辑器一致;不加大 → 存档蒙版尺寸不错位)
+const TEXW=960, TEXH=560; // 贴图分辨率(12:7)。texCtx 每帧 CPU 渲染,加大到 1920 会拖垮帧率,
+// 故不加大;边缘平滑靠"颜色贴图 mipmap+各向异性"(见 smoothTex)与更细的距离场。
 // 贴图边缘平滑:掠射角观看车身曲面 → 贴图缩小走样出锯齿,mipmap+各向异性是消锯齿的关键。
 // 关键区分:形状剪影是【颜色边】(深色形状 / 浅色底),故【颜色贴图】开 mipmap 平滑边缘;
 // 【alpha 蒙版】几乎全白(不透明,只有橡皮擦才改),不开 mipmap —— 避免 mipmap 把"多为透明"的

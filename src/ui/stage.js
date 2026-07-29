@@ -22,8 +22,9 @@ import { tlTick } from './timeline.js';
 import { computeVectorPolys, rasterizeVectorSolids } from '../vector.js';
 
 let cv, ctx, previewRender, glRender=null, glCv=null;
-// #cv 缓冲用 2× 逻辑分辨率(960×560)提升基础清晰度;叠加层用 VS 缩放变换按逻辑坐标绘制。
-const BW=W*2, BH=H*2, VS=2;
+// #cv 缓冲用 2× 逻辑分辨率(960×560)。注意:实心场是 CPU 逐像素,分辨率再高会拖垮帧率
+// (4× 实测 ~196ms/帧);"放大也清晰"的正解是视口渲染(只渲可见区),而非无脑加大缓冲。
+const VS=2, BW=W*VS, BH=H*VS;
 // 双画布:#cvgl(WebGL 高分辨率场渲染,垫底)+ #cv(2D,GPU 模式下只画叠加层)。
 // gpuOn 时 2D 画布每帧 clearRect 保持透明,场画面从下层透出;CPU 回退时行为与旧版一致。
 const gpuOn=()=> glRender && $('useGpu')?.checked && !store.forceCpu; // 录制 WebM 时强制 CPU(captureStream 抓 2D 画布)
@@ -165,9 +166,9 @@ function overlaySelection(){
 // ══════════════ 主循环 ══════════════
 function tick(now){
   const dt=(now-store.last)/1000; store.last=now; store.clock+=dt;
-  // 叠加层按逻辑坐标(480×280)绘制,统一 VS 缩放到 960×560 缓冲;
-  // previewRender 的 putImageData 忽略变换、直接铺满缓冲,不受影响。
-  ctx.setTransform(VS,0,0,VS,0,0);
+  // 叠加层按逻辑坐标绘制,经视口变换到缓冲;previewRender 的 putImageData 忽略变换、直接铺满缓冲。
+  setOverlayTransform();
+  const zoomed=store.view.z>1.001; // 缩放时强制 CPU 视口渲染(GL 路径未接视口)→ 放大依旧清晰
   if(store.mode==='play'){
     if(store.seqDirty) rebuildSequence();
     if(store.playing){ store.g+=dt;
@@ -177,9 +178,9 @@ function tick(now){
     const fr=sampleFrame(store.SEQ, store.states, store.g, store.clock, P);
     // 矢量图层(AE 关联图层):独立于点阵,轮廓直接插值 → SDF solid,并入实心渲染
     const solids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(store.states, store.SEQ, store.g)));
-    // 实心场是 CPU 采样(SDF 纹理未进 GL 着色器),该帧有实心即回退 CPU 渲染
-    if(gpuOn() && !solids.length){ glCv.style.display='block'; glRender(fr.balls, fr.col, P); ctx.clearRect(0,0,W,H); }
-    else { if(glCv) glCv.style.display='none'; previewRender(fr.balls, fr.col, P, solids.length?solids:null, fr.cam); }
+    // 实心场是 CPU 采样(SDF 纹理未进 GL 着色器);有实心或已缩放时走 CPU 视口渲染
+    if(gpuOn() && !solids.length && !zoomed){ glCv.style.display='block'; glRender(fr.balls, fr.col, P); ctx.clearRect(0,0,W,H); }
+    else { if(glCv) glCv.style.display='none'; previewRender(fr.balls, fr.col, P, solids.length?solids:null, fr.cam, store.view); }
     overlayTraj(fr.balls, fr.seg, fr.cam); overlayFrameGuide();
   } else {
     const s=cur();
@@ -189,8 +190,8 @@ function tick(now){
     let solid = s.solid && s._sdf ? [{sdf:s._sdf, w:1}] : null;
     const editBalls=s.dots.map((b,i)=>({x:b.x+P.amp*drift(i*2.3,store.clock,P),y:b.y+P.amp*drift(i*2.3+3,store.clock,P),
       r:(solid&&b.sf)?0:b.r, c:b.c}));
-    if(gpuOn() && !solid){ glCv.style.display='block'; glRender(editBalls, hex2rgb(s.color), P); ctx.clearRect(0,0,W,H); }
-    else { if(glCv) glCv.style.display='none'; previewRender(editBalls, hex2rgb(s.color), P, solid, null); }
+    if(gpuOn() && !solid && !zoomed){ glCv.style.display='block'; glRender(editBalls, hex2rgb(s.color), P); ctx.clearRect(0,0,W,H); }
+    else { if(glCv) glCv.style.display='none'; previewRender(editBalls, hex2rgb(s.color), P, solid, null, store.view); }
     ctx.drawImage(s.ghost,0,0);
     overlayOnion();
     if(!store.hideOverlays && $('showSkin')?.checked) drawSkinRef(ctx); // 车面参考(UV 皮肤式)
@@ -236,8 +237,9 @@ export function setMode(m){ store.mode=m;
 }
 
 // ══════════════ 指针交互 ══════════════
-function ptr(e){ const r=cv.getBoundingClientRect();
-  return {x:(e.clientX-r.left)/r.width*W, y:(e.clientY-r.top)/r.height*H}; }
+function ptr(e){ const r=cv.getBoundingClientRect(), v=store.view;
+  const fx=(e.clientX-r.left)/r.width, fy=(e.clientY-r.top)/r.height; // 显示内比例 → 视口 → 逻辑
+  return {x:(v.ox+fx/v.z)*W, y:(v.oy+fy/v.z)*H}; }
 
 // ── CAD 式边拾取与尺寸标注(Fusion 流程:点边 1 → Shift+点边 2/中线 → 输入距离 → Enter)──
 let edgePick=null;   // 第一条被拾取的边 {sh,edge,axis,pos} 或中线 {g,axis,pos}
@@ -383,7 +385,7 @@ function shapeUnder(p,s){
 function onPointerDown(e){
   // 平移手势(中键 或 空格+左键)优先,且两种模式都可用
   if(e.button===1 || (store.spaceHeld && e.button===0)){
-    store.panning=true; store._panStart={x:e.clientX,y:e.clientY,px:store.view.px,py:store.view.py};
+    store.panning=true; store._panStart={x:e.clientX,y:e.clientY,ox:store.view.ox,oy:store.view.oy};
     if(cv) cv.style.cursor='grabbing'; e.preventDefault(); return;
   }
   if(store.mode==='play') return;
@@ -509,10 +511,11 @@ function onPointerDown(e){
   }
 }
 function onPointerMove(e){
-  if(store.panning&&store._panStart){ // 平移画布视图
-    store.view.px=store._panStart.px+(e.clientX-store._panStart.x);
-    store.view.py=store._panStart.py+(e.clientY-store._panStart.y);
-    clampPan(); applyView(); return;
+  if(store.panning&&store._panStart){ // 平移视口(归一化,按缩放折算)
+    const r=cv.getBoundingClientRect(), v=store.view;
+    const dfx=(e.clientX-store._panStart.x)/r.width, dfy=(e.clientY-store._panStart.y)/r.height;
+    v.ox=store._panStart.ox-dfx/v.z; v.oy=store._panStart.oy-dfy/v.z;
+    clampView(); applyView(); return;
   }
   const p=ptr(e), s=cur();
   if(P.tool==='pen'&&store.penPts) store.penCursor=p; // 钢笔橡皮筋:随时记录光标
@@ -772,34 +775,31 @@ function onDblClick(e){
   }
 }
 
-// ── 画布缩放/平移(矢量数据 → 放大只是看得更细,不改数据;CSS 变换,ptr() 经 rect 自适应)──
-function applyView(){
-  const v=store.view, wrap=$('cwrap');
-  if(wrap) wrap.style.transform=`translate(${v.px}px,${v.py}px) scale(${v.z})`;
-  const zv=$('zoomVal'); if(zv) zv.textContent=Math.round(v.z*100)+'%';
+// ── 画布缩放/平移(视口渲染:只渲可见区,缩放后清晰、开销恒定;数据不变)──
+function applyView(){ const zv=$('zoomVal'); if(zv) zv.textContent=Math.round(store.view.z*100)+'%'; }
+function clampView(){
+  const v=store.view; v.z=Math.max(1,Math.min(8,v.z));
+  const s=1/v.z; v.ox=Math.min(1-s, Math.max(0, v.ox)); v.oy=Math.min(1-s, Math.max(0, v.oy));
+  if(v.z<=1.0001){ v.ox=0; v.oy=0; }
 }
-function clampPan(){
-  const v=store.view, st=$('cwrap')?.parentElement; if(!st) return;
-  const w=st.clientWidth, h=st.clientHeight;
-  v.px=Math.min(0, Math.max(w-w*v.z, v.px));   // 保证画布始终盖满舞台,不露黑边
-  v.py=Math.min(0, Math.max(h-h*v.z, v.py));
-  if(v.z<=1){ v.px=0; v.py=0; }
-}
+// 以光标为中心缩放:光标下的归一化点在缩放前后保持不动。
 function zoomAt(clientX, clientY, factor){
-  const st=$('cwrap')?.parentElement; if(!st) return;
-  const r=st.getBoundingClientRect(), cx=clientX-r.left, cy=clientY-r.top, v=store.view;
-  const nz=Math.max(1, Math.min(8, v.z*factor));
-  const lx=(cx-v.px)/v.z, ly=(cy-v.py)/v.z;  // 光标下的画布局部点(缩放前)
-  v.z=nz; v.px=cx-lx*nz; v.py=cy-ly*nz;       // 保持该点在光标下不动
-  clampPan(); applyView();
+  const r=cv.getBoundingClientRect(), v=store.view;
+  const fx=(clientX-r.left)/r.width, fy=(clientY-r.top)/r.height; // 画布显示内的比例
+  const nx=v.ox+fx/v.z, ny=v.oy+fy/v.z;                          // 光标下的归一化坐标
+  v.z=Math.max(1,Math.min(8,v.z*factor));
+  v.ox=nx-fx/v.z; v.oy=ny-fy/v.z; clampView(); applyView();
 }
-function resetView(){ store.view={z:1,px:0,py:0}; applyView(); }
+function resetView(){ store.view={z:1,ox:0,oy:0}; applyView(); }
+// 叠加层变换:逻辑坐标(0..W)→ 缓冲像素(按视口)。z=1,ox=0 时退化为 setTransform(VS,…)。
+function setOverlayTransform(){ const v=store.view;
+  ctx.setTransform(v.z*VS, 0, 0, v.z*VS, -v.ox*v.z*BW, -v.oy*v.z*BH); }
 
 export function initStage(){
-  cv=$('cv'); ctx=cv.getContext('2d');
-  previewRender=createSizedRenderer(ctx, BW, BH); // 2× 缓冲,基础更清晰
+  cv=$('cv'); cv.width=BW; cv.height=BH; ctx=cv.getContext('2d'); // 4× 缓冲(1920×1120),缩放更清晰
+  previewRender=createSizedRenderer(ctx, BW, BH);
   glCv=$('cvgl');
-  if(glCv){ glRender=createGLRenderer(glCv);
+  if(glCv){ glCv.width=BW; glCv.height=BH; glRender=createGLRenderer(glCv); // GL 分辨率对齐
     if(!glRender){ const ck=$('useGpu'); if(ck){ ck.checked=false; ck.disabled=true; ck.parentElement.title='此浏览器不支持 WebGL2,已回退 CPU 渲染'; } } }
   cv.addEventListener('pointerdown',onPointerDown);
   cv.addEventListener('pointermove',onPointerMove);
