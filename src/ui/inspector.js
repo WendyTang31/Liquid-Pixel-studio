@@ -67,8 +67,14 @@ export function updateSelBox(){
       <button id="selBool" style="flex:1">${sel.bool==='add'?'➕ 添加':'➖ 挖除'}</button>
       <button id="selDel" style="flex:1">删除 (Del)</button>
     </div>
-    ${sel.type!=='image'?`<div style="display:flex;gap:6px">
-      <button id="selKey" style="flex:1" title="${sel.layerId?'把本图层复制成下一状态的关键帧(去那里改形状,轮廓会直接矢量变形过去,不散成点)':'把本形状变成 AE 式关联图层:它将贯穿多个状态作为同一个东西,轮廓在关键帧之间直接矢量变形(实心填充,不散成点)。点击会在下一状态生成同一图层的关键帧。'}">${sel.layerId?'🔑 打关键帧到下一状态':'🔑 转为矢量图层(可关键帧变形)'}</button>
+    ${sel.type!=='image'?`<div class="row" title="本形状在关键帧之间怎么变:①点阵溶解=打散成小圆点飞过去(现有墨水动画);②矢量变形=同一形状的控制点各走最短路,小幅连贯地变形(AE 木偶式,适合手臂抬起等)。">
+      <label style="min-width:auto">动画</label>
+      <select id="selMorph" style="flex:1">
+        <option value="dots" ${!sel.layerId?'selected':''}>① 点阵溶解(墨水)</option>
+        <option value="vector" ${sel.layerId?'selected':''}>② 矢量变形(木偶·最短路径)</option>
+      </select></div>
+    <div style="display:flex;gap:6px">
+      <button id="selKey" style="flex:1" title="${sel.layerId?'把本图层复制成下一状态的关键帧;去那里【移动控制点】(别增删锚点),轮廓就沿最短路平滑变形过去':'先在上面选"矢量变形",再点这里在下一状态生成关键帧'}"${sel.layerId?'':' disabled'}>🔑 打关键帧到下一状态(移动控制点)</button>
     </div>`:''}`;
   for(const [id,apply] of [
     ['selX',v=>applyShapeBBox(sel,v,sel.y,sel.w,sel.h)],
@@ -83,9 +89,17 @@ export function updateSelBox(){
   }
   $('selBool').onclick=()=>{ pushUndo(); sel.bool=sel.bool==='add'?'sub':'add';
     updateSelBox(); shapesChanged(cur()); };
+  // 动画方式:① 点阵溶解(无 layerId,走点阵)/ ② 矢量变形(有 layerId,走轮廓/木偶变形)。
+  if($('selMorph')) $('selMorph').onchange=e=>{
+    pushUndo();
+    if(e.target.value==='vector'){ if(!sel.layerId){ sel.layerId=store.layerSeq=(store.layerSeq||0)+1;
+      if(!('solidFill' in sel)) sel.solidFill=true; } setHint('② 矢量变形:🔑 打关键帧到下一状态,再移动控制点即可'); }
+    else { delete sel.layerId; setHint('① 点阵溶解:过渡时打散成点飞向下一状态'); }
+    shapesChanged(cur()); store.seqDirty=true; updateSelBox();
+  };
   // 🔑 矢量图层关键帧:标记本形状为关联图层(layerId),并在下一状态生成同一图层的关键帧。
   //    去下一状态改它的形状 → 停留/过渡时该图层轮廓直接矢量变形(实心填充,不散成点)。
-  if($('selKey')) $('selKey').onclick=()=>{
+  if($('selKey')&&!$('selKey').disabled) $('selKey').onclick=()=>{
     pushUndo();
     if(!sel.layerId){ sel.layerId=store.layerSeq=(store.layerSeq||0)+1;
       if(!('solidFill' in sel)) sel.solidFill=true; }

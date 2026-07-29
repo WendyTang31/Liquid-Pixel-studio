@@ -59,3 +59,24 @@ test('computeVectorPolys:layerId 只在一端 → 不产生 morph(需两端都�
   const SEQ=buildSequence([A,B], false, {match:'sortXY',ease:'linear',stag:0,amp:0,freq:.4});
   assert.equal(computeVectorPolys([A,B], SEQ, 2.0).length, 0);
 });
+
+test('木偶/最短路径:同锚点数路径 → 逐锚点直线插值(而非弧长重采样打结)', () => {
+  // kf1: 三角(手臂 anchor 在下);kf2: 同 3 锚点,其中一个"手臂"点抬高
+  const A={color:'#fff',hold:1,dur:2,dots:[{x:.3,y:.3,r:.01}],shapes:[
+    {type:'path',layerId:5,points:[{x:100,y:200},{x:200,y:200},{x:150,y:100}]}]};
+  const B={color:'#fff',hold:1,dur:2,dots:[{x:.3,y:.3,r:.01}],shapes:[
+    {type:'path',layerId:5,points:[{x:100,y:200},{x:260,y:120},{x:150,y:100}]}]}; // 第2点抬起+外移
+  const SEQ=buildSequence([A,B], false, {match:'sortXY',ease:'linear',stag:0,amp:0,freq:.4});
+  const start=computeVectorPolys([A,B], SEQ, 1.0001); // e≈0
+  const mid=computeVectorPolys([A,B], SEQ, 2.0);       // e≈0.5
+  const end=computeVectorPolys([A,B], SEQ, 3-0.0001);  // e≈1
+  assert.equal(mid.length,1);
+  const maxx=poly=>Math.max(...poly[0].poly.map(p=>p.x));
+  // 逐锚点最短路:第2锚点 x 从 200→260 单调外移 → 三帧右缘应单调递增(手臂渐渐抬起,连贯)
+  assert.ok(maxx(start)<maxx(mid) && maxx(mid)<maxx(end),
+    `右缘应随过渡单调外移(手臂渐抬),实际 ${maxx(start).toFixed(0)}→${maxx(mid).toFixed(0)}→${maxx(end).toFixed(0)}`);
+  assert.ok(maxx(end)-maxx(start)>20, '首尾差应明显(确实动了)');
+  // 无打结:所有点都在两帧锚点凸包(+边距)内,不会飞出
+  for(const p of mid[0].poly)
+    assert.ok(p.x>=90&&p.x<=270&&p.y>=90&&p.y<=210, `点不应飞出(${p.x|0},${p.y|0})`);
+});

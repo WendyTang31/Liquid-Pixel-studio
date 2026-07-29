@@ -89,9 +89,21 @@ export function computeVectorPolys(states, SEQ, g){
   const ca=hex2rgb(A.color), cb=hex2rgb(B.color), out=[];
   const bmap=new Map(vectorShapes(B).map(sh=>[sh.layerId, sh]));
   for(const sa of vectorShapes(A)){ const sb=bmap.get(sa.layerId); if(!sb) continue;
-    const oa=outline(sa), ob=outline(sb); if(!oa||!ob) continue;
-    out.push({ poly: oa.map((p,i)=>({x:p.x+(ob[i].x-p.x)*e, y:p.y+(ob[i].y-p.y)*e})),
-      col:[ca[0]+(cb[0]-ca[0])*e, ca[1]+(cb[1]-ca[1])*e, ca[2]+(cb[2]-ca[2])*e] });
+    let poly;
+    // 木偶/最短路径变形:同一形状被关键帧化(路径锚点数一致)→ 逐锚点(含贝塞尔控制柄)
+    // 各走直线最短路插值。这样"手臂抬起"是每个控制点小幅连贯地移动,而非重采样导致的大变形。
+    if(sa.type==='path' && sb.type==='path' && sa.points.length===sb.points.length && sa.points.length>=2){
+      const lp=(a,b)=>({x:a.x+(b.x-a.x)*e, y:a.y+(b.y-a.y)*e});
+      const pts=sa.points.map((pa,i)=>{ const pb=sb.points[i];
+        const q=lp(pa,pb);
+        q.hOut=lp(pa.hOut||pa, pb.hOut||pb); q.hIn=lp(pa.hIn||pa, pb.hIn||pb);
+        return q; });
+      poly=flattenPath({points:pts, bezier: sa.bezier||sb.bezier});
+    } else { // 拓扑不同(矩形↔椭圆等)→ 退回弧长轮廓重采样
+      const oa=outline(sa), ob=outline(sb); if(!oa||!ob) continue;
+      poly=oa.map((p,i)=>({x:p.x+(ob[i].x-p.x)*e, y:p.y+(ob[i].y-p.y)*e}));
+    }
+    out.push({ poly, col:[ca[0]+(cb[0]-ca[0])*e, ca[1]+(cb[1]-ca[1])*e, ca[2]+(cb[2]-ca[2])*e] });
   }
   return out;
 }
