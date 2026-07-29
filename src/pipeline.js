@@ -112,9 +112,14 @@ export function rasterize(s){
   paintShapes(s.mctx, s.shapes);
   // 🧱 实心是逐形状选项(sh.solidFill):SDF 由实心形状(含矢量图层,带全部 sub)构成。
   // 矢量图层也进 SDF —— 停留/未配对过渡时按实心显示(轮廓变形仅在相邻同 layerId 时接管)。
+  const subs=s.shapes.filter(sh=>sh.bool==='sub');
   const solids=s.shapes.filter(sh=>(sh.solidFill||sh.layerId)&&sh.bool!=='sub'&&!sh.hidden);
   s.solid=solids.length>0;
-  s._sdf = s.solid ? shapesSdf([...solids, ...s.shapes.filter(sh=>sh.bool==='sub')]) : null;
+  s._sdf = s.solid ? shapesSdf([...solids, ...subs]) : null;
+  // _sdfBase = 不含矢量图层的实心 SDF:过渡"实心淡出窗口"只作用于它 —— 矢量图层由轮廓变形独占,
+  // 避免过渡时旧关键帧位置留下淡出残影(卡顿/噪音感)。
+  const base=s.shapes.filter(sh=>sh.solidFill&&!sh.layerId&&sh.bool!=='sub'&&!sh.hidden);
+  s._sdfBase = base.length ? shapesSdf([...base, ...subs]) : null;
   tintGhost(s); updateThumb(s);
 }
 

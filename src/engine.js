@@ -332,8 +332,12 @@ export function solidWeights(seg, states, lt){
   }
   return out;
 }
+// 停留用全量 _sdf(含矢量图层);过渡用 _sdfBase(不含矢量图层)—— 矢量图层由 vector.js
+// 轮廓变形独占,过渡时不再让状态 SDF 在旧关键帧位置留残影(消卡顿/噪音)。
 const solidsOf=(seg,states,lt)=>solidWeights(seg,states,lt)
-  .filter(s=>states[s.si]._sdf).map(s=>({sdf:states[s.si]._sdf, w:s.w}));
+  .map(s=>{ const st=states[s.si], sdf = seg.type==='hold' ? st._sdf : (st._sdfBase||null);
+    return sdf ? {sdf, w:s.w} : null; })
+  .filter(Boolean);
 
 // 实心形状的点抑制:实心场权重为 w 时,其蒙版内的点半径乘 √(1−w)(场值 ∝ r² → 场强恰乘 1−w)。
 // 停留(w=1)点完全消失 → 边缘 = 纯矢量 SDF,不会被靠边的大点"鼓包";过渡窗口内

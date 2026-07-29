@@ -17,6 +17,7 @@ import { W, H, P as P_DEFAULT } from '../config.js';
 import { buildSequence, sampleFrame } from '../engine.js';
 import { createSizedRenderer } from '../render.js';
 import { stateDots, shapesSdf } from '../pipeline.js';
+import { computeVectorPolys, rasterizeVectorSolids } from '../vector.js';
 import { decodeImageShape } from '../image.js';
 import { downloadBlob } from '../utils.js';
 import { initI18n } from '../i18n.js';
@@ -100,11 +101,14 @@ async function loadProjectData(data, gi=0){
       cam:d.cam||null, // 镜头随工程走:车身贴图里同样推拉摇移
       isPose:d.isPose||false, loop:d.loop||null, // 子循环同样随工程走(buildSequence 统一处理)
       fx:d.fx||{}, // 动态几何随工程走:车身贴图里同样波浪/弹簧/波纹/微光
-      // 🧱 实心(逐形状 solidFill;老档 state 级 d.solid 视为全形状实心):车身贴图同样锐利边缘
+      // 🧱 实心 SDF 含矢量图层(layerId)——与编辑器一致;shapes 供矢量轮廓变形(否则 3D 过渡时小人消失)
       ...(()=>{ const sh=d.shapes.map(x=>d.solid&&x.bool!=='sub'?{...x,solidFill:true}:x);
-        const so=sh.filter(x=>x.solidFill&&x.bool!=='sub');
-        return {solid:so.length>0,
-          _sdf:so.length?shapesSdf([...so, ...sh.filter(x=>x.bool==='sub')]):null}; })(),
+        const subs=sh.filter(x=>x.bool==='sub');
+        const so=sh.filter(x=>(x.solidFill||x.layerId)&&x.bool!=='sub');
+        const base=sh.filter(x=>x.solidFill&&!x.layerId&&x.bool!=='sub');
+        return {shapes:sh, solid:so.length>0,
+          _sdf:so.length?shapesSdf([...so, ...subs]):null,
+          _sdfBase:base.length?shapesSdf([...base, ...subs]):null}; })(),
       dots:stateDots(d.shapes, d.manual||[], gr.P)}); // 与编辑器同一采样核心(彩色/逐形状覆盖同步生效)
   }
   gr.states=out; gr.SEQ=buildSequence(out, true, gr.P);
@@ -1117,7 +1121,9 @@ function frame(now){
   for(const gr of groups){
     if(!gr.SEQ) continue;
     const fr=sampleFrame(gr.SEQ, gr.states, g%gr.SEQ.T, clock, gr.P);
-    gr.renderTex(fr.balls, fr.col, gr.P, fr.solids, fr.cam);
+    // 矢量图层轮廓变形并入 solids —— 修复"3D 上过渡时小人突然消失"(2D 一直渲,3D 之前漏了)
+    const vsolids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(gr.states, gr.SEQ, g%gr.SEQ.T)));
+    gr.renderTex(fr.balls, fr.col, gr.P, vsolids, fr.cam);
     gr.screenTex.needsUpdate=true; gr.screenTexUV.needsUpdate=true;
   }
   if($('spinCk').checked && !gizmoDrag && !painting) carGroup.rotation.y+=dt*0.12;
