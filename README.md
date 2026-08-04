@@ -12,9 +12,11 @@ but aren't experts in After Effects or Blender.
 
 ![tests](https://img.shields.io/badge/tests-84%20passing-2cc4f5) ![license](https://img.shields.io/badge/license-MIT-2cc4f5) ![runs in](https://img.shields.io/badge/runs%20in-browser-2cc4f5)
 
-</div>
-   <img width="757" height="757" alt="Frustration11-ezgif com-video-to-gif-converter" src="https://github.com/user-attachments/assets/b34182ca-158b-456a-9d7c-947ed85b93c1" />
+<div align="center">
+   
+<img width="757" height="757" alt="Frustration11-ezgif com-video-to-gif-converter" src="https://github.com/user-attachments/assets/b34182ca-158b-456a-9d7c-947ed85b93c1" />
 
+</div>
 
 ---
 
