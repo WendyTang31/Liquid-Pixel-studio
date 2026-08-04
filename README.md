@@ -14,7 +14,7 @@ but aren't experts in After Effects or Blender.
 
 <div align="center">
    
-<img width="757" height="757" alt="Frustration11-ezgif com-video-to-gif-converter" src="https://github.com/user-attachments/assets/b34182ca-158b-456a-9d7c-947ed85b93c1" />
+<img width="400" height="400" alt="Frustration11-ezgif com-video-to-gif-converter" src="https://github.com/user-attachments/assets/b34182ca-158b-456a-9d7c-947ed85b93c1" />
 
 </div>
 
