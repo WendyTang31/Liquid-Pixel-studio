@@ -3,26 +3,39 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Morph Studio · 3D 车模预览</title>
+<title>Liquid Pixel Studio · 3D</title>
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
 <style>
-  :root{ --bg:#0a0a0a; --panel:#161616; --line:#2a2a2a; --ink:#e8e8e4; --dim:#8a8a85; --mint:#98f5d0; }
+  /* HMG 移动出行设计语言(与编辑器一致) */
+  :root{ --bg:#090d13; --panel:#111823; --panel-2:#0c121b; --line:#233042;
+    --ink:#eef2f7; --dim:#8494a6; --mint:#2cc4f5; --accent-deep:#0072c6; }
   *{box-sizing:border-box; margin:0; padding:0;}
   body{ background:var(--bg); color:var(--ink); overflow:hidden;
-        font-family:"IBM Plex Sans","Helvetica Neue",system-ui,sans-serif; }
+        font-family:"Pretendard Variable",Pretendard,"Inter",system-ui,-apple-system,sans-serif;
+        -webkit-font-smoothing:antialiased; }
   #scene{position:fixed; inset:0;}
-  select,button,input[type=text]{ background:#1e1e1e; color:var(--ink); border:1px solid var(--line);
-        border-radius:6px; padding:5px 8px; font-size:12px; cursor:pointer; font-family:inherit;}
+  select,button,input[type=text]{ background:var(--panel-2); color:var(--ink); border:1px solid var(--line);
+        border-radius:6px; padding:5px 8px; font-size:12px; cursor:pointer; font-family:inherit;
+        transition:border-color .12s,color .12s;}
   button:hover{border-color:var(--mint); color:var(--mint);}
-  button.on{background:var(--mint); color:#000; border-color:var(--mint);}
+  button.on{background:var(--mint); color:#04121c; border-color:var(--mint); font-weight:600;}
   input[type=range]{accent-color:var(--mint); height:16px;}
   input[type=checkbox]{accent-color:var(--mint)}
   .ck{font-size:11.5px; display:flex; gap:4px; align-items:center;}
+  .langtabs{ display:inline-flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; background:var(--panel-2);}
+  .langtabs button{ border:none; border-radius:0; background:transparent; color:var(--dim); padding:5px 9px; font-size:11px; font-weight:600;}
+  .langtabs button:hover{ color:var(--ink); background:rgba(44,196,245,.08);}
+  .langtabs button.active{ background:var(--mint); color:#04121c;}
+  .langtabs button+button{ border-left:1px solid var(--line);}
   /* ── 顶栏:文件与视图 ── */
   .topbar{ position:fixed; top:10px; left:10px; right:266px; z-index:2;
     display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-    background:rgba(22,22,22,.9); border:1px solid var(--line); border-radius:8px;
+    background:rgba(15,22,33,.9); border:1px solid var(--line); border-radius:8px;
     padding:7px 10px; backdrop-filter:blur(6px);}
-  .topbar h1{font-size:13px; font-weight:600;}
+  .topbar h1{ font-size:14px; font-weight:800; letter-spacing:.06em; display:flex; align-items:center; gap:7px;
+    background:linear-gradient(92deg,#4fd4ff,var(--mint) 60%,#0067b1); -webkit-background-clip:text; background-clip:text; color:transparent;}
+  .topbar h1 img{width:20px; height:20px; filter:drop-shadow(0 0 5px rgba(44,196,245,.4));}
   .spacer{flex:1}
   .sl{display:flex; align-items:center; gap:4px; font-size:11.5px; color:var(--dim);}
   .sl input[type=range]{width:80px;}
@@ -30,16 +43,16 @@
   a{color:var(--mint); text-decoration:none;}
   /* ── 左工具条 ── */
   .tools{ position:fixed; left:10px; top:64px; z-index:2; display:flex; flex-direction:column; gap:6px;
-    background:rgba(22,22,22,.9); border:1px solid var(--line); border-radius:8px; padding:8px 6px;
+    background:rgba(15,22,33,.9); border:1px solid var(--line); border-radius:8px; padding:8px 6px;
     backdrop-filter:blur(6px);}
   .tools button{width:40px; height:36px; font-size:15px; padding:0;}
   /* ── 右属性面板 ── */
   .panel{ position:fixed; right:10px; top:10px; bottom:10px; width:248px; z-index:2;
-    background:rgba(22,22,22,.92); border:1px solid var(--line); border-radius:8px;
+    background:rgba(15,22,33,.92); border:1px solid var(--line); border-radius:8px;
     padding:10px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;
     backdrop-filter:blur(6px);}
   .panel::-webkit-scrollbar{width:6px} .panel::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
-  .sec{font-size:10.5px; color:var(--dim); letter-spacing:.12em; margin-top:2px;}
+  .sec{font-size:11px; font-weight:700; color:var(--ink); letter-spacing:.1em; margin-top:4px; text-transform:uppercase; opacity:.92;}
   .row{display:flex; align-items:center; gap:6px;}
   .row label{font-size:11.5px; color:var(--dim); min-width:40px;}
   .row input[type=range]{flex:1; min-width:40px;}
@@ -47,7 +60,7 @@
   .divider{height:1px; background:var(--line); margin:2px 0;}
   #decList{display:flex; flex-direction:column; gap:4px;}
   #decList .lay{ display:flex; align-items:center; gap:6px; padding:5px 8px; border:1px solid var(--line);
-    border-radius:6px; cursor:pointer; font-size:12px; background:#111;}
+    border-radius:6px; cursor:pointer; font-size:12px; background:var(--panel-2);}
   #decList .lay.on{border-color:var(--mint);}
   #decList .lay .sw{width:10px; height:10px; border-radius:2px; flex:0 0 auto;}
   #decList .lay .nm{flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;}
@@ -61,8 +74,10 @@
 </head>
 <body>
 <div class="topbar">
-  <h1>3D 车模预览</h1>
-  <button id="langBtn" title="Switch language / 切换界面语言">🌐 EN</button>
+  <h1><img src="logo.svg" alt="">3D 车模预览</h1>
+  <div class="langtabs" id="langTabs" title="Language / 语言 / 언어">
+    <button data-lang="en">EN</button><button data-lang="zh">中</button><button data-lang="ko">한</button>
+  </div>
   <button id="loadProj">📂 工程</button>
   <button id="loadModel">🚗 车模</button>
   <button id="expGlb" title="车+投影面导出 .glb 供 Blender 渲染">📤 Blender</button>
@@ -72,6 +87,8 @@
   <span class="sl">亮度 <input type="range" id="expSl" min="0.2" max="2.4" step="0.05" value="1.15"><span class="val" id="expV">1.15</span></span>
   <label class="ck"><input type="checkbox" id="bloomCk" checked> 辉光</label>
   <label class="ck"><input type="checkbox" id="spinCk"> 环绕</label>
+  <label class="ck" title="背景透明:投影只显示动画图案,背景色全透 —— 贴到车身时不会挡住另一侧的图案/车漆"><input type="checkbox" id="transBgCk"> 背景透明</label>
+  <span class="sl" title="淡化模型自带贴图:调低=把模型原纹理调暗,让你的动画投影更突出;模型始终是可见的实体表面,不会消失">模型贴图 <input type="range" id="modelOpa" min="0" max="1" step="0.05" value="1"><span class="val" id="modelOpaV">1.00</span></span>
   <a href="./index.html">← 编辑器</a>
   <input type="file" id="projFile" accept=".json" style="display:none">
   <input type="file" id="modelFile" accept=".glb,.gltf" style="display:none">
@@ -120,10 +137,13 @@
   <div class="row"><label>旋转</label><input type="range" id="rotSl" min="-180" max="180" step="1" value="0"><div class="val" id="rotV">0°</div></div>
   <div class="row"><label>横移</label><input type="range" id="uSl" min="-0.8" max="0.8" step="0.01" value="0"><div class="val" id="uV">0.00</div></div>
   <div class="row"><label>纵移</label><input type="range" id="vSl" min="-0.8" max="0.8" step="0.01" value="0"><div class="val" id="vV">0.00</div></div>
+  <div class="row"><label title="镜像本投影面的图案(不改变位置)——左右车身用同一动画时,一侧勾水平镜像即左右对称">镜像</label>
+    <label class="ck"><input type="checkbox" id="mirXCk"> 水平</label>
+    <label class="ck"><input type="checkbox" id="mirYCk"> 垂直</label></div>
 
   <div class="divider"></div>
   <div class="sec">画面分区(把动画切给各投影面)</div>
-  <canvas id="cutCv" width="226" height="132"></canvas>
+  <canvas id="cutCv" width="226" height="226"></canvas>
   <div class="small">拖动 = 移动本面的取景框;拖右下角 = 缩放;点别的框 = 选中那个投影面。各面共享同一动画与时间线 —— 分区相邻,球就能跨面"跑过去"。</div>
 
   <div class="divider"></div>
@@ -138,7 +158,7 @@
 
 <div id="scene"></div>
 <div id="viewcube" style="position:fixed; right:266px; bottom:12px; z-index:2; display:flex; gap:4px;
-  background:rgba(22,22,22,.9); border:1px solid var(--line); border-radius:8px; padding:6px;">
+  background:rgba(15,22,33,.9); border:1px solid var(--line); border-radius:8px; padding:6px;">
   <button data-view="front" title="正视(车头)">前</button>
   <button data-view="back" title="车尾">后</button>
   <button data-view="left" title="左侧视">左</button>

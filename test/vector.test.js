@@ -53,11 +53,22 @@ test('computeVectorPolys:停留=静态;过渡同 layerId 两端插值;端点精�
   assert.ok(cxm>150 && cxm<330, `中段中心应在两端之间,实际 ${cxm.toFixed(1)}`);
 });
 
-test('computeVectorPolys:layerId 只在一端 → 不产生 morph(需两端都有)', () => {
+test('computeVectorPolys:源端标记矢量 → 变到下一状态的对应形状(目标无需标记,源端语义)', () => {
+  // 新语义:某状态里选「矢量变形」= 它到下一状态走轮廓变形;目标(下一状态的相似形状)无需也标记。
   const A={color:'#fff',hold:1,dur:2,dots:[{x:.2,y:.2,r:.01}],shapes:[{type:'rect',layerId:9,x:0,y:0,w:50,h:50}]};
-  const B={color:'#fff',hold:1,dur:2,dots:[{x:.8,y:.8,r:.01}],shapes:[{type:'rect',x:0,y:0,w:50,h:50}]}; // 无 layerId
+  const B={color:'#fff',hold:1,dur:2,dots:[{x:.8,y:.8,r:.01}],shapes:[{type:'rect',x:200,y:0,w:50,h:50}]}; // 无 layerId 也可作目标
   const SEQ=buildSequence([A,B], false, {match:'sortXY',ease:'linear',stag:0,amp:0,freq:.4});
-  assert.equal(computeVectorPolys([A,B], SEQ, 2.0).length, 0);
+  assert.equal(computeVectorPolys([A,B], SEQ, 2.0).length, 1, '源端选矢量即变形,不再退化成点阵溶解');
+});
+
+test('computeVectorPolys:下一状态无可变形形状 → 矢量图层收拢消失(永不退化成点阵)', () => {
+  const A={color:'#fff',hold:1,dur:2,dots:[{x:.2,y:.2,r:.01}],shapes:[{type:'rect',layerId:9,x:0,y:0,w:50,h:50}]};
+  const B={color:'#fff',hold:1,dur:2,dots:[{x:.8,y:.8,r:.01}],shapes:[]}; // 空:没有可配的目标
+  const SEQ=buildSequence([A,B], false, {match:'sortXY',ease:'linear',stag:0,amp:0,freq:.4});
+  const polys=computeVectorPolys([A,B], SEQ, 2.0);
+  assert.equal(polys.length, 1);                 // 仍渲染为轮廓(收拢),而非 0 → 不落回点阵
+  const xs=polys[0].poly.map(p=>p.x), w=Math.max(...xs)-Math.min(...xs);
+  assert.ok(w < 50, `收拢中的宽度 ${w} 应小于原始 50`); // 向质心塌缩:中点包围盒更小
 });
 
 test('木偶/最短路径:同锚点数路径 → 逐锚点直线插值(而非弧长重采样打结)', () => {

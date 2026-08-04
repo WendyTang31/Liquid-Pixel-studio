@@ -3,14 +3,26 @@ import { store, cur } from '../store.js';
 import { W, H } from '../config.js';
 import { $, setHint } from '../utils.js';
 import { updateThumb, resample } from '../pipeline.js';
-import { updateSelBox } from './inspector.js';
+import { updateSelBox, syncSpeedUI } from './inspector.js';
+import { syncClipUI } from './clipPanel.js';
+import { copyKeyframes, pasteKeyframes, transformKeyframes, deleteKeyframes, hasClipboard } from './keyframes.js';
 import { setMode } from './stage.js';
 import { makeState, pushUndo, groupTail } from '../state.js';
 
 export function setActive(i){
-  store.active=i; store.sel=null; updateSelBox(); syncStateUI();
+  store.active=i; store.selStates=[i]; store.sel=null; updateSelBox(); syncStateUI();
   if(store.mode==='play') setMode('edit'); else renderStrip();
   setHint(`编辑「${cur().name}」`);
+}
+
+// 胶片条点选:普通点=单选;Shift+点=从当前帧到该帧【范围多选】(复制/粘贴/整体缩放移动的作用对象)。
+function onChip(i, e){
+  if(e.shiftKey){
+    const a=store.active, lo=Math.min(a,i), hi=Math.max(a,i);
+    store.selStates=[]; for(let k=lo;k<=hi;k++) store.selStates.push(k);
+    store.sel=null; updateSelBox(); renderStrip();
+    setHint(`选中 ${store.selStates.length} 个关键帧 —— 📋复制/📌粘贴、或整体移动/缩放`);
+  } else setActive(i);
 }
 
 // 右属性栏"当前状态"区回填(含本段过渡覆盖控件)。
@@ -30,6 +42,7 @@ export function syncStateUI(){
   syncOv('trStagOn','trStag','vTrStag','stag',0.3);
   syncOv('trFlowOn','trFlow','vTrFlow','flow',0);
   syncOv('trStrOn','trStr','vTrStr','stretch',0);
+  syncSpeedUI(); // ⚡ 速度曲线控件回填
   // 🔁 子循环控件回填:主状态(带姿态)显示基姿态计时;姿态状态显示提示
   const i=store.states.indexOf(s);
   const hasPoses=!s.isPose && store.states[i+1]?.isPose;
@@ -52,6 +65,7 @@ export function syncStateUI(){
   fxg('fxFreq','vFxFreq','freq',0.6); fxg('fxSlosh','vFxSlosh','slosh',0);
   fxg('fxSpring','vFxSpring','spring',0); fxg('fxLiquid','vFxLiquid','liquid',0);
   fxg('fxRipple','vFxRipple','ripple',0); fxg('fxTwinkle','vFxTwinkle','twinkle',0);
+  fxg('fxWobble','vFxWobble','wobble',0);
   // 📷 本状态镜头回填
   const cm=s.cam||{x:0.5,y:0.5,z:1,rot:0};
   $('camZ').value=cm.z;   $('vCamZ').textContent=(+cm.z).toFixed(2)+'×';
@@ -59,6 +73,7 @@ export function syncStateUI(){
   $('camY').value=cm.y;   $('vCamY').textContent=String(Math.round((cm.y-0.5)*H));
   $('camRot').value=Math.round((cm.rot||0)*180/Math.PI);
   $('vCamRot').textContent=Math.round((cm.rot||0)*180/Math.PI)+'°';
+  syncClipUI(); // 🎬 动画片段面板回填(当前状态属于片段时显示)
 }
 
 export function renderStrip(){
@@ -69,6 +84,7 @@ export function renderStrip(){
       ar.textContent=s.isPose?'·':'→'; strip.appendChild(ar); }
     const chip=document.createElement('div');
     chip.className='chip'+(s.isPose?' pose':'')+(i===store.active&&store.mode!=='play'?' active':'');
+    if(store.selStates?.length>1 && store.selStates.includes(i)) chip.style.boxShadow='0 0 0 2px var(--mint)';
     const th=document.createElement('canvas');
     if(s.isPose){ th.width=68; th.height=40; } else { th.width=96; th.height=56; }
     s.thumb=th; updateThumb(s);
@@ -76,12 +92,32 @@ export function renderStrip(){
     nm.textContent=s.isPose?`🔁 ${s.name}`:`${++mNo} · ${s.name}`;
     if(s.isPose) chip.title='循环姿态:归属左侧主状态,停留期间循环回放';
     chip.appendChild(th); chip.appendChild(nm);
-    chip.onclick=()=>setActive(i);
+    chip.onclick=(e)=>onChip(i,e);
     strip.appendChild(chip);
   });
   const add=document.createElement('button'); add.className='stripbtn'; add.textContent='＋ 新状态';
   add.onclick=addState;
   strip.appendChild(add);
+  // 🎬 关键帧多选操作条(Shift+点选 ≥2 帧时出现):复制/粘贴/整体移动缩放/删除
+  if(store.selStates?.length>1){
+    const bar=document.createElement('div');
+    bar.style.cssText='display:inline-flex;align-items:center;gap:4px;margin-left:10px;padding:4px 8px;'
+      +'background:rgba(152,245,208,.08);border:1px solid var(--mint);border-radius:8px;white-space:nowrap';
+    const tag=document.createElement('span'); tag.textContent=`${store.selStates.length} 帧`;
+    tag.style.cssText='color:var(--mint);font-size:12px;margin-right:2px'; bar.appendChild(tag);
+    const btn=(txt,title,fn)=>{ const b=document.createElement('button'); b.textContent=txt; b.title=title;
+      b.style.cssText='padding:2px 7px;font-size:12px'; b.onclick=fn; bar.appendChild(b); };
+    btn('📋','复制选中关键帧 (Ctrl+C)', copyKeyframes);
+    if(hasClipboard()) btn('📌','粘贴到选区之后 (Ctrl+V) —— 往后接一份,右移即让动作往前走', pasteKeyframes);
+    btn('＋','整段放大', ()=>transformKeyframes({scale:1.08}));
+    btn('－','整段缩小', ()=>transformKeyframes({scale:1/1.08}));
+    btn('←','左移', ()=>transformKeyframes({dx:-14}));
+    btn('→','右移(往前走)', ()=>transformKeyframes({dx:14}));
+    btn('↑','上移', ()=>transformKeyframes({dy:-14}));
+    btn('↓','下移', ()=>transformKeyframes({dy:14}));
+    btn('🗑','删除选中关键帧', deleteKeyframes);
+    strip.appendChild(bar);
+  }
 }
 
 // 新状态插到当前之后。(state ↔ filmstrip 的循环引用无害:两边引到的都是 hoisted 函数声明。)

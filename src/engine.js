@@ -2,6 +2,8 @@
 // 这是时间轴可拖、导出确定性、"预览 == 导出"一致性的根基。预览与导出共用 sampleFrame。
 import { hex2rgb } from './utils.js';
 import { W, H } from './config.js';
+import { pairVectorShapes, solidOutlinePolys, rasterizeVectorSolids } from './vector.js';
+import { segEdgeFx, displaceOutline, splatterDropletPolys, polysCentroid } from './edgefx.js';
 
 // 缓动:端点连续、速度/加速度在端点收敛(smootherstep 最柔)。
 // 物理组(backOut/elasticOut/bounceOut)刻意在中途越过 1 再回落 —— 过冲/弹跳/回弹的"手感"
@@ -17,6 +19,24 @@ export const EASE={ linear:t=>t, smoothstep:t=>t*t*(3-2*t),
     if(t<2.5/d1)return n1*(t-=2.25/d1)*t+.9375;
     return n1*(t-=2.625/d1)*t+.984375;},
 };
+
+// 三次贝塞尔缓动(CSS cubic-bezier 同构):控制速度曲线的"最好方式"。端点 (0,0)(1,1),
+// 控制点 (x1,y1)(x2,y2)。端点斜率 = 速度:e'(0)=y1/x1、e'(1)=(1-y2)/(1-x2)。
+// 取 x1=1/3,x2=2/3,则给定 起步速度 vIn、落位速度 vOut → y1=vIn/3、y2=1−vOut/3,
+// 端点斜率就精确 = vIn、vOut(相对匀速的倍数:0=停下、1=匀速、>1=冲)。
+// 这样"下一状态开头的速度 match 上一状态结尾的速度"即令二者相等,过渡在关键帧处速度连续 = 无缝。
+export function bezierEase(vIn, vOut){
+  const x1=1/3, y1=Math.max(0,vIn)/3, x2=2/3, y2=1-Math.max(0,vOut)/3;
+  const cx=3*x1, bx=3*(x2-x1)-cx, ax=1-cx-bx;
+  const cy=3*y1, by=3*(y2-y1)-cy, ay=1-cy-by;
+  const X=u=>((ax*u+bx)*u+cx)*u, Xd=u=>(3*ax*u+2*bx)*u+cx, Y=u=>((ay*u+by)*u+cy)*u;
+  return t=>{ if(t<=0)return 0; if(t>=1)return 1;
+    let u=t; for(let i=0;i<8;i++){ const dx=X(u)-t, d=Xd(u); if(Math.abs(dx)<1e-6||Math.abs(d)<1e-7)break; u-=dx/d; }
+    return Y(Math.max(0,Math.min(1,u))); };
+}
+// 段的速度曲线:trans 覆盖里设了 起步/落位速度(sIn/sOut)则用贝塞尔,否则回退命名缓动(不改旧行为)。
+export const segEase=(ov,P)=> (ov && (ov.sIn!=null || ov.sOut!=null))
+  ? bezierEase(ov.sIn??0, ov.sOut??0) : EASE[segParams(P,ov).ease];
 
 const centroid=a=>{let x=0,y=0;a.forEach(b=>{x+=b.x;y+=b.y;});return{x:x/a.length,y:y/a.length};};
 
@@ -126,7 +146,7 @@ export function drift(ph,time,P){return Math.sin(time*P.freq*6.283+ph)*.7+Math.s
 // ── 动态几何(行为修饰器):停留期给单个状态叠加的程序化位移场,纯函数、确定性。
 // 全部按"点的基础坐标 + 全局时间"求值 —— 与漂移同构,故过渡时按端点 e 插值即天然连续。
 // 光敏红线:所有振荡频率硬性 ≤2.5Hz;twinkle 逐点异相异频,聚合亮度平滑,绝非全局频闪。
-export const hasFx=fx=>!!(fx&&(fx.slosh||fx.spring||fx.liquid||fx.ripple||fx.twinkle));
+export const hasFx=fx=>!!(fx&&(fx.slosh||fx.spring||fx.liquid||fx.ripple||fx.twinkle||fx.wobble));
 const FXB=0.04; // 位移基准幅度(归一化画布)
 export function behaviorDisp(x,y,cx,cy,t,fx){
   let dx=0,dy=0,rf=1;
@@ -155,6 +175,18 @@ export function behaviorDisp(x,y,cx,cy,t,fx){
     const fdot=Math.min(2.5, 0.3+2.2*fr);
     rf *= 1 + fx.twinkle*0.6*Math.sin(6.283185307*fdot*t + fr*6.283);
   }
+  if(fx.wobble){ // 🌊 边缘波:整块边界像水波(〰️)沿行波起伏 —— 水平边上下荡、竖直边左右荡
+    const a=fx.wobble*FXB*1.4, k=6.283185307*3; // ~3 个波
+    dy += a*Math.sin(k*x + w);            // 水平边上下起伏(主)
+    dx += a*0.55*Math.sin(k*y*1.15 - w);  // 竖直边左右起伏
+  }
+  // 🎯 波浪锚点:位移幅度随【离锚点的距离】增长 —— 锚点处不动(env=0),越远晃得越大(甩绳/旗杆挥旗)。
+  // 锚点/reach 均为归一化坐标(0–1)。只缩放位移,不动 rf(微光)。
+  if(fx.anchor){
+    const reach=Math.max(0.03, fx.anchorReach||0.5);
+    const env=Math.min(1, Math.hypot(x-fx.anchor.x, y-fx.anchor.y)/reach);
+    dx*=env; dy*=env;
+  }
   return {dx,dy,rf};
 }
 const FX0={dx:0,dy:0,rf:1};
@@ -166,8 +198,8 @@ const centroidPt=dots=>{ let x=0,y=0,n=dots.length||1; for(const b of dots){x+=b
 // P.stretch>0 时,运动中的球沿速度反方向甩出两颗递减拖尾球 —— metaball 场把三球融成
 // 胶囊状,即 squash & stretch 的"拉伸"近似;速度由缓动的数值微分给出,错峰使各球
 // 拉伸时刻互不相同。头部球始终在结果数组前 N 位,与 pairs 下标对齐(轨迹叠加层依赖此约定)。
-export function transBalls(pairs,t,time,P,fxc,morphLayers){
-  const ease=EASE[P.ease], span=Math.max(1e-6,1-P.stag), stretch=P.stretch||0, flow=P.flow||0;
+export function transBalls(pairs,t,time,P,fxc,morphLayers,easeFn){
+  const ease=easeFn||EASE[P.ease], span=Math.max(1e-6,1-P.stag), stretch=P.stretch||0, flow=P.flow||0;
   const fxOn=fxc&&(hasFx(fxc.fxA)||hasFx(fxc.fxB)); // 动态几何:两端各自求值后按 e 插值(端点连续)
   const ml=(morphLayers&&morphLayers.size)?morphLayers:null; // 两端同层的点抑制(轮廓变形接管)
   const out=new Array(pairs.length); const trails=[];
@@ -241,9 +273,27 @@ export function groupStates(states){
 // "循环速度微调以对齐圈数"的设计取舍,符合"光生长"的连续性纲领。
 export function buildSequence(states, seamless, P, _noLoop){
   const masters=groupStates(states);
-  const segs=[]; const M=masters.length;
-  for(let m=0;m<M;m++){
-    const {idx,poses}=masters[m], st=states[idx];
+  const M=masters.length;
+  // 🎬 片段循环展开:把带 clip.loops>1 的【连续同片段主状态】在播放列表里重复 loops 次 ——
+  // 走路片段循环 N 圈后再过渡到下一段("走够 N 圈再衔接")。无 clip/loops 时 playlist===masters,行为不变。
+  // (姿态子循环 _noLoop 不做片段展开,避免与"停留内圈"叠加。)
+  const playlist=[];
+  if(_noLoop){ for(const mm of masters) playlist.push(mm); }
+  else{
+    let m=0;
+    while(m<M){
+      const cid=states[masters[m].idx].clip?.id;
+      if(cid!=null){
+        let e=m; while(e+1<M && states[masters[e+1].idx].clip?.id===cid) e++;
+        const loops=Math.max(1, Math.round(states[masters[m].idx].clip?.loops||1));
+        for(let r=0;r<loops;r++) for(let k=m;k<=e;k++) playlist.push(masters[k]);
+        m=e+1;
+      } else { playlist.push(masters[m]); m++; }
+    }
+  }
+  const segs=[]; const L=playlist.length;
+  for(let m=0;m<L;m++){
+    const {idx,poses}=playlist[m], st=states[idx];
     if(st.hold>0.01){
       const seg={type:'hold', si:idx, dur:st.hold};
       if(!_noLoop && poses.length){
@@ -257,14 +307,29 @@ export function buildSequence(states, seamless, P, _noLoop){
       }
       segs.push(seg);
     }
-    const isLast=(m===M-1);
-    const n=isLast ? (seamless && M>1 ? masters[0].idx : null) : masters[m+1].idx;
+    const isLast=(m===L-1);
+    const bPos=isLast ? 0 : m+1;
+    const n=isLast ? (seamless && L>1 ? playlist[0].idx : null) : playlist[bPos].idx;
     if(n!==null){ const ov=st.trans||null;
-      // 两端都有的 layerId = 该过渡走轮廓变形(vector.js),这些点由引擎按 lid 抑制;
-      // 只在一端的 layerId 不算 morph,其点照常溶解(矢量图层↔普通帧的溶解过渡)。
-      const la=lidSet(st.dots), lb=lidSet(states[n].dots);
-      const morphLayers=new Set([...la].filter(x=>lb.has(x)));
-      segs.push({type:'trans', a:idx, b:n, dur:st.dur, ov, morphLayers,
+      // 矢量图层配对(精确 layerId + 相似度就近兜底,见 vector.pairVectorShapes):被配上的
+      // layerId 两侧都进 morphLayers → 这些点被抑制,由轮廓变形独占(免"既溶解又变形"的重影/闪烁)。
+      // 删一部分再重画(拿到新 layerId)也照样连贯变形,不退化成点阵溶解。
+      // 整体剪影模式:抑制两状态【所有矢量图层】的点(全交给连续轮廓变形,零溶解);否则按配对结果抑制。
+      const morphLayers = P.silhouette
+        ? new Set([...st.shapes, ...states[n].shapes]
+            .filter(s=>s && s.layerId!=null && !s.hidden && s.bool!=='sub').map(s=>s.layerId))
+        : pairVectorShapes(st.shapes, states[n].shapes).lids;
+      // 🌊 前后相邻关键帧(按播放列表,seamless 时环绕)—— 供矢量样条插值算时间连续的速度切线。
+      const cyc=i=>playlist[((i%L)+L)%L].idx;
+      const aPrev = (seamless&&L>1) ? cyc(m-1) : (m>0 ? playlist[m-1].idx : null);
+      const bNext = (seamless&&L>1) ? cyc(bPos+1) : (bPos+1<=L-1 ? playlist[bPos+1].idx : null);
+      const durPrev = aPrev!=null ? states[aPrev].dur : st.dur;   // aPrev→a 段时长
+      const durNext = bNext!=null ? states[n].dur : st.dur;       // b→bNext 段时长
+      // 片段内(两端同 clip 且都无停留)= 连续运动 → 样条平滑过关键帧,速度天然连续(消除"减速再加速"卡顿)。
+      const spline = states[idx].clip?.id!=null && states[idx].clip.id===states[n].clip?.id
+                     && (states[idx].hold||0)<0.01 && (states[n].hold||0)<0.01;
+      segs.push({type:'trans', a:idx, b:n, dur:st.dur, ov, morphLayers, ease:segEase(ov,P),
+        aPrev, bNext, durPrev, durNext, spline,
         pairs:makePairs(st.dots, states[n].dots, segParams(P,ov))}); }
   }
   if(!segs.length) segs.push({type:'hold', si:masters[0]?.idx??0, dur:1});
@@ -336,8 +401,22 @@ export function solidWeights(seg, states, lt){
 // 轮廓变形独占,过渡时不再让状态 SDF 在旧关键帧位置留残影(消卡顿/噪音)。
 const solidsOf=(seg,states,lt)=>solidWeights(seg,states,lt)
   .map(s=>{ const st=states[s.si], sdf = seg.type==='hold' ? st._sdf : (st._sdfBase||null);
-    return sdf ? {sdf, w:s.w} : null; })
+    return sdf ? {sdf, w:s.w, si:s.si} : null; })
   .filter(Boolean);
+// 动态几何(停留期)也作用于实心/矢量:给每个实心 SDF 附本状态 fx 的位移场 warp(u,v)→{dx,dy,rf},
+// 渲染器逆向采样 → 整块随之晃动(此前 fx 只作用于点,实心用静态 SDF → 实心/矢量图形停留期无动作)。
+// warp 用全局时间 time(连续),且 trans 各实心用自身状态的 fx/质心 → 与相邻停留段严丝合缝,无跳变。
+// fadeOf(si)→[0..1]:过渡时把 fx 强度按状态交叉淡化(离场状态 1→0,入场 0→1)—— 让停留期的
+// 动态几何(微光/波浪等)慢慢消失而非"满强度直到实心突然消失"。停留 fadeOf 缺省=满强度 1。
+const attachFxWarp=(solids, states, time, fadeOf)=>solids.map(s=>{
+  const st=states[s.si], fx=st?.fx;
+  if(!hasFx(fx)) return s;
+  const fade = fadeOf ? fadeOf(s.si) : 1;
+  if(fade<=1e-3) return s;                                   // fx 已淡出:退回静态实心
+  const fc = st.dots?.length ? centroidPt(st.dots) : {x:0.5, y:0.5};
+  return {...s, warp:(u,v)=>{ const d=behaviorDisp(u,v,fc.x,fc.y,time,fx);
+    return {dx:d.dx*fade, dy:d.dy*fade, rf:1+(d.rf-1)*fade}; }}; // 幅度按 fade 缩放,rf 向 1(无微光)靠拢
+});
 
 // 实心形状的点抑制:实心场权重为 w 时,其蒙版内的点半径乘 √(1−w)(场值 ∝ r² → 场强恰乘 1−w)。
 // 停留(w=1)点完全消失 → 边缘 = 纯矢量 SDF,不会被靠边的大点"鼓包";过渡窗口内
@@ -375,8 +454,23 @@ export function sampleFrame(SEQ, states, g, time, P){
         solids:sub.solids};
     }
     const fx=st.fx, fxOn=hasFx(fx), fc=fxOn?centroidPt(st.dots):null;
+    // 🌟 边缘几何 fx(细波/锯齿/飞溅):停留期重建【位移后的矢量轮廓 SDF】+ 飞溅水珠 —— 几何级锐利细节,
+    // 不受 warp 粗网格平滑限制。与流动类 fx(slosh/ripple…)叠加:后者仍由 attachFxWarp 加采样位移。
+    let solids;
+    const efx=segEdgeFx(P, seg, states); // 全局边缘几何(可选范围/是否含过渡)—— 停留段也按区间判定
+    if(efx){
+      const vps=solidOutlinePolys(st);
+      if(vps.length){
+        const c=polysCentroid(vps);
+        const dpolys=vps.map(({poly,col,strokeW})=>({poly:displaceOutline(poly,c.x,c.y,time,efx), col, strokeW}));
+        const drops=splatterDropletPolys(vps[0].poly, c.x, c.y, time, efx, hex2rgb(st.color));
+        const vsolid=rasterizeVectorSolids([...dpolys, ...drops]).map(s=>({...s, si:seg.si}));
+        const base=st._sdfBase ? [{sdf:st._sdfBase, w:1, si:seg.si}] : []; // 非矢量实心(如图片)保留
+        solids=attachFxWarp([...vsolid, ...base], states, time);
+      } else solids=attachFxWarp(solidsOf(seg,states,0), states, time);
+    } else solids=attachFxWarp(solidsOf(seg,states,0), states, time); // 停留期动态几何也晃动实心/矢量
     return {seg, col:hex2rgb(st.color), cam:camIdentity(cam)?null:cam,
-      solids:solidsOf(seg,states,0),
+      solids,
       balls:applyCam(suppressSolidDots(st.dots.map(b=>{ const ph=dotPhase(b.x,b.y);
         let X=b.x+P.amp*drift(ph,time,P), Y=b.y+P.amp*drift(ph+3.1,time,P), R=b.r;
         if(fxOn){ const d=behaviorDisp(b.x,b.y,fc.x,fc.y,time,fx); X+=d.dx; Y+=d.dy; R*=d.rf; }
@@ -389,8 +483,10 @@ export function sampleFrame(SEQ, states, g, time, P){
     const fxc=(hasFx(fxA)||hasFx(fxB))
       ? {fxA,fxB,cA:centroidPt(states[seg.a].dots),cB:centroidPt(states[seg.b].dots)} : null;
     return {seg, balls:applyCam(suppressSolidDots(
-        transBalls(seg.pairs,lt,time,segParams(P,seg.ov),fxc,seg.morphLayers), seg, states, lt), cam),
-      cam:camIdentity(cam)?null:cam, solids:solidsOf(seg,states,lt),
+        transBalls(seg.pairs,lt,time,segParams(P,seg.ov),fxc,seg.morphLayers,seg.ease), seg, states, lt), cam),
+      cam:camIdentity(cam)?null:cam,
+      // 动态几何 fx 按过渡进度交叉淡化:离场状态 1→e、入场状态 e(用位置同款缓动 e)—— 微光/波浪慢慢消失。
+      solids:attachFxWarp(solidsOf(seg,states,lt), states, time, si=> si===seg.a ? 1-e : (si===seg.b ? e : 1)),
       col:[ca[0]+(cb[0]-ca[0])*e, ca[1]+(cb[1]-ca[1])*e, ca[2]+(cb[2]-ca[2])*e]};
   }
 }

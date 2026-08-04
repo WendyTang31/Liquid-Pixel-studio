@@ -28,6 +28,51 @@ export function rdpSimplify(points, epsilon){
   return run(points);
 }
 
+// 摩尔邻域轮廓描摹(Moore-Neighbor Tracing):on(x,y)=实心像素,返回最外层边界像素环
+// (y 向下坐标系,顺时针)。用于"融合"多个图形:并集光栅化 → 描出单一外轮廓 → RDP 精简成 path。
+// 纯函数(吃 on 谓词),可 node 单测。孤立/空 → null。
+export function traceContour(on, w, h){
+  let sx=-1, sy=-1;
+  for(let y=0;y<h&&sy<0;y++){ for(let x=0;x<w;x++){ if(on(x,y)){ sx=x; sy=y; break; } } }
+  if(sx<0) return null;
+  // 8 邻域顺时针(y 向下):N, NE, E, SE, S, SW, W, NW
+  const N=[[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]];
+  const contour=[[sx,sy]];
+  let px=sx, py=sy, backDir=6; // 进入起点方向来自西侧外部(W 的下标 6)
+  const maxIter=w*h*4+16;
+  for(let it=0; it<maxIter; it++){
+    let found=-1;
+    for(let k=1;k<=8;k++){ const idx=(backDir+k)%8;
+      const nx=px+N[idx][0], ny=py+N[idx][1];
+      if(nx>=0&&ny>=0&&nx<w&&ny<h&&on(nx,ny)){ found=idx; break; } }
+    if(found<0) break;              // 孤立像素
+    backDir=(found+4)%8;            // 新回溯方向 = 从新像素指回旧像素
+    px+=N[found][0]; py+=N[found][1];
+    if(px===sx&&py===sy) break;     // 回到起点 → 环闭合
+    contour.push([px,py]);
+  }
+  return contour.length>=3 ? contour : null;
+}
+
+// 多连通域轮廓:泛洪标记各连通块,逐块取外轮廓。返回 [[ [x,y],… ], …](按块)。
+// 整体剪影变形用 —— 头、身分离的人形会得到多条轮廓,各自连续变形,不退化成点阵。
+export function traceComponents(on, w, h, minArea=24){
+  const seen=new Uint8Array(w*h), out=[], stack=[];
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const idx=y*w+x; if(seen[idx]||!on(x,y)) continue;
+    const pix=new Set(); stack.length=0; stack.push(idx); seen[idx]=1;
+    while(stack.length){ const p=stack.pop(); pix.add(p); const cx=p%w, cy=(p/w)|0;
+      const nb=[[1,0],[-1,0],[0,1],[0,-1]];
+      for(const [dx,dy] of nb){ const nx=cx+dx, ny=cy+dy;
+        if(nx<0||ny<0||nx>=w||ny>=h) continue; const ni=ny*w+nx;
+        if(!seen[ni]&&on(nx,ny)){ seen[ni]=1; stack.push(ni); } } }
+    if(pix.size<minArea) continue;                 // 跳过碎屑
+    const c=traceContour((x,y)=>pix.has(y*w+x), w, h);
+    if(c && c.length>=6) out.push(c);
+  }
+  return out;
+}
+
 // 包围盒:选中框、拖拽命中测试、缩放变换的基准。
 export function pathBBox(points){
   let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;

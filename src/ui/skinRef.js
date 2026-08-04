@@ -66,6 +66,26 @@ export function deleteSelSkin(){
   persistSkin(); return true;
 }
 
+// 适配内容:分析快照像素找到线框(UV 岛)的包围盒,设 p.crop(源裁剪,0–1)→ 只显示有内容的部分、
+// 铺满取景框。纯显示裁剪,不改 cx/cy/cw/ch(映射窗口),故不影响 3D 贴图。返回 true 表示成功。
+export function fitSelSkin(){
+  const p=selSkin; if(!p) return false;
+  const img=images.get(p); if(!img?.complete||!img.naturalWidth) return false;
+  const iw=img.naturalWidth, ih=img.naturalHeight;
+  const c=document.createElement('canvas'); c.width=iw; c.height=ih;
+  const g=c.getContext('2d'); g.drawImage(img,0,0);
+  let d; try{ d=g.getImageData(0,0,iw,ih).data; }catch(_){ return false; }
+  let minX=iw,minY=ih,maxX=-1,maxY=-1;
+  for(let y=0;y<ih;y++)for(let x=0;x<iw;x++){ if(d[(y*iw+x)*4+3]>20){ // 线框像素(半透明白线)
+    if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y; } }
+  if(maxX<minX) return false;
+  const pad=6; minX=Math.max(0,minX-pad); minY=Math.max(0,minY-pad); maxX=Math.min(iw-1,maxX+pad); maxY=Math.min(ih-1,maxY+pad);
+  skinPushUndo();
+  p.crop={ sx:minX/iw, sy:minY/ih, sw:(maxX-minX+1)/iw, sh:(maxY-minY+1)/ih };
+  persistSkin(); return true;
+}
+export function clearSelSkinCrop(){ if(selSkin&&selSkin.crop){ skinPushUndo(); delete selSkin.crop; persistSkin(); return true; } return false; }
+
 // ── 命中测试 ──
 const HR=7; // 手柄热区
 // 选中框的操作命中:仅 8 个离散角/边手柄=缩放、边框线(≤6px)=移动;
@@ -107,7 +127,11 @@ export function drawSkinRef(ctx){
   for(const p of layout.patches){
     const x=p.cx*W, y=p.cy*H, w=p.cw*W, h=p.ch*H, on=(p===selSkin);
     const img=images.get(p);
-    if(img?.complete&&img.naturalWidth){ ctx.globalAlpha=0.3; ctx.drawImage(img,x,y,w,h); ctx.globalAlpha=1; }
+    if(img?.complete&&img.naturalWidth){ ctx.globalAlpha=0.3;
+      if(p.crop){ const iw=img.naturalWidth, ih=img.naturalHeight;
+        ctx.drawImage(img, p.crop.sx*iw, p.crop.sy*ih, p.crop.sw*iw, p.crop.sh*ih, x,y,w,h); } // 裁剪到内容并铺满
+      else ctx.drawImage(img,x,y,w,h);
+      ctx.globalAlpha=1; }
     ctx.strokeStyle=on?'#ffd678':(p.color||'#98f5d0');
     ctx.setLineDash(on?[]:[5,3]); ctx.lineWidth=on?1.6:1;
     ctx.strokeRect(x+0.5,y+0.5,Math.max(1,w-1),Math.max(1,h-1));

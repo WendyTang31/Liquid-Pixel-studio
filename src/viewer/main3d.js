@@ -18,6 +18,7 @@ import { buildSequence, sampleFrame } from '../engine.js';
 import { createSizedRenderer } from '../render.js';
 import { stateDots, shapesSdf } from '../pipeline.js';
 import { computeVectorPolys, rasterizeVectorSolids } from '../vector.js';
+import { hasRig, poseShapes } from '../rig.js';
 import { decodeImageShape } from '../image.js';
 import { downloadBlob } from '../utils.js';
 import { initI18n } from '../i18n.js';
@@ -42,8 +43,10 @@ async function idbDel(key){ const db=await idbOpen(); return new Promise((res,re
   tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
 
 /* ══════════════ 动画组 ══════════════ */
-const TEXW=960, TEXH=560; // 贴图分辨率(12:7)。texCtx 每帧 CPU 渲染,加大到 1920 会拖垮帧率,
-// 故不加大;边缘平滑靠"颜色贴图 mipmap+各向异性"(见 smoothTex)与更细的距离场。
+const TEXW=1200, TEXH=1200; // 贴图分辨率(正方形,与画布/Blender UV 同比例)。texCtx 每帧 CPU 渲染:
+// 提到 1440×840 让 UV 直贴的形状(只占纹理一小片)放大到车身面时边缘更细,直接治"低分辨率边"。
+// 再往上(1920×1120=4× 逻辑)实测点阵过渡帧 ~196ms 会拖垮帧率,故止步 3×;停留(实心)帧很便宜。
+// 边缘平滑另靠"颜色贴图 mipmap+各向异性"(见 smoothTex)与同尺寸的距离场。
 // 贴图边缘平滑:掠射角观看车身曲面 → 贴图缩小走样出锯齿,mipmap+各向异性是消锯齿的关键。
 // 关键区分:形状剪影是【颜色边】(深色形状 / 浅色底),故【颜色贴图】开 mipmap 平滑边缘;
 // 【alpha 蒙版】几乎全白(不透明,只有橡皮擦才改),不开 mipmap —— 避免 mipmap 把"多为透明"的
@@ -102,10 +105,16 @@ async function loadProjectData(data, gi=0){
       isPose:d.isPose||false, loop:d.loop||null, // 子循环同样随工程走(buildSequence 统一处理)
       fx:d.fx||{}, // 动态几何随工程走:车身贴图里同样波浪/弹簧/波纹/微光
       // 🧱 实心 SDF 含矢量图层(layerId)——与编辑器一致;shapes 供矢量轮廓变形(否则 3D 过渡时小人消失)
-      ...(()=>{ const sh=d.shapes.map(x=>d.solid&&x.bool!=='sub'?{...x,solidFill:true}:x);
-        const subs=sh.filter(x=>x.bool==='sub');
-        const so=sh.filter(x=>(x.solidFill||x.layerId)&&x.bool!=='sub');
-        const base=sh.filter(x=>x.solidFill&&!x.layerId&&x.bool!=='sub');
+      // d.solid 强制实心时用展开复制,但 _img/_imgQ 是【非可枚举】的(解码缓存),展开会丢 ——
+      // 丢了 _img 后 paintShapes 跳过图片 → 实心 SDF 里没有这张图 → "灰场笑脸实心在 3D 不显示"。
+      // 故复制后把这两个非枚举缓存补挂回去(点采样用的是原 d.shapes,不受影响,所以此前只丢实心)。
+      ...(()=>{ const carry=(c,x)=>{ for(const k of ['_img','_imgQ']) if(x[k])
+          Object.defineProperty(c,k,{value:x[k],enumerable:false,configurable:true}); return c; };
+        const sh=d.shapes.map(x=>d.solid&&x.bool!=='sub'?carry({...x,solidFill:true},x):x);
+        const posed=hasRig(sh)?poseShapes(sh):sh; // 🦴 骨骼:SDF 用摆好姿势的世界点;shapes 仍存静息(供矢量弧线插值)
+        const subs=posed.filter(x=>x.bool==='sub');
+        const so=posed.filter(x=>(x.solidFill||x.layerId)&&x.bool!=='sub');
+        const base=posed.filter(x=>x.solidFill&&!x.layerId&&x.bool!=='sub');
         return {shapes:sh, solid:so.length>0,
           _sdf:so.length?shapesSdf([...so, ...subs]):null,
           _sdfBase:base.length?shapesSdf([...base, ...subs]):null}; })(),
@@ -162,6 +171,38 @@ function buildDemoCar(){
 carGroup=buildDemoCar(); scene.add(carGroup);
 const meshList=()=>{ const l=[]; carGroup.traverse(o=>{ if(o.isMesh&&!o.userData.isDecal) l.push(o); }); return l; };
 
+// 🔍 UV 诊断:逐网格报告 UV 通道数、包围盒、是否越界、是否被离群点撑大 —— 定位"只显示一半 UV"。
+function logUvDiagnostics(root){
+  try{
+    const rows=[];
+    root.traverse(o=>{ if(!o.isMesh||!o.geometry) return;
+      const a=o.geometry.attributes;
+      const channels=Object.keys(a).filter(k=>/^uv/i.test(k)); // uv, uv1/uv2…(多套 UV 时全套可能在第二套)
+      const uv=a.uv;
+      if(!uv){ rows.push({mesh:o.name||'(无名)', channels:channels.join(',')||'无', bbox:'—'}); return; }
+      let uMin=Infinity,uMax=-Infinity,vMin=Infinity,vMax=-Infinity;
+      // 分桶统计:找"绝大多数点"落在哪个 0.1 网格,判断离群点是否把包围盒撑大
+      const bins=new Array(100).fill(0);
+      for(let i=0;i<uv.count;i++){ const u=uv.getX(i),v=uv.getY(i);
+        if(u<uMin)uMin=u; if(u>uMax)uMax=u; if(v<vMin)vMin=v; if(v>vMax)vMax=v;
+        const bu=Math.max(0,Math.min(9,u*10|0)), bv=Math.max(0,Math.min(9,v*10|0)); bins[bv*10+bu]++; }
+      const used=bins.filter(n=>n>0).length; // 占用的 0.1×0.1 格数(100 满格 = 铺满整片)
+      rows.push({ mesh:o.name||'(无名)', channels:channels.join(',')||'仅uv', verts:uv.count,
+        uBBox:`${uMin.toFixed(2)}–${uMax.toFixed(2)}`, vBBox:`${vMin.toFixed(2)}–${vMax.toFixed(2)}`,
+        覆盖格数:`${used}/100`, 越界:(uMin<-0.001||uMax>1.001||vMin<-0.001||vMax>1.001)?'是(可能UDIM/平铺)':'否' });
+    });
+    console.log('%c=== 🔍 UV 诊断(把这张表发给助手)===','font-weight:bold;color:#0a0');
+    console.table(rows);
+    console.log('读表:①「channels」若有多套(uv,uv1)→ 你的"全套UV"可能在第2套,而平台读的是第1套。'
+      +'②「覆盖格数」远小于占满、但「uBBox/vBBox」却接近 0–1 → 有离群 UV 点把包围盒撑大,归一化失效(只显示一角)。'
+      +'③「越界=是」→ UV 超出 0–1(UDIM 多象限),需按象限拆分。');
+    // 屏上小结(第一个有 UV 的网格),免开控制台也能看到关键信息
+    const m=rows.find(r=>r.verts);
+    if(!m) return 'UV诊断:未发现带UV的网格';
+    const multi=/,/.test(m.channels);
+    return `UV诊断·${m.mesh}: 通道[${m.channels}]${multi?'⚠多套':''} 覆盖${m.覆盖格数} u${m.uBBox} v${m.vBBox} 越界:${m.越界}`;
+  }catch(e){ console.warn('UV 诊断失败', e); return 'UV诊断失败:'+e.message; }
+}
 async function loadModelBlob(blob, persist){
   hint('载入模型中…');
   const url=URL.createObjectURL(blob);
@@ -180,7 +221,9 @@ async function loadModelBlob(blob, persist){
     carGroup.position.set(-c.x*s, -box.min.y*s, -c.z*s);
     scene.add(carGroup);
     if(persist) idbPut('model', blob).catch(()=>{});
-    hint('✓ 模型已载入 — 📍 放置工具点击车身');
+    const uvSummary=logUvDiagnostics(carGroup);  // 🔍 每个网格的 UV 通道/包围盒 → 排查"只显示一半 UV"
+    if(modelOpacity<1) applyModelOpacity();       // 换模型后沿用当前贴图不透明度设置
+    hint('✓ 模型已载入 · '+uvSummary);           // 关键 UV 信息直接显示在屏上(免开控制台)
     return true;
   }catch(err){ hint('⚠ 模型载入失败:'+err.message+'(建议自包含 .glb)'); return false; }
   finally{ URL.revokeObjectURL(url); }
@@ -189,15 +232,15 @@ async function loadModelBlob(blob, persist){
 /* ══════════════ 投影面 ══════════════ */
 const decals=[]; let activeDecal=0, selected=false;
 function newDecal(gi=activeGroup){ return {kind:'patch', group:gi, mesh:null, localPoint:null, localNormal:null,
-  sz:1.2, rot:0, du:0, dv:0, cx:0, cy:0, cw:1, ch:1, obj:null}; }
+  sz:1.2, rot:0, du:0, dv:0, cx:0, cy:0, cw:1, ch:1, mirX:false, mirY:false, obj:null}; }
 // 环绕面:圆柱投影"贴膜"—— 空间投影而非表面行走,天然跨部件/跨缝隙连续。
 function newWrap(gi=activeGroup){ return {kind:'wrap', group:gi, mesh:null, localPoint:null, localNormal:null,
   axis:'y', a0:-90, span:360, lo:0.15, hi:0.75,
-  sz:1.2, rot:0, du:0, dv:0, cx:0, cy:0, cw:1, ch:1, obj:null}; }
+  sz:1.2, rot:0, du:0, dv:0, cx:0, cy:0, cw:1, ch:1, mirX:false, mirY:false, obj:null}; }
 decals.push(newDecal(0));
 const serializeDecal=d=>({ kind:d.kind||'patch', group:d.group, meshIdx:d.mesh?meshList().indexOf(d.mesh):-1,
   p:d.localPoint?.toArray()||null, n:d.localNormal?.toArray()||null,
-  sz:d.sz, rot:d.rot, du:d.du, dv:d.dv, cx:d.cx, cy:d.cy, cw:d.cw, ch:d.ch,
+  sz:d.sz, rot:d.rot, du:d.du, dv:d.dv, cx:d.cx, cy:d.cy, cw:d.cw, ch:d.ch, mirX:!!d.mirX, mirY:!!d.mirY,
   axis:d.axis, a0:d.a0, span:d.span, lo:d.lo, hi:d.hi });
 function removeObj(d){ if(d.obj){ d.obj.removeFromParent(); d.obj.geometry.dispose(); d.obj=null; } }
 function clearAllDecals(){ for(const d of decals){ removeObj(d); d.mesh=null; d.localPoint=null; } }
@@ -298,8 +341,18 @@ function applyUvLayer(d){
   // 把这块部件的"读画区"挪到画布任意位置(默认全幅)。始终从原始备份重算,幂等无漂移。
   // matUV 的纹理 flipY=false,v 与画布同向(v=0 顶行),故 v'=cy+v·ch 直加。
   const o=uvOrigAttr.get(d.mesh);
+  // 先把网格 UV 岛的【包围盒归一化到 0–1】:很多 Blender 展开只占 0–1 的一小块/偏左上(如本例 U 0–0.79、
+  // V 0.2–1.0)——不归一化就会"只显示一半、在左边"。归一化后动画铺满整片 UV。再叠加取景窗口(cx/cw)。
+  // 稳健包围盒:用 1.5%–98.5% 分位数,忽略个别离群 UV 点 —— 否则哪怕一两个杂点落在 u≈1,
+  // 就把 min/max 包围盒撑到近 0–1,归一化形同虚设,主 UV 岛仍挤在一角 =「只显示一半、在左边」。
+  const us_arr=[], vs_arr=[];
+  for(let i=0;i<o.length;i+=2){ us_arr.push(o[i]); vs_arr.push(o[i+1]); }
+  us_arr.sort((a,b)=>a-b); vs_arr.sort((a,b)=>a-b);
+  const pct=(arr,p)=>arr[Math.max(0,Math.min(arr.length-1, Math.round(p*(arr.length-1))))];
+  const uMin=pct(us_arr,0.015), uMax=pct(us_arr,0.985), vMin=pct(vs_arr,0.015), vMax=pct(vs_arr,0.985);
+  const us=(uMax-uMin)||1, vs=(vMax-vMin)||1;
   for(let i=0;i<uv.count;i++)
-    uv.setXY(i, d.cx+o[i*2]*d.cw, d.cy+o[i*2+1]*d.ch);
+    uv.setXY(i, d.cx + ((o[i*2]-uMin)/us)*d.cw, d.cy + ((o[i*2+1]-vMin)/vs)*d.ch);
   uv.needsUpdate=true;
   // 编辑器底图条目跟着窗口走(防抖:切割器拖动中 90ms 一次 projectDecal,别每次都写大 dataURL)
   clearTimeout(uvSyncTimer);
@@ -319,9 +372,10 @@ function syncUvLayoutEntry(d){
     localStorage.setItem('morph-uvlayout', JSON.stringify(layout));
   }catch(_){}
 }
-// UV 线框(编辑器底图):把网格的 UV 三角边画成 480×280 线稿。大网格隔三角抽稀。
+// UV 线框(编辑器底图):把网格的 UV 三角边画成 W×H 线稿(现为正方形,与 Blender 0–1 UV 同比例
+// → 正方形 UV 就是正方形,不再被画成长方形)。大网格隔三角抽稀。
 function uvWireframe(mesh){
-  const c=document.createElement('canvas'); c.width=480; c.height=280;
+  const c=document.createElement('canvas'); c.width=W; c.height=H;
   const g2=c.getContext('2d');
   g2.strokeStyle='rgba(255,255,255,0.55)'; g2.lineWidth=1;
   const uv=mesh.geometry.attributes.uv, idx=mesh.geometry.index;
@@ -331,7 +385,7 @@ function uvWireframe(mesh){
   g2.beginPath();
   for(let t=0;t<triCount;t+=step){
     const p=[0,1,2].map(j=>{ const i=getI(t*3+j);
-      return [uv.getX(i)*480, uv.getY(i)*280]; }); // glTF v 向下,与画布同向
+      return [uv.getX(i)*W, uv.getY(i)*H]; }); // glTF v 向下,与画布同向
     g2.moveTo(p[0][0],p[0][1]); g2.lineTo(p[1][0],p[1][1]);
     g2.lineTo(p[2][0],p[2][1]); g2.lineTo(p[0][0],p[0][1]);
   }
@@ -380,8 +434,9 @@ function projectDecal(d){
     const u0=uv.getX(i), v0=uv.getY(i); // 重映射前 = 贴片本地 0..1
     const fade=ss(0,FE,u0)*ss(0,FE,1-u0)*ss(0,FE,v0)*ss(0,FE,1-v0);
     cols[i*4]=1; cols[i*4+1]=1; cols[i*4+2]=1; cols[i*4+3]=fade; // 边缘羽化,消硬切
-    uv.setX(i, d.cx + u0*d.cw);
-    uv.setY(i, (1-d.cy-d.ch) + v0*d.ch);
+    const uu=d.mirX?(1-u0):u0, vv=d.mirY?(1-v0):v0; // 🪞 图案镜像:翻转本地 uv(位置不变)
+    uv.setX(i, d.cx + uu*d.cw);
+    uv.setY(i, (1-d.cy-d.ch) + vv*d.ch);
   }
   uv.needsUpdate=true;
   geo.setAttribute('color', new THREE.Float32BufferAttribute(cols,4));
@@ -424,7 +479,7 @@ async function restoreView(s){
     const gi=Math.min(sd.group||0, groups.length-1);
     const d=sd.kind==='wrap'?newWrap(gi):newDecal(gi);
     if(sd.kind==='uv') d.kind='uv';
-    Object.assign(d,{sz:sd.sz,rot:sd.rot,du:sd.du,dv:sd.dv,cx:sd.cx,cy:sd.cy,cw:sd.cw,ch:sd.ch});
+    Object.assign(d,{sz:sd.sz,rot:sd.rot,du:sd.du,dv:sd.dv,cx:sd.cx,cy:sd.cy,cw:sd.cw,ch:sd.ch,mirX:!!sd.mirX,mirY:!!sd.mirY});
     if(sd.kind==='wrap') Object.assign(d,{axis:sd.axis||'y',a0:sd.a0??-90,span:sd.span??360,lo:sd.lo??0.15,hi:sd.hi??0.75});
     const m=meshList()[sd.meshIdx];
     if(sd.kind==='uv'){
@@ -669,6 +724,7 @@ function syncSliders(){
   $('rotSl').value=d.rot; $('rotV').textContent=d.rot+'°';
   $('uSl').value=d.du; $('uV').textContent=d.du.toFixed(2);
   $('vSl').value=d.dv; $('vV').textContent=d.dv.toFixed(2);
+  if($('mirXCk')){ $('mirXCk').checked=!!d.mirX; $('mirYCk').checked=!!d.mirY; }
   const isWrap=d.kind==='wrap';
   $('wrapProps').style.display=isWrap?'block':'none';
   if(isWrap){
@@ -712,6 +768,7 @@ function matchSeams(gi){
 }
 function syncPanel(){
   syncSliders();
+  if($('transBgCk')) $('transBgCk').checked=!!groups[activeGroup]?.P?.transBg; // 背景透明状态回填
   const list=$('decList'); list.innerHTML='';
   groups.forEach((gr,gi)=>{
     const head=document.createElement('div');
@@ -813,6 +870,10 @@ for(const [id,keyName] of Object.entries(sliderKeys)){
     d[keyName]=+e.target.value; syncSliders(); projectDecal(d); });
   $(id).addEventListener('change',saveViewState);
 }
+// 🪞 图案镜像:翻转本投影面的贴图 uv(位置不变),左右车身共用同一动画时一侧勾选即左右对称
+for(const [id,keyName] of [['mirXCk','mirX'],['mirYCk','mirY']])
+  if($(id)) $(id).addEventListener('change',e=>{ const d=decals[activeDecal];
+    pushViewUndo(); d[keyName]=e.target.checked; projectDecal(d); saveViewState(); });
 
 /* ── 分区切割器(显示当前动画组)── */
 const cutCv=$('cutCv'), cutCtx=cutCv.getContext('2d');
@@ -966,6 +1027,20 @@ composer.addPass(bloom);
 composer.addPass(new OutputPass());
 $('bloomCk').onchange=e=>{ bloom.enabled=e.target.checked; saveViewState(); };
 $('spinCk').addEventListener('change',saveViewState);
+// 🫧 背景透明:所有动画组的贴图渲染 alpha=覆盖度 → 投影只出图案、背景全透。贴图每帧重渲,即时生效。
+$('transBgCk').addEventListener('change',e=>{ groups.forEach(g=>g.P.transBg=e.target.checked); saveViewState(); });
+// 🎚 模型自带贴图淡化:用【颜色乘法】把模型原纹理调暗(v→0 越暗),让动画投影更突出。
+// 恒不透明 —— 只淡化贴图,模型始终是一块可见实体表面,绝不消失(修复"调低就整车不见")。
+let modelOpacity=1;
+function applyModelOpacity(){ const v=Math.max(0.03, modelOpacity);
+  for(const mesh of meshList()){ const mats=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+    for(const m of mats){ if(!m||!m.color) continue;
+      if(!m.userData.origColor) m.userData.origColor=m.color.clone();
+      m.color.copy(m.userData.origColor).multiplyScalar(v);
+      if(m.opacity<1){ m.opacity=1; } // 修正上一版可能把不透明度压到 0 导致的隐形
+      m.needsUpdate=true; } }
+}
+$('modelOpa').addEventListener('input',e=>{ modelOpacity=+e.target.value; $('modelOpaV').textContent=modelOpacity.toFixed(2); applyModelOpacity(); });
 $('expSl').addEventListener('input',e=>{ renderer.toneMappingExposure=+e.target.value;
   $('expV').textContent=(+e.target.value).toFixed(2); saveViewState(); });
 addEventListener('resize',()=>{
@@ -987,9 +1062,25 @@ $('loadProj').onclick=()=>$('projFile').click();
 $('projFile').addEventListener('change',e=>{
   const f=e.target.files[0]; if(!f) return;
   const rd=new FileReader();
-  rd.onload=()=>loadProjectData(JSON.parse(rd.result), 0)
-    .then(()=>{ try{ localStorage.setItem('morph3d-project', rd.result); }catch(_){} })
-    .catch(err=>hint('⚠ '+err.message));
+  rd.onload=()=>{ let parsed; try{ parsed=JSON.parse(rd.result); }catch(err){ hint('⚠ 工程解析失败'); return; }
+    loadProjectData(parsed, 0)
+    .then(async ()=>{
+      try{ localStorage.setItem('morph3d-project', rd.result); }catch(_){}
+      // 工程里若带 3D 投影面布局(编辑器「保存工程」已一并写入)→ 恢复各面位置/大小/所属车面
+      if(parsed.view3d){
+        try{ localStorage.setItem('morph3d-view', JSON.stringify(parsed.view3d)); }catch(_){}
+        if(parsed.view3d.exp!=null){ $('expSl').value=parsed.view3d.exp;
+          $('expV').textContent=(+parsed.view3d.exp).toFixed(2); renderer.toneMappingExposure=parsed.view3d.exp; }
+        if(parsed.view3d.bloom!=null){ $('bloomCk').checked=parsed.view3d.bloom; bloom.enabled=parsed.view3d.bloom; }
+        await restoreView({decals:parsed.view3d.decals||[], active:parsed.view3d.active||0,
+          masks:parsed.view3d.masks||[], carColors:parsed.view3d.carColors||[]});
+        activeGroup=Math.min(parsed.view3d.activeGroup||0, groups.length-1); syncPanel();
+        hint(meshList().length? `✓ 已载入工程与 ${(parsed.view3d.decals||[]).length} 块投影面布局`
+                              : '✓ 已载入工程布局 — 请先「🚗 车模」载入同一车模,投影面即按所属车面恢复');
+      }
+      if(parsed.uvlayout){ try{ localStorage.setItem('morph-uvlayout', JSON.stringify(parsed.uvlayout)); }catch(_){} }
+    })
+    .catch(err=>hint('⚠ '+err.message)); };
   rd.readAsText(f); e.target.value='';
 });
 $('loadModel').onclick=()=>$('modelFile').click();
@@ -1122,7 +1213,7 @@ function frame(now){
     if(!gr.SEQ) continue;
     const fr=sampleFrame(gr.SEQ, gr.states, g%gr.SEQ.T, clock, gr.P);
     // 矢量图层轮廓变形并入 solids —— 修复"3D 上过渡时小人突然消失"(2D 一直渲,3D 之前漏了)
-    const vsolids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(gr.states, gr.SEQ, g%gr.SEQ.T)));
+    const vsolids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(gr.states, gr.SEQ, g%gr.SEQ.T, clock, gr.P)));
     gr.renderTex(fr.balls, fr.col, gr.P, vsolids, fr.cam);
     gr.screenTex.needsUpdate=true; gr.screenTexUV.needsUpdate=true;
   }

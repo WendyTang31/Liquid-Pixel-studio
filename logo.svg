@@ -1,0 +1,22 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Liquid Pixel Studio">
+  <defs>
+    <linearGradient id="lps-g" x1="10" y1="8" x2="54" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4fd4ff"/>
+      <stop offset=".55" stop-color="#2cc4f5"/>
+      <stop offset="1" stop-color="#0067b1"/>
+    </linearGradient>
+    <!-- 元球融合:高斯模糊 + alpha 阈值锐化,让分离的圆连成液态桥 -->
+    <filter id="lps-goo" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2.6" result="b"/>
+      <feColorMatrix in="b" mode="matrix"
+        values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -11" result="goo"/>
+    </filter>
+  </defs>
+  <g filter="url(#lps-goo)" fill="url(#lps-g)">
+    <circle cx="23" cy="26" r="12"/>
+    <circle cx="42" cy="22" r="9.5"/>
+    <circle cx="34" cy="44" r="10.5"/>
+  </g>
+  <!-- 高光点:金属漆/液面反光,呼应移动出行质感 -->
+  <circle cx="19" cy="21" r="3" fill="#eaffff" opacity=".9"/>
+</svg>

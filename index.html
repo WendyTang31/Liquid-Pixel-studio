@@ -3,23 +3,42 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Metaball Morph Studio · v4</title>
+<title>Liquid Pixel Studio</title>
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
 <style>
-  :root{ --bg:#0a0a0a; --panel:#161616; --line:#2a2a2a; --ink:#e8e8e4; --dim:#8a8a85; --mint:#98f5d0; }
+  /* HMG 移动出行设计语言:深海军夜幕底 + Hyundai Active-Blue 荧光蓝主色,冷调中性灰。 */
+  :root{
+    --bg:#090d13; --panel:#111823; --panel-2:#0c121b; --line:#233042;
+    --ink:#eef2f7; --dim:#8494a6; --mint:#2cc4f5;      /* --mint = 主强调(HMG 活力蓝) */
+    --accent-deep:#0072c6; --brand1:#4fd4ff; --brand2:#0067b1;
+    /* 字号阶梯(按操作层级):品牌 > 分区步骤 > 控件 > 标签 > 辅助 */
+    --fs-title:15px; --fs-step:11.5px; --fs-ctrl:12px; --fs-label:11px; --fs-val:11px; --fs-small:10px;
+  }
+  /* 拖拽文件到编辑器打开时的提示遮罩 */
+  body.drag-over::after{ content:'🗂 松手打开 · .json 工程 / .svg / 图片'; position:fixed; inset:8px; z-index:99999;
+    display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:600; color:var(--mint);
+    background:rgba(9,13,19,0.6); border:2.5px dashed var(--mint); border-radius:14px; pointer-events:none; }
   *{box-sizing:border-box; margin:0; padding:0;}
-  body{ background:var(--bg); color:var(--ink);
-        font-family:"IBM Plex Sans","Helvetica Neue",system-ui,sans-serif;
+  body{ background:radial-gradient(1200px 700px at 70% -10%, #0f1a28 0%, var(--bg) 60%); color:var(--ink);
+        font-family:"Pretendard Variable",Pretendard,"Inter",system-ui,-apple-system,"Helvetica Neue",sans-serif;
+        -webkit-font-smoothing:antialiased; letter-spacing:.005em;
         display:flex; flex-direction:column; align-items:center; padding:14px; gap:10px;}
   .topbar{ width:min(2400px,98vw); display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
-  .topbar h1{font-size:14px; font-weight:600; letter-spacing:.05em; margin-right:6px;}
-  .topbar h1 span{color:var(--dim); font-weight:400; font-size:11px; margin-left:6px;}
+  .brand{ display:flex; align-items:center; gap:9px; margin-right:6px;}
+  .brand .logo{ width:26px; height:26px; flex:0 0 auto; filter:drop-shadow(0 0 6px rgba(44,196,245,.35)); }
+  .topbar h1{ font-size:var(--fs-title); font-weight:800; letter-spacing:.09em; line-height:1;
+    background:linear-gradient(92deg,var(--brand1),var(--mint) 55%,var(--brand2)); -webkit-background-clip:text;
+    background-clip:text; color:transparent; }
+  .topbar h1 span{ -webkit-text-fill-color:var(--dim); color:var(--dim); font-weight:500;
+    font-size:var(--fs-small); letter-spacing:.04em; margin-left:8px; }
   .spacer{flex:1}
   /* ── 状态胶片条 ── */
   .strip{ width:min(2400px,98vw); display:flex; gap:8px; align-items:center;
           background:var(--panel); border:1px solid var(--line); border-radius:8px;
           padding:8px 10px; overflow-x:auto;}
   .chip{ display:flex; flex-direction:column; gap:3px; cursor:pointer; flex:0 0 auto;
-         border:1px solid var(--line); border-radius:7px; padding:4px; background:#101010;}
+         border:1px solid var(--line); border-radius:7px; padding:4px; background:var(--panel-2);}
   .chip.active{border-color:var(--mint);}
   .chip canvas{width:96px; height:56px; border-radius:4px; display:block; background:#000;}
   .chip .nm{font-size:10.5px; color:var(--dim); text-align:center; max-width:96px;
@@ -37,9 +56,11 @@
   .toolbar button{width:38px; height:34px; font-size:14px; padding:0;}
   .toolbar .gap{height:8px}
   .center{flex:1; min-width:340px; display:flex; flex-direction:column; gap:8px;}
-  .stage{position:relative; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#000;}
-  .cwrap{position:relative; width:100%; transform-origin:0 0; will-change:transform;}
-  canvas#cv{display:block; width:100%; aspect-ratio:480/280; cursor:crosshair;}
+  .stage{position:relative; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#000;
+         display:flex; justify-content:center;}
+  /* 正方形画布:限高到视口内并居中,避免占满宽度后过高看不全 */
+  .cwrap{position:relative; width:min(100%, 74vh); margin:0 auto; transform-origin:0 0; will-change:transform;}
+  canvas#cv{display:block; width:100%; aspect-ratio:1/1; cursor:crosshair;}
   .zoombar{position:absolute; right:8px; bottom:8px; display:flex; gap:2px; align-items:center; z-index:5;
     background:rgba(20,20,20,.78); border:1px solid var(--line); border-radius:6px; padding:2px 4px;}
   .zoombar button{padding:1px 7px; font-size:13px;}
@@ -48,7 +69,7 @@
   .tlbar{ background:var(--panel); border:1px solid var(--line); border-radius:8px;
           padding:8px 12px; display:flex; align-items:center; gap:9px;}
   /* ── AE 式时间轴 ── */
-  .tl{ position:relative; flex:1; height:36px; background:#101010; border:1px solid var(--line);
+  .tl{ position:relative; flex:1; height:36px; background:var(--panel-2); border:1px solid var(--line);
        border-radius:6px; overflow:hidden; cursor:pointer; user-select:none; touch-action:none;}
   .tl .seg{ position:absolute; top:0; bottom:0; border-right:1px solid #000; overflow:hidden;}
   .tl .seg.hold.active{box-shadow:inset 0 0 0 1px var(--mint);}
@@ -67,7 +88,7 @@
        padding:8px; display:flex; flex-direction:column; gap:6px; max-height:82vh; overflow-y:auto;}
   .layers::-webkit-scrollbar{width:6px} .layers::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
   .lyrow{ display:flex; align-items:center; gap:4px; border:1px solid transparent; border-radius:6px;
-       padding:3px 5px; cursor:pointer; font-size:11.5px; background:#101010;}
+       padding:3px 5px; cursor:pointer; font-size:11.5px; background:var(--panel-2);}
   .lyrow:hover{border-color:var(--line);}
   .lyrow.sel{border-color:var(--mint);}
   .lyrow.dropAbove{border-top:2px solid var(--mint);}
@@ -82,7 +103,8 @@
           padding:10px 12px; display:flex; flex-direction:column; gap:8px;
           max-height:82vh; overflow-y:auto;}
   .props::-webkit-scrollbar{width:6px} .props::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
-  .sec{font-size:10.5px; color:var(--dim); letter-spacing:.12em; margin-top:4px;}
+  .sec{font-size:var(--fs-step); font-weight:700; color:var(--ink); letter-spacing:.1em; margin-top:6px;
+       text-transform:uppercase; opacity:.92;}
   /* 右栏分区可折叠:标题即开关 */
   .props > .sec{cursor:pointer; user-select:none;}
   .props > .sec::before{content:'▾ '; color:var(--dim); font-size:9px;}
@@ -91,42 +113,59 @@
   .secbody{display:flex; flex-direction:column; gap:8px;}
   .secbody.folded{display:none;}
   .row{display:flex; align-items:center; gap:7px; flex-wrap:wrap;}
-  .row label{font-size:11.5px; color:var(--dim); min-width:56px;}
-  .row .val{font-size:11px; color:var(--mint); min-width:34px; text-align:right; font-variant-numeric:tabular-nums;}
+  .row label{font-size:var(--fs-label); color:var(--dim); min-width:56px;}
+  .row .val{font-size:var(--fs-val); color:var(--mint); min-width:34px; text-align:right; font-weight:600; font-variant-numeric:tabular-nums;}
   input[type=range]{flex:1; accent-color:var(--mint); height:18px; min-width:60px;}
-  input[type=text]{background:#1e1e1e; color:var(--ink); border:1px solid var(--line); border-radius:6px;
-                   padding:4px 8px; font-size:12px; width:90px; font-family:inherit;}
+  input[type=text]{background:var(--panel-2); color:var(--ink); border:1px solid var(--line); border-radius:6px;
+                   padding:4px 8px; font-size:var(--fs-ctrl); width:90px; font-family:inherit;}
+  input[type=text]:focus{outline:none; border-color:var(--mint);}
   input[type=color]{width:34px; height:24px; border:1px solid var(--line); border-radius:5px;
-                    background:#1e1e1e; padding:1px; cursor:pointer;}
-  select,button{ background:#1e1e1e; color:var(--ink); border:1px solid var(--line);
-                 border-radius:6px; padding:5px 8px; font-size:12px; cursor:pointer; font-family:inherit;}
+                    background:var(--panel-2); padding:1px; cursor:pointer;}
+  select,button{ background:var(--panel-2); color:var(--ink); border:1px solid var(--line);
+                 border-radius:6px; padding:5px 9px; font-size:var(--fs-ctrl); cursor:pointer; font-family:inherit;
+                 transition:border-color .12s, color .12s, background .12s;}
   button:hover{border-color:var(--mint); color:var(--mint);}
-  button.active{background:var(--mint); color:#000; border-color:var(--mint);}
+  button.active{background:var(--mint); color:#04121c; border-color:var(--mint); font-weight:600;}
+  /* 主行动按钮(播放/导出/3D 等关键 CTA):荧光蓝实心,层级最高 */
+  button.primary{ background:linear-gradient(180deg,var(--mint),var(--accent-deep)); color:#04121c;
+    border-color:transparent; font-weight:700; box-shadow:0 1px 10px rgba(44,196,245,.28);}
+  button.primary:hover{ color:#04121c; filter:brightness(1.08);}
   .divider{height:1px; background:var(--line); margin:2px 0;}
   .small{font-size:10.5px; color:var(--dim); line-height:1.5;}
   .selbox{border:1px dashed var(--line); border-radius:6px; padding:7px 8px; display:flex;
           flex-direction:column; gap:6px; font-size:11.5px;}
   input[type=checkbox]{accent-color:var(--mint)}
   .ck{font-size:11px; color:var(--ink); display:flex; gap:4px; align-items:center; min-width:auto}
+  /* 语言选项卡:分段控件 */
+  .langtabs{ display:inline-flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; background:var(--panel-2);}
+  .langtabs button{ border:none; border-radius:0; background:transparent; color:var(--dim);
+    padding:5px 9px; font-size:11px; font-weight:600; letter-spacing:.02em;}
+  .langtabs button:hover{ color:var(--ink); background:rgba(44,196,245,.08);}
+  .langtabs button.active{ background:var(--mint); color:#04121c;}
+  .langtabs button+button{ border-left:1px solid var(--line);}
 </style>
 </head>
 <body>
 
 <!-- ═══ 顶栏 ═══ -->
 <div class="topbar">
-  <h1>MORPH STUDIO <span>v4 · 序列状态机 · ALIAS</span></h1>
-  <button id="langBtn" title="Switch language / 切换界面语言">🌐 EN</button>
-  <button id="mPlay">▶ 预览序列</button>
+  <div class="brand"><img class="logo" src="logo.svg" alt="Liquid Pixel Studio logo"><h1>LIQUID PIXEL STUDIO <span>v4 · 序列状态机 · ALIAS</span></h1></div>
+  <div class="langtabs" id="langTabs" title="Language / 语言 / 언어">
+    <button data-lang="en">EN</button><button data-lang="zh">中</button><button data-lang="ko">한</button>
+  </div>
+  <button id="mPlay" class="primary">▶ 预览序列</button>
   <div class="spacer"></div>
   <button id="clearGrp">清空当前状态</button>
   <button id="clearAll">🗑 全部</button>
   <button id="copyBtn">复制点集</button>
   <button id="importImgBtn">🖼 导入图片</button>
-  <button id="view3dBtn" title="把当前动画贴到 3D 车模上预览">🚗 3D 预览</button>
+  <button id="importSvgBtn" title="导入 Illustrator/矢量软件的 SVG(File ▸ Save As/Export ▸ SVG)—— 保留控制点,导入即可编辑/动画/贴车身">✒ 导入 SVG</button>
+  <button id="view3dBtn" class="primary" title="把当前动画贴到 3D 车模上预览">🚗 3D 预览</button>
   <button id="saveBtn">💾 保存工程</button>
   <button id="openBtn">📂 打开工程</button>
   <input type="file" id="openFile" accept=".json" style="display:none">
   <input type="file" id="importImgFile" accept="image/*" multiple style="display:none">
+  <input type="file" id="importSvgFile" accept=".svg,image/svg+xml" style="display:none">
 </div>
 
 <!-- ═══ 状态胶片条(点击缩略图 = 编辑该状态)═══ -->
@@ -187,8 +226,28 @@
       <label>颜色</label><input type="color" id="stColor" value="#98f5d0">
       <label style="min-width:auto">背景</label><input type="color" id="colBg" value="#0a0a0a">
     </div>
-    <div class="row"><label>停留 (秒)</label><input type="range" id="stHold" min="0" max="5" step="0.1" value="1"><div class="val" id="vHold">1.0</div></div>
-    <div class="row"><label>过渡 (秒)</label><input type="range" id="stDur" min="0.5" max="8" step="0.1" value="3"><div class="val" id="vDur">3.0</div></div>
+    <div class="row"><label>停留 (秒)</label><input type="range" id="stHold" min="0" max="15" step="0.05" value="1"><div class="val" id="vHold">1.0</div></div>
+    <div class="row"><label>过渡 (秒)</label><input type="range" id="stDur" min="0.05" max="8" step="0.05" value="3"><div class="val" id="vDur">3.0</div></div>
+    <div class="selbox" id="clipPanel" style="display:none" title="动画片段(大图层):导入的 SVG 循环/一组连续状态当作一个整体。整体设总时长、缩放/移动/调速、循环圈数;走够圈数后自然过渡到后面的下一段。">
+      <div class="small" id="clipTitle" style="color:var(--mint)">🎬 动画片段</div>
+      <div class="row"><label title="整段动画播完一轮的总时长,均分到片段内每一帧(把走路 loop 拉长到 3~10 秒)">总时长秒</label>
+        <input type="range" id="clipTotal" min="0.4" max="12" step="0.1" value="1.1"><div class="val" id="vClipTotal">1.1</div></div>
+      <div class="row"><label title="整段(所有帧)一起绕中心缩放/移动 —— 像操作一个大图层">整体</label>
+        <button id="clipDown" title="缩小整段">－</button><button id="clipUp" title="放大整段">＋</button>
+        <button id="clipL" title="左移">←</button><button id="clipR" title="右移">→</button>
+        <button id="clipU" title="上移">↑</button><button id="clipD" title="下移">↓</button></div>
+      <div class="row"><label title="片段内所有过渡统一缓动(整体调速度感)">调速</label>
+        <select id="clipEase" style="flex:1">
+          <option value="">(逐帧默认)</option>
+          <option value="linear">linear 匀速</option>
+          <option value="smootherstep">smootherstep 平滑</option>
+          <option value="cubic">easeInOutCubic</option>
+          <option value="backOut">回弹 backOut</option>
+        </select></div>
+      <div class="row"><label title="整段循环几圈后再过渡到后面的下一段动画(走够 N 圈再衔接);需要在本片段后面画/导入下一段">循环圈</label>
+        <input type="range" id="clipLoops" min="1" max="12" step="1" value="1"><div class="val" id="vClipLoops">1</div></div>
+      <div class="small" id="clipHint" style="color:var(--dim)"></div>
+    </div>
     <div class="selbox" title="本状态→下一状态这段过渡的专属参数;不勾选/选'跟随全局'则继承③引擎的全局设置">
       <div class="small">本段过渡覆盖(→ 下一状态)</div>
       <div class="row"><label>缓动</label>
@@ -202,6 +261,16 @@
           <option value="elasticOut">弹性 elasticOut</option>
           <option value="bounceOut">弹跳 bounceOut</option>
         </select></div>
+      <div class="row"><label class="ck" title="速度曲线(三次贝塞尔):独立控制过渡的【起步】与【落位】速度,勾选即覆盖上面的缓动。要相邻状态无缝,把下一段的『起步』设成本段的『落位』(或点🔗按钮)。"><input type="checkbox" id="trSpeedOn"> ⚡ 速度曲线(起步/落位)</label></div>
+      <div id="trSpeedBox" style="display:none">
+        <div class="row"><label style="min-width:auto" title="离开本状态的速度:0=缓缓起步 · 1=匀速 · >1=冲出">起步</label>
+          <input type="range" id="trSpeedIn" min="0" max="3" step="0.1" value="0"><div class="val" id="vTrSpeedIn">0.0</div>
+          <label style="min-width:auto" title="到达下一状态的速度:0=缓缓停下 · 1=匀速 · >1=冲入">落位</label>
+          <input type="range" id="trSpeedOut" min="0" max="3" step="0.1" value="0"><div class="val" id="vTrSpeedOut">0.0</div></div>
+        <div class="row">
+          <canvas id="trSpeedCv" width="70" height="38" title="速度曲线预览(横=时间,纵=进度;端点斜率=起步/落位速度)" style="background:#0d1412;border:1px solid var(--line);border-radius:4px"></canvas>
+          <button id="trSeamless" style="flex:1" title="把『起步』速度设为上一段过渡的『落位』速度 —— 本状态成为不停顿的中转点,前后速度连续、无缝衔接。">🔗 承接上一段(无缝)</button></div>
+      </div>
       <div class="row"><label class="ck"><input type="checkbox" id="trStagOn"> 错峰</label>
         <input type="range" id="trStag" min="0" max="1" step="0.01" value="0.3"><div class="val" id="vTrStag">0.30</div></div>
       <div class="row"><label class="ck"><input type="checkbox" id="trFlowOn"> 流场</label>
@@ -228,12 +297,25 @@
     </div>
     <div class="selbox" title="本状态停留期的程序化动态几何(纯数学位移场,与过渡端点连续)。频率为所有效果共用,已硬性限制 ≤2.5Hz —— 光敏安全:微光是逐点异相低频闪,聚合亮度平滑,不产生 3–30Hz 频闪。">
       <div class="small">🌊 动态几何(停留期)</div>
-      <div class="row"><label title="所有动态效果的振荡频率;≤2.5Hz(光敏红线)">频率 Hz</label><input type="range" id="fxFreq" min="0.1" max="2.5" step="0.05" value="0.6"><div class="val" id="vFxFreq">0.60</div></div>
+      <div class="row"><label title="所有动态效果的振荡频率;可低至 0.02Hz(极慢),≤2.5Hz(光敏红线)">频率 Hz</label><input type="range" id="fxFreq" min="0.02" max="2.5" step="0.01" value="0.6"><div class="val" id="vFxFreq">0.60</div></div>
       <div class="row"><label title="水平面波浪:液体在容器里晃动(整体左右晃+液面行波,越靠上晃幅越大)">波浪</label><input type="range" id="fxSlosh" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxSlosh">0.00</div></div>
       <div class="row"><label title="弹簧挤压/拉伸:图形绕质心体积守恒地缩放,波形带过冲更弹">弹簧</label><input type="range" id="fxSpring" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxSpring">0.00</div></div>
       <div class="row"><label title="液态线:横向行波沿形体流动的起伏(路径液态动画)">液态线</label><input type="range" id="fxLiquid" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxLiquid">0.00</div></div>
       <div class="row"><label title="从中心向外辐射的同心波纹">波纹</label><input type="range" id="fxRipple" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxRipple">0.00</div></div>
       <div class="row"><label title="微光闪烁:逐点各自低频、异相闪(≤2.5Hz)—— 闪烁质感而非频闪,光敏安全">微光</label><input type="range" id="fxTwinkle" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxTwinkle">0.00</div></div>
+      <div class="row"><label title="边缘波:整块边界像水波(〰️)沿行波起伏,水平边上下荡、竖直边左右荡">边缘波</label><input type="range" id="fxWobble" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxWobble">0.00</div></div>
+      <div class="row"><label class="ck" title="波浪锚点:勾选后,所有波浪类位移(波浪/弹簧/液态线/波纹/边缘波)的幅度随【离锚点的距离】增长 —— 锚点处不动、越远晃得越大(像甩绳/旗杆挥旗)。用下面 X/Y 定位锚点、波及控制延伸范围。"><input type="checkbox" id="fxAnchorOn"> 🎯 波浪锚点(定点向外延伸)</label></div>
+      <div class="row"><label title="锚点水平位置(0=左,1=右)">锚点X</label><input type="range" id="fxAnchorX" min="0" max="1" step="0.01" value="0.5"><div class="val" id="vFxAnchorX">0.50</div></div>
+      <div class="row"><label title="锚点垂直位置(0=上,1=下)">锚点Y</label><input type="range" id="fxAnchorY" min="0" max="1" step="0.01" value="0.5"><div class="val" id="vFxAnchorY">0.50</div></div>
+      <div class="row"><label title="波及范围:离锚点多远达到满幅晃动(越小=衰减越快,只有远端大幅晃;越大=整体更均匀)">波及</label><input type="range" id="fxAnchorReach" min="0.05" max="1.5" step="0.05" value="0.5"><div class="val" id="vFxAnchorReach">0.50</div></div>
+      <div class="small" style="opacity:.6;margin-top:4px">✦ 边缘几何(全局·重建轮廓·仅对实心/矢量形状)</div>
+      <div class="row"><label title="细密波浪:沿轮廓的高频小幅波纹,比「边缘波」细得多、每段更小(几何级重建,任意分辨率锐利);幅度按图形自身大小缩放">细波</label><input type="range" id="fxFineWave" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxFineWave">0.00</div></div>
+      <div class="row"><label title="锯齿尖刺:像 Illustrator Roughen 的星形尖角边缘(p2)—— 沿法线的变长尖峰,缓慢起伏;幅度按图形大小缩放">锯齿</label><input type="range" id="fxJagged" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxJagged">0.00</div></div>
+      <div class="row"><label title="飞溅:实心形状偶发向外喷出丝状触须 + 甩出细小墨点水珠,水珠飞出后半径渐隐、自行消失(墨迹飞溅 p1)">飞溅</label><input type="range" id="fxSplatter" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxSplatter">0.00</div></div>
+      <div class="row"><label title="边缘几何作用范围:『整段』=贯穿停留+过渡,全程连续(停留=0 时也能看到);『仅停留』=只在每个状态停留期出现(停留为0时几乎不可见)">范围</label>
+        <select id="efxScope" style="flex:1"><option value="span">整段(含过渡)</option><option value="hold">仅停留</option></select></div>
+      <div class="row"><label title="仅『整段』时限定作用的状态区间(1 基,含两端;留空=全部)。例:2 到 4 = 只在第2~4个状态及其之间的过渡出现。">状态</label>
+        <input type="text" id="efxFrom" style="width:40px" placeholder="1"> 到 <input type="text" id="efxTo" style="width:40px" placeholder="末"></div>
     </div>
     <div class="row">
       <button id="stLeft" title="前移">←</button>
@@ -312,6 +394,7 @@
 
     <div class="divider"></div>
     <div class="sec">③ 引擎(全局)</div>
+    <div class="row"><label class="ck" title="整体剪影变形:把每个状态里【所有矢量图层】先并成一个整体剪影(头/身分离=多条轮廓),再整条轮廓逐点最短路连续变形到下一状态(点数自动统一)。全程连续、绝不散成点阵——适合多个部件组成的图形整体顺滑过渡。走路等【逐肢体/骨骼】动画请【关闭】此项。"><input type="checkbox" id="pSilhouette"> 🌊 整体剪影变形(合并矢量图层·不散点)</label></div>
     <div class="row"><label>匹配</label>
       <select id="pMatch" style="flex:1">
         <option value="ot" selected>最优传输(流动最匀)</option>
@@ -346,30 +429,46 @@
       <label class="ck"><input type="checkbox" id="showFrame" checked> 画幅线</label>
       <label class="ck" title="显示 3D 预览器 🗺同步 过来的投影面布局与车身表面快照 — 画的时候知道哪块区域落在车的哪个面"><input type="checkbox" id="showSkin" checked> 车面</label>
       <label class="ck" title="WebGL2 高分辨率实时预览(3× 内部分辨率,不占主线程);导出始终走 CPU 保确定性"><input type="checkbox" id="useGpu" checked> GPU</label>
+      <label class="ck" title="背景透明:只渲染动画图案,背景色全透明。3D 投影到车身时不会挡住另一侧;PNG 序列导出带 alpha 通道。"><input type="checkbox" id="transBg"> 背景透明</label>
     </div>
+
+    <div class="divider"></div>
+    <div class="sec" title="水墨沉积:全局效果,对所有实心/矢量形状生效,停留与过渡同款。按形状轮廓深度上色 —— 边缘沉积深墨、某一侧更重,内部向背景晕染变淡。">🖋 墨水沉积(水墨)</div>
+    <div class="row"><label class="ck" title="开启后所有实心形状呈水墨质感:边缘深、内部淡、可指定沉重方向"><input type="checkbox" id="inkOn"> 启用墨水沉积</label></div>
+    <div class="row"><label title="整体墨色浓度 / 强度">浓度</label><input type="range" id="inkIntensity" min="0" max="1.5" step="0.05" value="0.6"><div class="val" id="vInkIntensity">0.60</div></div>
+    <div class="row"><label title="墨水沉重的方向(角度):这一侧的边缘沉积最深,像重力/湿画让墨往这边聚。0°=右,90°=下,180°=左,270°=上">方向°</label><input type="range" id="inkAngle" min="0" max="360" step="5" value="90"><div class="val" id="vInkAngle">90</div></div>
+    <div class="row"><label title="边缘沉墨的薄层宽度(指数衰减):越小=只在最边缘一条细线、内部立刻变淡;越大=深墨往内渗得更宽。调小可彻底避免大面积深色块">墨边</label><input type="range" id="inkEdge" min="0.3" max="4" step="0.1" value="1.1"><div class="val" id="vInkEdge">1.1</div></div>
+    <div class="row"><label title="内部晕染:数值越大内部越向背景色淡开(水渍/宣纸洇开的感觉)">晕染</label><input type="range" id="inkBleed" min="0" max="1" step="0.05" value="0.5"><div class="val" id="vInkBleed">0.50</div></div>
+    <div class="row"><label title="方向偏重程度:0=四周均匀深边,1=只有『方向』那一侧显著更重">偏重</label><input type="range" id="inkDir" min="0" max="1" step="0.05" value="0.7"><div class="val" id="vInkDir">0.70</div></div>
+    <div class="row"><label title="内部透明:0=保留原有颜色(内部仍是实色);越大=内部外圈越透明(只留深墨边框,中间镂空露出底下的表面/背景)。做 UV 贴花时把中间挖空、只保留墨边很有用。拉到 1 内部基本全透。">透明</label><input type="range" id="inkClear" min="0" max="1" step="0.05" value="0"><div class="val" id="vInkClear">0.00</div></div>
+    <div class="row"><label title="墨边深浅:与底色无关的深墨目标色。1=近纯黑,0=浅灰。选浅色底时把它调高,墨边依旧是深的(不会像底色一样浅)。">墨深</label><input type="range" id="inkDark" min="0" max="1" step="0.05" value="0.85"><div class="val" id="vInkDark">0.85</div></div>
 
     <div class="divider"></div>
     <div class="sec">⑤ 导出</div>
     <div class="row"><label>预设</label>
       <select id="expPreset" style="flex:1">
-        <option value="480,280">当前画布 480×280</option>
+        <option value="480,480">当前画布 480×480(方)</option>
+        <option value="1080,1080">方形 1080²(高清)</option>
+        <option value="2048,2048" selected>方形 2K 2048²(推荐)</option>
+        <option value="3000,3000">方形 3000²(超清)</option>
+        <option value="4096,4096">方形 4K 4096²(极致·走 PNG 序列)</option>
         <option value="768,64">LED 6模组横排 768×64</option>
-        <option value="384,128" selected>LED 6模组 3×2 384×128</option>
+        <option value="384,128">LED 6模组 3×2 384×128</option>
         <option value="2560,64">LED 20模组横排 2560×64</option>
         <option value="1920,1080">高清 1920×1080</option>
         <option value="custom">自定义…</option>
       </select></div>
     <div class="row">
-      <input type="text" id="expW" value="384" style="width:52px"> ×
-      <input type="text" id="expH" value="128" style="width:52px">
-      <select id="expFit">
-        <option value="stretch" selected>拉伸填满</option>
-        <option value="fit">等比留黑</option>
+      <input type="text" id="expW" value="2048" style="width:52px"> ×
+      <input type="text" id="expH" value="2048" style="width:52px">
+      <select id="expFit" title="等比不变形=保持画布比例(方画布方输出,零变形;比例不同则留黑边);拉伸填满=强行铺满(比例不同会变形,仅 LED 长条屏用)">
+        <option value="fit" selected>等比不变形</option>
+        <option value="stretch">拉伸填满(LED屏)</option>
       </select>
     </div>
     <div class="row"><label>帧率</label><input type="range" id="pFps" min="10" max="60" step="1" value="30"><div class="val" id="vFps">30</div></div>
     <div class="row">
-      <label class="ck" title="内部按 2 倍分辨率渲染再缩回,边缘更细腻(仅 PNG 序列)"><input type="checkbox" id="pSs2x"> 2×超采样</label>
+      <label class="ck" title="抗锯齿:内部按 2 倍分辨率渲染再缩回,边缘更细腻无锯齿(PNG 与 MP4 均生效;输出≥3000px 时自动关闭,分辨率本身已足够)"><input type="checkbox" id="pSs2x" checked> 2×超采样(抗锯齿)</label>
       <label title="轻高斯模糊加亮叠加,LED 发光感(仅 PNG 序列);0=关">辉光</label>
       <input type="range" id="pGlow" min="0" max="1" step="0.05" value="0"><div class="val" id="vGlow">0.00</div>
     </div>

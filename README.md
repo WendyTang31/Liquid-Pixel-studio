@@ -1,87 +1,93 @@
-# Metaball Morph Studio · 点阵形变动画工具
+<div align="center">
 
-An animation editor for **autonomous-vehicle rear LED matrix signals (eHMI)**. Draw shapes / text / vector
-paths, morph smoothly between keyframe states — either as **dot-matrix metaball morphs** or **solid vector
-outline morphs** — and export PNG sequences / MP4 / WebM, or project the animation onto a 3D car model.
+<img src="logo.svg" width="96" alt="Liquid Pixel Studio logo">
 
-Doubles as a research instrument for HRI user testing and an 8/22 Woods-Gerry gallery show.
+# Liquid Pixel Studio
 
-**Aesthetic north star: “Light doesn’t flash; it grows.”** No hard cuts, no strobing. Any 3–30 Hz brightness
-oscillation is a photosensitivity red line and is forbidden.
+**Design liquid, metaball-style motion — then wrap it onto a 3D model.**
+A browser-based keyframe animation tool for designers who *think* in animation and CAD
+but aren't experts in After Effects or Blender.
 
-> Two apps, both built to a single self-contained HTML file each:
-> - `dist/index.html` — the **2D editor**
-> - `dist/viewer.html` — the **3D car-model previewer**
+[**▶ Live demo**](https://wendytang31.github.io/metaball-morph-studio/) · runs in the browser, nothing to install
 
-## Quick start
+![tests](https://img.shields.io/badge/tests-84%20passing-2cc4f5) ![license](https://img.shields.io/badge/license-MIT-2cc4f5) ![runs in](https://img.shields.io/badge/runs%20in-browser-2cc4f5)
+
+</div>
+
+> _Add a short demo GIF here — a shape morphing, the ink / splatter effect, and the 3D projection.
+> For a visual tool it sells the idea better than any paragraph._
+
+---
+
+## What it is
+
+Liquid Pixel Studio is a **state‑machine animation editor**. You draw shapes as **states** (keyframes);
+the tool interpolates between them with liquid **metaball** and **vector‑morph** motion, dot‑dissolves,
+ink washes and edge effects. You can then **project the finished animation onto a 3D model** (a car, a
+product, anything with a mesh) and preview it live — no render farm, no plugins.
+
+Everything runs **client‑side**: your work stays in your browser (autosave + savable project files),
+and publishing is just static hosting.
+
+## Who it's for
+
+- **Product / mobility / motion designers** who understand keyframes, easing and UV mapping conceptually,
+  but don't want the full AE + Blender learning curve just to make one looping graphic.
+- **HMI / signage / LED artists** who need a looping animated graphic mapped onto a physical surface.
+- **Anyone** who wants organic "liquid pixel" motion — blobs merging, ink spreading — without writing shaders.
+
+## How to use it
+
+1. **Draw a state.** Pick a tool on the left (▭ rect, ◯ ellipse, ✎ pen) and draw on the canvas — this is keyframe 1.
+2. **Add the next state.** Click **+ New State**, then move / redraw the shapes for keyframe 2. The tool animates between them.
+3. **Choose how it moves** (right panel, per shape):
+   - **In ← / Out →** — how each shape arrives and leaves: **vector morph**, **dot dissolve**, or **cut** (no anim).
+   - **Constraint** — *self only* (morph to itself), *free* (morph to any nearby shape), *linked* (a chosen group
+     morphs together), or *freeze* (never moves).
+4. **Style it.** Dynamic Geometry (slosh / ripple / jagged / splatter), Ink Deposit (edge ink + bleed),
+   stroke vs fill, colors, per‑state camera and in‑state loops (blink / walk).
+5. **Preview.** Hit **▶ Preview** to loop the whole sequence.
+6. **Put it on a 3D model.** **🚗 3D Preview** → load a `.glb` (or use the demo car) → project via **🧩 UV map**
+   (Blender unwrap) or **🌀 Wrap** (cylindrical). Dim the model's own texture with **Model tex** so your animation reads.
+7. **Save / export.** **💾 Save** a project file, or export **PNG sequence / MP4 / WebM**. Drag a saved `.json`
+   back onto the editor to reopen it.
+
+Language: switch **EN · 中 · 한** in the top‑left tab. Photosensitivity‑safe by design — motion *grows*, it never
+strobes (all oscillation is held ≤ 2.5 Hz).
+
+## Run locally
 
 ```bash
 npm install
-npm run dev        # dev server on http://localhost:5173  (PORT=xxxx npm run dev if busy)
-npm run build      # builds dist/index.html + dist/viewer.html (double-clickable)
-npm test           # 76 pure-function assertions (node --test)
+npm run dev      # editor on http://localhost:5173
+npm run build    # static dist/  (index.html + viewer.html)
+npm test         # 84 unit tests
 ```
 
-Runtime deps: `jszip` (PNG zip), `three` (3D), `mp4-muxer` (MP4). Vanilla JS ES modules, no framework.
+The build is fully static — host `dist/` on **GitHub Pages / Cloudflare Pages / Netlify** for free.
 
-## What it does
+## Under the hood
 
-### 2D editor (`dist/index.html`)
-- **Shapes**: rectangle, ellipse, text, and an **AE-style Bézier pen** (click = corner, click-drag = smooth
-  handles, click-start / Enter / double-click = close; edit anchors & handles, Alt breaks handle symmetry).
-- **Two morph styles, per shape** (「动画」selector):
-  1. **Dot-ink dissolve** — the classic metaball morph: shapes break into dots that fly and reform.
-  2. **Vector / puppet morph** — keyframe a shape, move its control points in the next keyframe, and the
-     outline deforms along the shortest path per point (small, coherent — like AE’s puppet/path keyframing),
-     filled solid the whole way (no dots).
-- **🧱 Solid fill** — crisp vector edges (SDF), dissolving to dots in transitions.
-- **Layers panel + real timeline** (AE-style): reorder / rename / hide / lock; segment bars ∝ duration,
-  drag to scrub, drag edges to retime, double-click to edit a state.
-- **Precision tools**: multi-select, align / distribute / equal-size / mirror / numeric array; persistent
-  constraints (gap / equal / center / mirror to centerlines); CAD-style dimension annotations; snapping.
-- **Per-state animation**: 📷 virtual camera (pan/zoom/rotate), 🔁 in-state loops (blink / walk),
-  🌊 dynamic geometry (slosh / spring / liquid-line / ripple / twinkle, all ≤ 2.5 Hz for safety).
-- **Canvas zoom/pan** with viewport rendering — vector data stays crisp at any zoom, constant cost.
-- **Image import** (Otsu / halftone / colour k-means), image-sequence batch import, Ctrl+C/V across states,
-  autosave, 🌐 中/English toggle.
-- **Export**: PNG sequence (zip), 🎬 MP4 (WebCodecs H.264, deterministic offline), WebM recording. Preview
-  and export share the exact same `sampleFrame`, so what you see is what you export.
+Vanilla JS + HTML canvas for the 2D engine (metaball fields, SDF solids, vector / puppet morphing),
+**Three.js** for the 3D projection viewer, **Vite** for bundling. No framework, no backend.
 
-### 3D previewer (`dist/viewer.html`)
-Project the animation onto a car GLB via three modes: ① **Decal** (click-place, gumball manipulate),
-② **🌀 Wrap** (continuous cylindrical skin), ③ **🧩 UV map** (Blender-unwrap workflow). Plus paint/erase
-brushes, region cutter for running an animation across body panels, camera view controls, and Blender GLB export.
+The engine (`src/engine.js#sampleFrame`) is **pure** — any frame is computed from scratch at time `g`, which
+is what makes the timeline scrubbable and **preview identical to export**. Serializable state never holds
+canvas objects; project files stay backward‑compatible.
 
-## Architecture (the iron rules)
-
-- **The engine is pure.** `src/engine.js#sampleFrame(SEQ, states, g, time, P)` can be evaluated at any global
-  time `g` from scratch — this is what makes the timeline scrubbable, exports deterministic, and preview ==
-  export. Never add hidden state to it.
-- **Data layer vs canvas objects are separate.** Serializable state (states/shapes) never holds canvas/ctx.
-- **Project files stay backward-compatible** (reads v3 A/B and v4 states).
-- **Performance red line**: solids/vectors are CPU per-pixel fields; crisp zoom comes from *viewport
-  rendering* (render only the visible region), never from a bigger buffer.
-
-### Source map
 ```
 src/
-  config.js      W/H, global params P, SDF resolution
-  engine.js      pure: pairing, easing, sampleFrame, sequence, camera, loops, behaviors, morphLayers
-  samplers.js    dot samplers + distanceField
-  render.js      CPU tile field renderer (+ viewport view={z,ox,oy}) + solid SDF sampler
-  render-gl.js   WebGL2 preview renderer
-  vector.js      AE linked-layer / vector-outline & puppet morph
-  pipeline.js    shapes → mask → dots / SDF (the only shapes↔canvas crossing)
-  constraints.js persistent geometric constraints (gap/equal/center/mirror)
-  path.js        Bézier + smooth path fill, RDP, bbox
+  engine.js      pure: pairing, easing, sampleFrame, sequence, camera, loops
+  vector.js      vector / puppet morph, constraints (self/linked/free/freeze)
+  render.js      CPU tile field renderer + solid SDF sampler + ink deposit
+  edgefx.js      edge geometry (fine wave / jagged / splatter)
+  pipeline.js    shapes → mask → dots / SDF
   state.js       data model, undo/redo, project serialize
   export.js      PNG zip / MP4 / WebM
-  image.js, shapes.js, sequence.js, store.js, utils.js, i18n.js, autosave.js
-  ui/            toolbar, layers, timeline, inspector, filmstrip, stage, arrange, skinRef, imageImport
-  viewer/main3d.js   the 3D car previewer
+  ui/            toolbar, layers, timeline, inspector, stage, arrange, skinRef
+  viewer/main3d.js   the 3D model previewer
 ```
 
-## Docs
-- `Claude.md` — project charter / spec (read first).
-- `PROGRESS.md` — current progress snapshot & roadmap (read second; for new sessions/collaborators).
-- Git log — one detailed commit per feature.
+## License
+
+[MIT](LICENSE) © 2026 Wendy Tang

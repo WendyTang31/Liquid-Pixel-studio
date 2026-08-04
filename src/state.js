@@ -24,6 +24,7 @@ export function makeState(name,color){
 export const serializeStates=()=>store.states.map(s=>({id:s.id,name:s.name,color:s.color,hold:s.hold,dur:s.dur,
   trans:JSON.parse(JSON.stringify(s.trans||{})), cam:s.cam?{...s.cam}:undefined,
   isPose:s.isPose||undefined, loop:s.loop?{...s.loop}:undefined, solid:s.solid||undefined,
+  clip:s.clip?{...s.clip}:undefined,
   fx:(s.fx&&Object.keys(s.fx).length)?{...s.fx}:undefined,
   guides:s.guides?.length?JSON.parse(JSON.stringify(s.guides)):undefined,
   shapes:JSON.parse(JSON.stringify(s.shapes)), manual:JSON.parse(JSON.stringify(s.manual))}));
@@ -39,7 +40,7 @@ export function hydrate(data){
     const s=makeState(d.name,d.color);
     Object.assign(s,{id:d.id,hold:d.hold,dur:d.dur,shapes:d.shapes,manual:d.manual,
       trans:d.trans||{}, cam:d.cam||null, isPose:d.isPose||false, loop:d.loop||null,
-      fx:d.fx||{}, guides:d.guides||[]});
+      fx:d.fx||{}, guides:d.guides||[], clip:d.clip||null});
     // 兼容:上一版是"状态级实心",迁移为逐形状 solidFill(rasterize 会重推导 s.solid)
     if(d.solid) s.shapes.forEach(sh=>{ if(sh.bool!=='sub') sh.solidFill=true; });
     return s;
@@ -47,6 +48,7 @@ export function hydrate(data){
   store.stateId=Math.max(1,...store.states.map(s=>s.id))+1;
   store.shapeId=Math.max(1,...store.states.flatMap(s=>s.shapes.map(sh=>sh.id||0)))+1;
   store.layerSeq=Math.max(0,...store.states.flatMap(s=>s.shapes.map(sh=>sh.layerId||0))); // 关联图层号续接,防冲突
+  store.clipSeq=Math.max(0,...store.states.map(s=>s.clip?.id||0)); // 片段号续接,防冲突
   store.active=Math.min(data.active??0, store.states.length-1);
   store.sel=null; updateSelBox();
   store.states.forEach(s=>{rasterize(s); resample(s);});
@@ -77,12 +79,31 @@ export function redo(){ if(!store.redoStack.length){setHint('没有可重做的�
   store.undoStack.push(snapshot()); hydrate(store.redoStack.pop());
   setHint('↪ 已重做'); }
 
+// 3D 投影面布局随工程一起存:3D 预览器把每块投影面(位置/大小/旋转/取景框/所属车面 meshIdx/
+// 擦除蒙版/车身上色)写在 localStorage['morph3d-view'],UV 取景写在 ['morph-uvlayout']。
+// 保存工程时把这两块快照进 JSON,打开时再写回 localStorage —— 于是"哪块动画贴在车的哪个面、多大、
+// 在哪"随工程一并保存,不再只剩当前会话的临时状态。(车模 .glb 仍需按原流程载入,布局按 meshIdx 对位恢复。)
+function read3dView(){
+  const out={};
+  try{ const v=localStorage.getItem('morph3d-view'); if(v) out.view3d=JSON.parse(v); }catch(_){}
+  try{ const u=localStorage.getItem('morph-uvlayout'); if(u) out.uvlayout=JSON.parse(u); }catch(_){}
+  return out;
+}
+export function restore3dView(data){
+  try{ if(data.view3d) localStorage.setItem('morph3d-view', JSON.stringify(data.view3d)); }catch(_){}
+  try{ if(data.uvlayout) localStorage.setItem('morph-uvlayout', JSON.stringify(data.uvlayout)); }catch(_){}
+}
+
 export function saveProject(){
+  const v=read3dView();
+  const nDecal=v.view3d?.decals?.length||0;
   downloadBlob(new Blob([JSON.stringify(
-    {version:4, states:serializeStates(), active:store.active, params:P}, null, 2)],
+    {version:4, states:serializeStates(), active:store.active, params:P,
+     view3d:v.view3d, uvlayout:v.uvlayout}, null, 2)],
     {type:'application/json'}),
     `morph-project-${new Date().toISOString().slice(0,10)}.json`);
-  setHint('✓ 工程已保存,下次 📂 打开继续');
+  setHint(nDecal? `✓ 工程已保存(含 ${nDecal} 块 3D 投影面的位置/大小/所属车面),下次 📂 打开继续`
+                : '✓ 工程已保存,下次 📂 打开继续');
 }
 
 export function loadProject(data){
@@ -99,7 +120,10 @@ export function loadProject(data){
         {id:2,name:'状态 2',color:cB,hold:1,dur:3,shapes:data.B?.shapes||[],manual:data.B?.manual||[]},
       ], active:0});
     } else throw new Error('无法识别的格式');
+    restore3dView(data); // 3D 投影面布局写回 localStorage,供 3D 预览器恢复
     syncUI(); setMode('play');
-    setHint('✓ 工程已载入');
+    const nDecal=data.view3d?.decals?.length||0;
+    setHint(nDecal? `✓ 工程已载入(含 ${nDecal} 块 3D 投影面布局 — 打开「3D 预览」载入同一车模即恢复位置)`
+                  : '✓ 工程已载入');
   }catch(err){ setHint('⚠ 工程文件解析失败:'+err.message); }
 }

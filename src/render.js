@@ -9,8 +9,8 @@ import { camPtInv } from './engine.js';
 
 const TS=24; // tile 边长
 
-// ── 实心场采样(solid 显示):SDF(2× 分辨率,chamfer 3≈1 SDF 像素)→ 场值。──
-// 边缘软度按逻辑约 1.2px:2× SDF 下 = 1.2·SDFSC·3 chamfer;SDF 越高分辨率边缘越细腻。
+// ── 实心场采样(solid 显示):SDF(SDFSC× 分辨率,chamfer 3≈1 SDF 像素)→ 场值。──
+// 边缘软度按逻辑约 1.2px = 1.2·SDFSC·3 chamfer(随 SDFSC 缩放,软度恒定);SDF 越高分辨率边缘越细腻。
 const SEDGE=3*1.2*SDFSC; // chamfer 单位(随 SDF 分辨率缩放)
 function bilin(D,x,y){
   const x0=Math.max(0,Math.min(SDFW-2,x|0)), y0=Math.max(0,Math.min(SDFH-2,y|0));
@@ -20,15 +20,44 @@ function bilin(D,x,y){
 }
 // 目标像素 → 源画布像素(经逆镜头)→ 各实心场加权求和(单位:thr 的倍数)。
 // invX/invY 把目标像素映射回归一化画布坐标(处理 stretch/fit 与任意分辨率)。SDF 为 2× 分辨率。
+// 动态几何位移场的粗网格缓存:behaviorDisp 是平滑场,预采样 GW×GH 一次、逐像素双线性插值,
+// 把每帧的三角函数量从"每像素一次"降到"每格一次"(~百万→几百),消除加了动态几何后的卡顿。
+const GW=41, GH=25;
+function buildWarpGrid(warp){
+  const g=new Float32Array(GW*GH*3);
+  for(let j=0;j<GH;j++) for(let i=0;i<GW;i++){ const d=warp(i/(GW-1), j/(GH-1));
+    const o=(j*GW+i)*3; g[o]=d.dx; g[o+1]=d.dy; g[o+2]=d.rf; }
+  return g;
+}
+function sampleWarp(g, u, v){
+  const fx=u<0?0:u>1?GW-1:u*(GW-1), fy=v<0?0:v>1?GH-1:v*(GH-1);
+  const x0=fx|0, y0=fy|0, x1=x0<GW-1?x0+1:x0, y1=y0<GH-1?y0+1:y0, tx=fx-x0, ty=fy-y0;
+  const i00=(y0*GW+x0)*3, i10=(y0*GW+x1)*3, i01=(y1*GW+x0)*3, i11=(y1*GW+x1)*3;
+  const L=(a,b,c,d,o)=>{ const t=(g[a+o]*(1-tx)+g[b+o]*tx), u2=(g[c+o]*(1-tx)+g[d+o]*tx); return t*(1-ty)+u2*ty; };
+  return [L(i00,i10,i01,i11,0), L(i00,i10,i01,i11,1), L(i00,i10,i01,i11,2)];
+}
 function makeSolidSampler(solids, cam, invX, invY, thr){
   if(!solids||!solids.length) return null;
+  const anyWarp=solids.some(s=>s.warp); // 动态几何(停留期):位移场 warp(u,v)→{dx,dy,rf},实心整体随之晃动
+  const grids = anyWarp ? solids.map(s=>s.warp?buildWarpGrid(s.warp):null) : null; // 每帧预算一次粗网格
   return (x,y)=>{
     let u=invX(x,y), v=invY(x,y);
     if(cam){ const p=camPtInv(u,v,cam); u=p[0]; v=p[1]; }
-    const sx=u*SDFW, sy=v*SDFH;
-    if(sx<-1||sy<-1||sx>SDFW||sy>SDFH) return 0;
+    if(!anyWarp){ // 快路径:无形变,单次坐标 + 边界判定
+      const sx=u*SDFW, sy=v*SDFH;
+      if(sx<-1||sy<-1||sx>SDFW||sy>SDFH) return 0;
+      let f=0;
+      for(const s of solids) f+=s.w*Math.min(8, bilin(s.sdf,sx,sy)/SEDGE);
+      return f*thr;
+    }
     let f=0;
-    for(const s of solids) f+=s.w*Math.min(8, bilin(s.sdf,sx,sy)/SEDGE);
+    for(let k=0;k<solids.length;k++){ const s=solids[k];
+      let su=u, sv=v, rf=1;
+      if(grids[k]){ const d=sampleWarp(grids[k], u, v); su=u-d[0]; sv=v-d[1]; rf=d[2]; } // 逆向采样 → 形体整体位移
+      const sx=su*SDFW, sy=sv*SDFH;
+      if(sx<-1||sy<-1||sx>SDFW||sy>SDFH) continue;
+      f+=s.w*Math.min(8, bilin(s.sdf,sx,sy)/SEDGE)*rf;
+    }
     return f*thr;
   };
 }
@@ -47,7 +76,15 @@ function packColors(balls, col){
 }
 
 // 场求值 + 出像素。bx/by 已是目标像素坐标,br2 是半径平方(像素),bins 复用清零。
-function fieldLoop(d, EW, EH, tc, tr, bins, bx, by, br2, n, col, bg, P, cols, solidSamp){
+// 墨水沉积参数(从 P.ink 预算 sin/cos)。null = 关闭。
+function inkParams(P){
+  const k=P.ink; if(!k||!k.on||!(k.intensity>0)) return null;
+  const a=(k.angle||90)*Math.PI/180;
+  return { intensity:k.intensity, cosA:Math.cos(a), sinA:Math.sin(a),
+    edge:Math.max(0.3,k.edge||2.6), bleed:k.bleed||0, dir:k.dir==null?0.7:k.dir, clear:k.clear||0,
+    dark:Math.round(255*(1-(k.dark==null?0.85:k.dark))) }; // 墨边目标色(0.85→约 38,近黑;与底色无关)
+}
+function fieldLoop(d, EW, EH, tc, tr, bins, bx, by, br2, n, col, bg, P, cols, solidSamp, ink){
   for(const b of bins) b.length=0;
   for(let i=0;i<n;i++){
     const r=Math.sqrt(br2[i]), cut=Math.max(r*6,14);
@@ -78,8 +115,27 @@ function fieldLoop(d, EW, EH, tc, tr, bins, bx, by, br2, n, col, bg, P, cols, so
       }
       let a=(f-lo)*inv; a=a<0?0:(a>1?1:a); a=a*a*(3-2*a);
       if(P.gamma!==1) a=Math.pow(a,P.gamma);
-      const R=cols&&f>1e-9?cr/f:col[0], G=cols&&f>1e-9?cg/f:col[1], B=cols&&f>1e-9?cb/f:col[2];
-      d[k++]=R*a+bg[0]*(1-a); d[k++]=G*a+bg[1]*(1-a); d[k++]=B*a+bg[2]*(1-a); d[k++]=255;
+      let R=cols&&f>1e-9?cr/f:col[0], G=cols&&f>1e-9?cg/f:col[1], B=cols&&f>1e-9?cb/f:col[2];
+      let alphaMul=1;
+      if(ink && a>0.006){ // 🖋 墨水沉积:边缘沉深墨(angle 侧更重),内部向背景晕染变淡 / 变透明
+        let depth=f-P.thr; if(depth<0)depth=0;
+        // 指数衰减 rim:墨只在【贴边缘】一薄层浓,向内快速淡去 —— 不再是"边缘一圈均匀死黑大色块"。
+        const rim=Math.exp(-depth/ink.edge), rimI=1-rim; // rim:1=贴边→0=深处;rimI 反之
+        const px=x/EW-0.5, py=y/EH-0.5;
+        let dir=0.5+(px*ink.cosA+py*ink.sinA)*1.4; dir=dir<0?0:(dir>1?1:dir); // angle 那一侧→1
+        const heavy=Math.min(0.95, rim*(0.5+ink.dir*dir)*ink.intensity);      // 边缘沉积浓度
+        const washBg=rimI*ink.bleed;                                          // 内部向背景色晕染变淡
+        R+=(bg[0]-R)*washBg; G+=(bg[1]-G)*washBg; B+=(bg[2]-B)*washBg;
+        // 边缘向【深墨色 ink.dark】混合(不是按底色比例压暗)→ 底色再浅,墨边依旧深
+        R+=(ink.dark-R)*heavy; G+=(ink.dark-G)*heavy; B+=(ink.dark-B)*heavy;
+        if(ink.clear){ const cA=Math.min(1, rimI*2.5); alphaMul=1 - ink.clear*cA; } // 内部镂空(背景透明由 transBg 统一处理)
+      }
+      // 🫧 背景透明(P.transBg):alpha=形状覆盖度 → 只有动画图案,背景/画布色全透(投影到车上不再挡另一侧)。
+      // 直通形状色(不合成背景),边缘按覆盖度羽化,叠加墨水镂空(alphaMul)。
+      const outA = P.transBg ? a*alphaMul : alphaMul;
+      if(P.transBg){ d[k++]=R; d[k++]=G; d[k++]=B; }
+      else { d[k++]=R*a+bg[0]*(1-a); d[k++]=G*a+bg[1]*(1-a); d[k++]=B*a+bg[2]*(1-a); }
+      d[k++]=outA>=0.999?255:(outA<=0?0:(outA*255)|0);
     }
   }
 }
@@ -95,7 +151,7 @@ export function createPreviewRenderer(ctx){
     for(let i=0;i<n;i++){ bx[i]=balls[i].x*W; by[i]=balls[i].y*H;
       const r=balls[i].r*W; br2[i]=r*r; }
     const ss=makeSolidSampler(solids, cam, x=>x/W, (x,y)=>y/H, P.thr);
-    fieldLoop(img.data, W,H, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col), ss);
+    fieldLoop(img.data, W,H, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col), ss, inkParams(P));
     ctx.putImageData(img,0,0);
   };
 }
@@ -116,7 +172,7 @@ export function createSizedRenderer(ctx, EW, EH){
     for(let i=0;i<n;i++){ bx[i]=(balls[i].x-ox)*z*EW; by[i]=(balls[i].y-oy)*z*EH;
       const r=balls[i].r*W*rScale*z; br2[i]=r*r; }
     const ss=makeSolidSampler(solids, cam, x=>ox+x/(EW*z), (x,y)=>oy+y/(EH*z), P.thr);
-    fieldLoop(img.data, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col), ss);
+    fieldLoop(img.data, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col), ss, inkParams(P));
     ctx.putImageData(img,0,0);
   };
 }
@@ -137,6 +193,6 @@ export function renderToImageData(ectx, EW, EH, balls, col, P, solids, cam){
   for(let i=0;i<n;i++){ bx[i]=mapX(balls[i].x); by[i]=mapY(balls[i].y);
     const r=balls[i].r*W*rScale; br2[i]=r*r; }
   const ss=makeSolidSampler(solids, cam, invX, invY, P.thr);
-  fieldLoop(d, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col), ss);
+  fieldLoop(d, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col), ss, inkParams(P));
   ectx.putImageData(eimg,0,0);
 }

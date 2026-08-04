@@ -18,7 +18,9 @@ import { setMode } from './ui/stage.js';
 function makeOfflineRenderer(EW, EH){
   const ec=document.createElement('canvas'); ec.width=EW; ec.height=EH;
   const ectx=ec.getContext('2d');
-  const ss=P.ss2x?2:1;
+  // 抗锯齿超采样:2× 内部渲染再缩回。但输出已很大时(≥3000px)关掉 —— 6000px+ 的内部画布内存/耗时太大,
+  // 且此分辨率下 SDF 软边本身已提供干净抗锯齿。既保证"无噪边",又不至于超大导出时爆内存。
+  const ss=(P.ss2x && Math.max(EW,EH)*2<=6000)?2:1;
   const big=document.createElement('canvas'); big.width=EW*ss; big.height=EH*ss;
   const bctx=big.getContext('2d');
   const glowCv=document.createElement('canvas'); glowCv.width=EW; glowCv.height=EH;
@@ -26,7 +28,7 @@ function makeOfflineRenderer(EW, EH){
   function drawFrame(f){
     const g=f/P.fps;
     const fr=sampleFrame(store.SEQ, store.states, g, g, P); // g 同时作墙钟 → 导出确定
-    const solids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(store.states, store.SEQ, g)));
+    const solids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P)));
     if(ss===2){ renderToImageData(bctx,EW*2,EH*2,fr.balls,fr.col,P,solids,fr.cam); ectx.drawImage(big,0,0,EW,EH); }
     else renderToImageData(ectx,EW,EH,fr.balls,fr.col,P,solids,fr.cam);
     if(P.glow>0){

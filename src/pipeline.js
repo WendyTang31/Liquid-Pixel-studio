@@ -5,7 +5,8 @@ import { P } from './config.js';
 import { store } from './store.js';
 import { $, FONT, hex2rgb } from './utils.js';
 import { SAMPLERS, sampleDots, samplePtsFit, distanceField } from './samplers.js';
-import { fillSmoothClosedPath, traceShapePath } from './path.js';
+import { fillSmoothClosedPath, traceShapePath, traceContour, traceComponents, rdpSimplify, pathBBox } from './path.js';
+import { hasRig, poseShapes } from './rig.js';
 import { binarize, grayscaleize, quantizeColors } from './image.js';
 import { solveConstraints } from './constraints.js';
 
@@ -49,10 +50,30 @@ export function paintShapes(c, shapes, colorCtx=null){
   if(colorCtx) colorCtx.clearRect(0,0,W,H);
   for(const sh of shapes){
     c.fillStyle=sh.bool==='add'?'#fff':'#000';
-    if(sh.type==='rect') c.fillRect(sh.x,sh.y,sh.w,sh.h);
+    // 🖊 描边模式(sh.strokeW>0,仅 add):只画轮廓成【实体路径带】(不是填充,也不是点)——
+    // 画进蒙版后由 SDF 实心渲染,得到干净的描边线。挖除(sub)始终填充,不描边。
+    const strokeW=(sh.bool==='add' && sh.strokeW>0) ? sh.strokeW : 0;
+    if(strokeW){ c.strokeStyle=c.fillStyle; c.lineWidth=strokeW; c.lineJoin='round'; c.lineCap='round'; }
+    if(sh.type==='rect'){ if(strokeW) c.strokeRect(sh.x,sh.y,sh.w,sh.h); else c.fillRect(sh.x,sh.y,sh.w,sh.h); }
     else if(sh.type==='ellipse'){ c.beginPath();
-      c.ellipse(sh.x+sh.w/2,sh.y+sh.h/2,sh.w/2,sh.h/2,0,0,7); c.fill(); }
-    else if(sh.type==='path'){ if(traceShapePath(c,sh)) c.fill(); }
+      c.ellipse(sh.x+sh.w/2,sh.y+sh.h/2,sh.w/2,sh.h/2,0,0,7); if(strokeW) c.stroke(); else c.fill(); }
+    else if(sh.type==='path'){ if(traceShapePath(c,sh)){ if(strokeW) c.stroke(); else c.fill(); } }
+    else if(sh.type==='image' && strokeW){
+      // 照片描边:取其二值剪影的轮廓,描成实体路径线(不填充照片内部)
+      if(!sh._img) continue;
+      const tw=Math.max(1,Math.round(sh.w)), th=Math.max(1,Math.round(sh.h));
+      const tmp=document.createElement('canvas'); tmp.width=tw; tmp.height=th;
+      const tctx=tmp.getContext('2d',{willReadFrequently:true});
+      tctx.drawImage(sh._img,0,0,tw,th);
+      const id=tctx.getImageData(0,0,tw,th);
+      binarize(id.data,{threshold:sh.threshold, invert:sh.invert, useAlpha:sh.useAlpha, addColor255:true});
+      const md=id.data, on=(x,y)=> md[(y*tw+x)*4+3]>127;
+      c.strokeStyle=c.fillStyle; c.lineWidth=strokeW; c.lineJoin='round'; c.lineCap='round';
+      for(const cc of traceComponents(on, tw, th)){ c.beginPath();
+        c.moveTo(sh.x+cc[0][0], sh.y+cc[0][1]);
+        for(let i=1;i<cc.length;i++) c.lineTo(sh.x+cc[i][0], sh.y+cc[i][1]);
+        c.closePath(); c.stroke(); }
+    }
     else if(sh.type==='image'){
       if(!sh._img) continue; // 尚未解码完成(工程刚打开/撤销刚发生),跳过这一帧,解码完会再刷一次
       const tw=Math.max(1,Math.round(sh.w)), th=Math.max(1,Math.round(sh.h));
@@ -109,16 +130,18 @@ export function paintShapes(c, shapes, colorCtx=null){
 // 光栅化一个状态:形状 → 蒙版,并刷新幽灵与缩略图。
 // 实心状态同步重算蒙版距离场(_sdf,运行时字段不入档)—— 实心渲染的边缘数据源。
 export function rasterize(s){
-  paintShapes(s.mctx, s.shapes);
+  s._sil=null; // 形状有改动 → 作废整体剪影缓存(见 vector.stateSilhouette)
+  const shapes = hasRig(s.shapes) ? poseShapes(s.shapes) : s.shapes; // 🦴 骨骼:蒙版/SDF 用摆好姿势后的世界点
+  paintShapes(s.mctx, shapes);
   // 🧱 实心是逐形状选项(sh.solidFill):SDF 由实心形状(含矢量图层,带全部 sub)构成。
   // 矢量图层也进 SDF —— 停留/未配对过渡时按实心显示(轮廓变形仅在相邻同 layerId 时接管)。
-  const subs=s.shapes.filter(sh=>sh.bool==='sub');
-  const solids=s.shapes.filter(sh=>(sh.solidFill||sh.layerId)&&sh.bool!=='sub'&&!sh.hidden);
+  const subs=shapes.filter(sh=>sh.bool==='sub');
+  const solids=shapes.filter(sh=>(sh.solidFill||sh.layerId||sh.strokeW>0)&&sh.bool!=='sub'&&!sh.hidden);
   s.solid=solids.length>0;
   s._sdf = s.solid ? shapesSdf([...solids, ...subs]) : null;
   // _sdfBase = 不含矢量图层的实心 SDF:过渡"实心淡出窗口"只作用于它 —— 矢量图层由轮廓变形独占,
   // 避免过渡时旧关键帧位置留下淡出残影(卡顿/噪音感)。
-  const base=s.shapes.filter(sh=>sh.solidFill&&!sh.layerId&&sh.bool!=='sub'&&!sh.hidden);
+  const base=shapes.filter(sh=>sh.solidFill&&!sh.layerId&&sh.bool!=='sub'&&!sh.hidden);
   s._sdfBase = base.length ? shapesSdf([...base, ...subs]) : null;
   tintGhost(s); updateThumb(s);
 }
@@ -134,6 +157,25 @@ export function shapesSdf(shapes){
   const d=_sdfCtx.getImageData(0,0,SDFW,SDFH).data;
   const on=(x,y)=> x>=0&&y>=0&&x<SDFW&&y<SDFH && d[(y*SDFW+x)*4]>127;
   return distanceField(on, SDFW, SDFH);
+}
+
+// 🔗 融合:把多个图形的【并集】描成一个矢量 path(直线折点 → 尖角清晰,如三角+矩形→箭头)。
+// 并集光栅化到 W×H 蒙版 → 摩尔邻域描出最外轮廓 → RDP 精简 → bezier:true 无柄(=直线相接)path。
+// 返回新 path 形状(未入 shapes,由调用方替换原图形);无可并实心区域 → null。
+const _mergeC=document.createElement('canvas'); _mergeC.width=W; _mergeC.height=H;
+const _mergeCtx=_mergeC.getContext('2d',{willReadFrequently:true});
+export function mergeShapesToPath(targets){
+  if(!targets||targets.length<2) return null;
+  paintShapes(_mergeCtx, targets.map(sh=>({...sh, bool:'add'}))); // 一律并入(忽略挖除)
+  const d=_mergeCtx.getImageData(0,0,W,H).data;
+  const on=(x,y)=> x>=0&&y>=0&&x<W&&y<H && d[(y*W+x)*4]>127;
+  const c=traceContour(on, W, H);
+  if(!c) return null;
+  const pts=rdpSimplify(c.map(([x,y])=>({x,y})), 1.5);
+  if(pts.length<3) return null;
+  const bb=pathBBox(pts);
+  return {id:store.shapeId++, type:'path', points:pts, bezier:true, // 无 hIn/hOut = 尖角直线
+    x:bb.x, y:bb.y, w:bb.w, h:bb.h, bool:'add', solidFill:true};
 }
 
 // 幽灵:半透明染色版蒙版,编辑时叠加做洋葱皮/参考。
@@ -172,6 +214,7 @@ const _scActx=_scA.getContext('2d',{willReadFrequently:true});
 // 覆盖形状各自单独光栅化(带全部 sub 形状)后用自己的采样器/点数取点;其余走全局设置。
 // 编辑器 resample 与 3D 预览器共用,保证两端 dots 一致。
 export function stateDots(shapes, manual, Pp){
+  if(hasRig(shapes)) shapes=poseShapes(shapes); // 🦴 骨骼:先摆好姿势(点变到世界坐标)再采样
   shapes=shapes.filter(sh=>!sh.hidden);
   const hasOv=sh=>sh.sampler||sh.count||(sh.rscale&&Math.abs(sh.rscale-1)>0.01);
   const subs=shapes.filter(sh=>sh.bool==='sub');

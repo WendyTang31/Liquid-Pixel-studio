@@ -4,6 +4,7 @@
 export const store = {
   states:[], active:0, sel:null,   // 状态序列 / 当前编辑索引 / 当前选中形状(主选中)
   selMulti:[],                     // 多选集合(Shift+点选 / 框选;排列工具的作用对象)
+  selStates:[],                    // 关键帧多选(胶片条 Shift+点选;复制/粘贴/整体缩放移动的作用对象)
   stateId:1, shapeId:1,            // 自增 id 分配器
   mode:'edit', playing:false,      // edit | play;play 下是否在走时间
   g:0, clock:0, last:0,            // 序列时间 / 单调墙钟(驱动漂移)/ 上帧时刻
