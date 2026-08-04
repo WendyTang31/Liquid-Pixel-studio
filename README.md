@@ -56,6 +56,50 @@ and publishing is just static hosting.
 Language: switch **EN · 中 · 한** in the top‑left tab. Photosensitivity‑safe by design — motion *grows*, it never
 strobes (all oscillation is held ≤ 2.5 Hz).
 
+## Keyboard & mouse shortcuts
+
+Nothing here is required — every action also has a button — but these make the workflow fast.
+
+### 2D editor — tools & keys
+
+| Key | Action |
+|---|---|
+| `V` | Select / move tool |
+| `R` | Rectangle · `E` Ellipse · `T` Text · `D` Dot · `P` Pen |
+| `Ctrl / ⌘ + Z` | Undo · `Ctrl / ⌘ + Shift + Z` (or `Ctrl + Y`) Redo |
+| `Ctrl / ⌘ + C` / `V` | Copy / paste selected shapes — paste works in **any** state or layer |
+| `Delete` / `Backspace` | Delete selected shape — *or*, if control points are selected, delete just those anchors (keeps ≥ 3) |
+| `Esc` | Deselect all · cancel the pen mid‑draw |
+| `← ↑ → ↓` | Nudge selection 1 px · **`Shift` + arrow** = 10 px |
+| `Enter` | Finish / close the current pen path · **`Esc`** cancels it |
+| `F` | Fit the car‑face reference to its UV island · **`Shift + F`** restores the full UV *(when the skin overlay is on and a face is selected)* |
+
+### 2D editor — mouse & double‑click
+
+| Gesture | Action |
+|---|---|
+| **Scroll wheel** | Zoom to cursor |
+| **Middle‑drag** or **hold `Space` + drag** | Pan the canvas |
+| **Double‑click** a circle / rectangle | Convert it to an **editable path** (unlocks anchors, curves, rigging) |
+| **Double‑click** a path **anchor** | Delete it — on a bézier path, a *smooth* anchor first flips to a **corner**, a *corner* anchor flips to **smooth** (adds handles) |
+| **Double‑click** an outline **segment** | Insert a new anchor there |
+| **Right‑click** a shape / path | Context menu: show all curve handles · select all control points (for whole‑rig moves) · convert to path |
+| **`Shift` + click** a filmstrip frame | Range‑select keyframes (for copy / paste / group move / scale) |
+| **`Shift` + drag** a single anchor | Snap‑align to other anchors' vertical / horizontal / centre |
+| **`Shift` + click** an anchor | Add / remove it from the control‑point selection |
+| **`Shift`** while resizing | Proportional (locks aspect ratio) · **`Shift`** while rotating = 15° steps |
+| **`Alt` + drag** a bézier handle | Break symmetry — move that handle independently |
+
+### 3D viewer — keys & mouse
+
+| Input | Action |
+|---|---|
+| `Q` `W` `B` `E` `C` | **Q** select · **W** place projection · **B** brush mask · **E** erase mask · **C** paint colour |
+| `Space` | Play / pause the animation |
+| `Ctrl / ⌘ + Z` | Undo · `Delete` removes the active projection · `Esc` deselects |
+| **Double‑click** the model | Place a projection patch at that exact spot on the surface *(select mode)* |
+| **Left‑drag** orbit · **scroll** zoom · **right / middle‑drag** pan | Standard orbit camera |
+
 ## Run locally
 
 ```bash
