@@ -71,7 +71,7 @@ function makeGroup(name){
   const maskTex=smoothTex(new THREE.CanvasTexture(maskCanvas), false); // alpha 蒙版:不 mipmap(防整片透明)
   const mat=new THREE.MeshBasicMaterial({map:screenTex, alphaMap:maskTex, toneMapped:false,
     vertexColors:true, // RGBA 顶点色:alpha 通道做边缘羽化(消除"硬切"的贴片边界)
-    transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-4});
+    transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-8, polygonOffsetUnits:-8});
   // UV 直贴材质:glTF 的 UV 原点在左上(v 向下),需 flipY=false 的纹理对;
   // 无顶点色/无深度偏移 —— 它就是该网格的"正式材质",不是叠加贴花。
   const screenTexUV=smoothTex(new THREE.CanvasTexture(texCanvas), true); // 颜色贴图:mipmap 平滑
@@ -1029,15 +1029,32 @@ $('bloomCk').onchange=e=>{ bloom.enabled=e.target.checked; saveViewState(); };
 $('spinCk').addEventListener('change',saveViewState);
 // 🫧 背景透明:所有动画组的贴图渲染 alpha=覆盖度 → 投影只出图案、背景全透。贴图每帧重渲,即时生效。
 $('transBgCk').addEventListener('change',e=>{ groups.forEach(g=>g.P.transBg=e.target.checked); saveViewState(); });
-// 🎚 模型自带贴图淡化:用【颜色乘法】把模型原纹理调暗(v→0 越暗),让动画投影更突出。
-// 恒不透明 —— 只淡化贴图,模型始终是一块可见实体表面,绝不消失(修复"调低就整车不见")。
+// 🎚 模型自带贴图:v=1 显示模型原纹理;v<1 则【移除照片纹理、换成干净中性亮面】——
+// 于是模型不再是一张会盖住动画的照片,而是一块洁净的浅色表面,动画投影在其上清晰可见。
+// 恒不透明、始终可见(不变黑、不消失);v 越小面越暗一点(可按动画颜色微调对比)。
 let modelOpacity=1;
-function applyModelOpacity(){ const v=Math.max(0.03, modelOpacity);
+function applyModelOpacity(){ const v=modelOpacity;
   for(const mesh of meshList()){ const mats=Array.isArray(mesh.material)?mesh.material:[mesh.material];
-    for(const m of mats){ if(!m||!m.color) continue;
-      if(!m.userData.origColor) m.userData.origColor=m.color.clone();
-      m.color.copy(m.userData.origColor).multiplyScalar(v);
-      if(m.opacity<1){ m.opacity=1; } // 修正上一版可能把不透明度压到 0 导致的隐形
+    for(const m of mats){ if(!m||!('color' in m)) continue;
+      // 首次记录原始外观(贴图/颜色/金属度/粗糙度),便于 v=1 时完整还原
+      const ud=m.userData;
+      if(ud.origColor===undefined){ ud.origColor=m.color.clone(); ud.origMap=('map' in m)?m.map:null;
+        ud.origMetal=('metalness' in m)?m.metalness:undefined;
+        ud.origRough=('roughness' in m)?m.roughness:undefined;
+        ud.origEmis=m.emissive?m.emissive.clone():undefined; }
+      if(v>=0.999){ // 还原模型自带纹理与材质
+        if('map' in m) m.map=ud.origMap; m.color.copy(ud.origColor);
+        if(ud.origMetal!==undefined) m.metalness=ud.origMetal;
+        if(ud.origRough!==undefined) m.roughness=ud.origRough;
+        if(ud.origEmis && m.emissive) m.emissive.copy(ud.origEmis);
+      } else { // 白模:隐去照片纹理 + 去金属反光 → 干净洁白哑光面,投影清晰可读
+        if('map' in m) m.map=null;
+        if('metalness' in m) m.metalness=0;      // 关键:金属材质会镜像暗环境=发黑,必须归零
+        if('roughness' in m) m.roughness=0.92;   // 高粗糙 → 均匀漫反射,不产生高光暗块
+        m.color.setScalar(0.62+0.32*(1-v));      // v→0 越洁白(~0.94),越贴近纯白净模
+        if(m.emissive) m.emissive.setScalar(0.06*(1-v)); // 轻微自发光托底,深色环境里也不发灰
+      }
+      if(m.opacity<1) m.opacity=1;
       m.needsUpdate=true; } }
 }
 $('modelOpa').addEventListener('input',e=>{ modelOpacity=+e.target.value; $('modelOpaV').textContent=modelOpacity.toFixed(2); applyModelOpacity(); });
