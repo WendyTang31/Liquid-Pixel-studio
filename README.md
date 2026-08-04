@@ -8,7 +8,7 @@
 A browser-based keyframe animation tool for designers who *think* in animation and CAD
 but aren't experts in After Effects or Blender.
 
-[**▶ Live demo**](https://wendytang31.github.io/metaball-morph-studio/) · runs in the browser, nothing to install
+[**▶ Live demo**](https://wendytang31.github.io/Liquid-Pixel-studio/) · runs in the browser, nothing to install
 
 ![tests](https://img.shields.io/badge/tests-84%20passing-2cc4f5) ![license](https://img.shields.io/badge/license-MIT-2cc4f5) ![runs in](https://img.shields.io/badge/runs%20in-browser-2cc4f5)
 
