@@ -154,14 +154,18 @@ const TNORM = 1 / OCT_A.reduce((s, A, k) => s + A * Math.max(OCT_X[k], OCT_Y[k])
 
 // ── 主位移场:返回【增量】{dx,dy,rf},由 engine 加到既有效果之上。──
 // x,y = 点的基础坐标(归一化);cx,cy = 形体质心;st = dotsStat;t = 全局时间(秒)。
-export function labDisp(x, y, cx, cy, t, fx, st) {
+// wIn(可选):engine 传入的【连续相位】(=2π·Ψ(g),已把每帧的 fx.freq 变频积分进去)——
+// 传入时物理振荡与主效果共用同一相位:过渡变频平滑(chirp)、不"打拍子"、确定且预览==导出。
+// 不传则退回墙钟相位(2π·freq·t),旧行为完全不变。粘滞仍作为本层的相位/幅度缩放叠加其上。
+export function labDisp(x, y, cx, cy, t, fx, st, wIn) {
   let dx = 0, dy = 0, rf = 1;
   if (!hasLabDisp(fx)) return { dx, dy, rf };
   st = st || DEF_STAT;
   const vis = Math.min(1, Math.max(0, fx.viscosity || 0));
   // 粘滞:放慢相位 + 压低幅度 = 同一个动作变"稠"。只作用于本层,不改既有 fx 的语义。
-  const f = Math.min(2.5, fx.freq || 0.6) * (1 - 0.7 * vis);
-  const w = TAU * f * t;
+  const fbase = Math.min(2.5, fx.freq || 0.6);
+  const cyc = (wIn != null ? wIn / TAU : fbase * t) * (1 - 0.7 * vis); // 已含粘滞的"圈数"(生命周期相位用)
+  const w = TAU * cyc;
   const rad = Math.max(0.02, st.rad), hSpan = Math.max(1e-6, st.y1 - st.y0);
 
   if (fx.gravity) { // 悬链线式下垂:离中轴越远垂得越多,叠极缓沉降呼吸(静止的下垂读作"坏了",会动才读作"累了")
@@ -180,7 +184,7 @@ export function labDisp(x, y, cx, cy, t, fx, st) {
   }
   if (fx.pulse) { // lub-dub 双击:两个错开的高斯冲击,而非正弦 —— 正弦读作"呼吸",双击才读作"心跳"
     const rx = x - cx, ry = y - cy, d = Math.hypot(rx, ry) + 1e-6;
-    const ph = ((t * f) % 1 + 1) % 1;
+    const ph = ((cyc % 1) + 1) % 1;
     const thump = s => Math.exp(-Math.pow((ph - s) / 0.055, 2));
     const k = fx.pulse * FXB * 1.5 * (thump(0.06) + 0.62 * thump(0.20)) * (0.35 + 0.65 * d / rad);
     dx += rx / d * k; dy += ry / d * k;
@@ -214,7 +218,7 @@ export function labDisp(x, y, cx, cy, t, fx, st) {
     dx += a * 0.5 * flow * Math.sign(x - cx || 1) * Math.abs(Math.sin(w * 0.31 + 2.7 * x));
   }
   if (fx.evaporate) { // 逐点错开的生命周期:渐生 → 上升 → 渐隐。两端都渐变,故不会"啪"地出现/消失
-    const ph = dotPh(x, y, fx), life = ((t * f * 0.5 + ph) % 1 + 1) % 1;
+    const ph = dotPh(x, y, fx), life = ((cyc * 0.5 + ph) % 1 + 1) % 1;
     const visible = Math.min(1, life / 0.12) * Math.min(1, (1 - life) / 0.35);
     dy -= fx.evaporate * FXB * 6 * life * life;
     rf *= 1 - fx.evaporate * (1 - visible);
@@ -250,7 +254,7 @@ export function labDisp(x, y, cx, cy, t, fx, st) {
   }
   if (fx.sand) { // 加速下落 + 地板钳位 + 两端渐隐渐生(否则循环回卷时会"啪"地弹回原位)
     const ph = dotPh(x, y, fx), rate = 0.55 + 0.9 * hash1(ph * 91.7 + 5);
-    const life = ((t * f * 0.4 * rate + ph) % 1 + 1) % 1;
+    const life = ((cyc * 0.4 * rate + ph) % 1 + 1) % 1;
     const floor = st.y1 + 0.02, room = Math.max(0, floor - y);
     const visible = Math.min(1, life / 0.10) * Math.min(1, (1 - life) / 0.25);
     dy += fx.sand * Math.min(room, life * life * room * 1.6);
@@ -285,7 +289,7 @@ export function labDisp(x, y, cx, cy, t, fx, st) {
   }
   if (fx.bird) { // 不对称振翅:快下压(35% 周期)、慢回收(65%)。对称正弦读作呼吸,不对称才读作飞
     const a = fx.bird * FXB * 3.0, wing = Math.min(1, Math.abs(x - cx) / rad);
-    const ph = ((t * f) % 1 + 1) % 1;
+    const ph = ((cyc % 1) + 1) % 1;
     const flap = ph < 0.35 ? Math.sin(Math.PI * ph / 0.35) : -0.7 * Math.sin(Math.PI * (ph - 0.35) / 0.65);
     dy -= a * flap * Math.pow(wing, 1.5);            // 翅尖幅度最大
     dy += a * 0.25 * flap * (1 - wing);              // 身体反向起伏(振翅的反作用)

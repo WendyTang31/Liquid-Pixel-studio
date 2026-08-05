@@ -209,7 +209,7 @@ export function behaviorDisp(x,y,cx,cy,t,fx,st,wIn){
   }
   // 🧪 实验层:加在锚点包络【之后】—— 实验效果各自带空间包络(重力按离中轴、鞭梢按离锚点…),
   // 再乘一次锚点包络会双重衰减、行为难预测。故二者独立叠加,互不干扰。
-  if(hasLabFx(fx)){ const L=labDisp(x,y,cx,cy,t,fx,st); dx+=L.dx; dy+=L.dy; rf*=L.rf; }
+  if(hasLabFx(fx)){ const L=labDisp(x,y,cx,cy,t,fx,st,w); dx+=L.dx; dy+=L.dy; rf*=L.rf; }
   return {dx,dy,rf};
 }
 const FX0={dx:0,dy:0,rf:1};
