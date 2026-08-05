@@ -165,9 +165,12 @@ export const hasFx=fx=>!!(fx&&(fx.slosh||fx.spring||fx.liquid||fx.ripple||fx.twi
 const FXB=0.04; // 位移基准幅度(归一化画布)
 // st = dotsStat(形体统计量),仅实验层需要(重力/融化/沉降要知道形体的尺度与上下界);
 // 老调用方不传即退化为 DEF_STAT,既有效果的行为完全不变。
-export function behaviorDisp(x,y,cx,cy,t,fx,st){
+// wIn(可选):由 buildSequence 沿时间轴把 fx.freq 积分成的【连续相位】(弧度)——
+// 传入时用它取代 2π·f·t,于是过渡里 freqA→freqB 是平滑变频(chirp)而非两频"打拍子";
+// 不传(旧调用方/直接单测)则退回墙钟相位,行为完全不变。twinkle/实验层仍用逐点/墙钟相位,不受影响。
+export function behaviorDisp(x,y,cx,cy,t,fx,st,wIn){
   let dx=0,dy=0,rf=1;
-  const f=Math.min(2.5, fx.freq||0.6), w=6.283185307*f*t;
+  const f=Math.min(2.5, fx.freq||0.6), w=(wIn!=null)?wIn:6.283185307*f*t;
   if(fx.slosh){ // 水平面波浪:整体左右晃 + 液面行波,越靠上晃幅越大(容器晃动)
     const a=fx.slosh*FXB, depth=1-Math.min(1,Math.max(0,y));
     dx += a*(Math.sin(w)*(0.5+0.9*depth) + 0.35*Math.sin(1.7*w+7*x));
@@ -218,7 +221,7 @@ const centroidPt=dots=>{ let x=0,y=0,n=dots.length||1; for(const b of dots){x+=b
 // P.stretch>0 时,运动中的球沿速度反方向甩出两颗递减拖尾球 —— metaball 场把三球融成
 // 胶囊状,即 squash & stretch 的"拉伸"近似;速度由缓动的数值微分给出,错峰使各球
 // 拉伸时刻互不相同。头部球始终在结果数组前 N 位,与 pairs 下标对齐(轨迹叠加层依赖此约定)。
-export function transBalls(pairs,t,time,P,fxc,morphLayers,easeFn){
+export function transBalls(pairs,t,time,P,fxc,morphLayers,easeFn,w){
   const ease=easeFn||EASE[P.ease], span=Math.max(1e-6,1-P.stag), stretch=P.stretch||0, flow=P.flow||0;
   const fxOn=fxc&&(hasFx(fxc.fxA)||hasFx(fxc.fxB)); // 动态几何:两端各自求值后按 e 插值(端点连续)
   const ml=(morphLayers&&morphLayers.size)?morphLayers:null; // 两端同层的点抑制(轮廓变形接管)
@@ -247,8 +250,9 @@ export function transBalls(pairs,t,time,P,fxc,morphLayers,easeFn){
       ball.x+=Math.cos(th)*env; ball.y+=Math.sin(th)*env;
     }
     if(fxOn){ // 动态几何:两端各按自己质心/参数求位移,按同一 e 插值 → e=0/1 精确匹配相邻停留态
-      const dA=hasFx(fxc.fxA)?behaviorDisp(p.a.x,p.a.y,fxc.cA.x,fxc.cA.y,time,fxc.fxA,fxc.sA):FX0;
-      const dB=hasFx(fxc.fxB)?behaviorDisp(p.b.x,p.b.y,fxc.cB.x,fxc.cB.y,time,fxc.fxB,fxc.sB):FX0;
+      // 两端共用同一个连续相位 w(变频已积分进 w)→ 只交叉淡化【空间形状/幅度】,不再两频打拍。
+      const dA=hasFx(fxc.fxA)?behaviorDisp(p.a.x,p.a.y,fxc.cA.x,fxc.cA.y,time,fxc.fxA,fxc.sA,w):FX0;
+      const dB=hasFx(fxc.fxB)?behaviorDisp(p.b.x,p.b.y,fxc.cB.x,fxc.cB.y,time,fxc.fxB,fxc.sB,w):FX0;
       ball.x+=dA.dx+(dB.dx-dA.dx)*e; ball.y+=dA.dy+(dB.dy-dA.dy)*e;
       ball.r*=dA.rf+(dB.rf-dA.rf)*e;
     }
@@ -354,8 +358,28 @@ export function buildSequence(states, seamless, P, _noLoop){
   }
   if(!segs.length) segs.push({type:'hold', si:masters[0]?.idx??0, dur:1});
   let T=0; segs.forEach(s=>{s.t0=T; T+=s.dur;});
+  // 🎵 动态几何相位:把每个状态的 fx.freq 沿时间轴积分成连续圈数 Ψ —— 停留段常频、过渡段
+  // freqA→freqB 线性变频(chirp)。全轨凑成【整数圈】(scale≈1 的微调),使无缝循环在回绕点相位精确对齐。
+  const freqOf=si=>Math.min(2.5, Math.max(0, states[si]?.fx?.freq ?? 0.6));
+  let psi=0;
+  for(const s of segs){ s._psi0=psi;
+    if(s.type==='hold'){ s._f0=s._f1=freqOf(s.si); psi+=s._f0*s.dur; }
+    else { s._f0=freqOf(s.a); s._f1=freqOf(s.b); psi+=(s._f0+s._f1)*0.5*s.dur; } }
+  const cyc=Math.round(psi), scale=(psi>1e-6 && cyc>=1)?cyc/psi:1;
+  if(scale!==1) for(const s of segs){ s._psi0*=scale; s._f0*=scale; s._f1*=scale; }
   return {segs,T};
 }
+// Ψ(g)→ 角相位(弧度):停留段线性、过渡段二次(线性变频的积分)。喂给 behaviorDisp 取代墙钟相位。
+const segPhase=(seg,g)=>{ if(seg._f0==null) return undefined;
+  const tau=g-seg.t0;
+  const cyc = seg._f0===seg._f1 ? seg._psi0 + seg._f0*tau
+            : seg._psi0 + seg._f0*tau + 0.5*((seg._f1-seg._f0)/seg.dur)*tau*tau;
+  return 6.283185307*cyc;
+};
+// 动态几何连续相位(弧度),供采样与单测校验变频/无缝。
+export function fxPhaseAt(SEQ, g){ const {segs,T}=SEQ; g=Math.max(0,Math.min(T-1e-6,g));
+  let seg=segs[0]; for(const s of segs){ if(g>=s.t0 && g<s.t0+s.dur){seg=s;break;} }
+  return segPhase(seg,g)||0; }
 
 // ── 虚拟摄像机(推拉摇移)──
 // 每个状态可携带 cam {x,y,z,rot}:x/y=取景中心(归一化),z=变焦(>1 推近),rot=旋转(弧度)。
@@ -428,13 +452,13 @@ const solidsOf=(seg,states,lt)=>solidWeights(seg,states,lt)
 // warp 用全局时间 time(连续),且 trans 各实心用自身状态的 fx/质心 → 与相邻停留段严丝合缝,无跳变。
 // fadeOf(si)→[0..1]:过渡时把 fx 强度按状态交叉淡化(离场状态 1→0,入场 0→1)—— 让停留期的
 // 动态几何(微光/波浪等)慢慢消失而非"满强度直到实心突然消失"。停留 fadeOf 缺省=满强度 1。
-const attachFxWarp=(solids, states, time, fadeOf)=>solids.map(s=>{
+const attachFxWarp=(solids, states, time, fadeOf, w)=>solids.map(s=>{
   const st=states[s.si], fx=st?.fx;
   if(!hasFx(fx)) return s;
   const fade = fadeOf ? fadeOf(s.si) : 1;
   if(fade<=1e-3) return s;                                   // fx 已淡出:退回静态实心
   const fs = dotsStat(st.dots);
-  return {...s, warp:(u,v)=>{ const d=behaviorDisp(u,v,fs.cx,fs.cy,time,fx,fs);
+  return {...s, warp:(u,v)=>{ const d=behaviorDisp(u,v,fs.cx,fs.cy,time,fx,fs,w);
     return {dx:d.dx*fade, dy:d.dy*fade, rf:1+(d.rf-1)*fade}; }}; // 幅度按 fade 缩放,rf 向 1(无微光)靠拢
 });
 
@@ -460,6 +484,7 @@ export function sampleFrame(SEQ, states, g, time, P){
   g=Math.max(0,Math.min(T-1e-6,g));
   let seg=segs[0];
   for(const s of segs){ if(g>=s.t0 && g<s.t0+s.dur){seg=s;break;} }
+  const w=segPhase(seg,g);   // 动态几何连续相位(变频已积分)—— 与 g 绑定 → 确定且预览==导出
   if(seg.type==='hold'){
     const st=states[seg.si], cam=camAt(seg,states,0);
     if(seg.loop){
@@ -486,15 +511,15 @@ export function sampleFrame(SEQ, states, g, time, P){
         const drops=splatterDropletPolys(vps[0].poly, c.x, c.y, time, efx, hex2rgb(st.color));
         const vsolid=rasterizeVectorSolids([...dpolys, ...drops]).map(s=>({...s, si:seg.si}));
         const base=st._sdfBase ? [{sdf:st._sdfBase, w:1, si:seg.si}] : []; // 非矢量实心(如图片)保留
-        solids=attachFxWarp([...vsolid, ...base], states, time);
-      } else solids=attachFxWarp(solidsOf(seg,states,0), states, time);
-    } else solids=attachFxWarp(solidsOf(seg,states,0), states, time); // 停留期动态几何也晃动实心/矢量
+        solids=attachFxWarp([...vsolid, ...base], states, time, null, w);
+      } else solids=attachFxWarp(solidsOf(seg,states,0), states, time, null, w);
+    } else solids=attachFxWarp(solidsOf(seg,states,0), states, time, null, w); // 停留期动态几何也晃动实心/矢量
     const col=hex2rgb(st.color);
     // 🧪 发射器(气泡/雪/雨/烟/火星…)产生的是【额外的球】,追加在数组末尾 ——
     // 轨迹叠加层依赖"头部球在前 N 位"的约定,故新球一律往后加,不打乱下标。
     const balls=suppressSolidDots(st.dots.map(b=>{ const ph=dotPhase(b.x,b.y);
         let X=b.x+P.amp*drift(ph,time,P), Y=b.y+P.amp*drift(ph+3.1,time,P), R=b.r;
-        if(fxOn){ const d=behaviorDisp(b.x,b.y,fs.cx,fs.cy,time,fx,fs); X+=d.dx; Y+=d.dy; R*=d.rf; }
+        if(fxOn){ const d=behaviorDisp(b.x,b.y,fs.cx,fs.cy,time,fx,fs,w); X+=d.dx; Y+=d.dy; R*=d.rf; }
         return {x:X, y:Y, r:R, c:b.c, sfA:b.sf};
       }).concat(fxOn?labEmit(fx,time,fs,1):[]), seg, states, 0);
     applyLabTint(balls, fx, time, 1, col);        // 🌈 彩虹:逐球上色(含发射出来的球)
@@ -511,13 +536,13 @@ export function sampleFrame(SEQ, states, g, time, P){
     const emit=fxc ? labEmit(fxc.fxA,time,fxc.sA,1-e).concat(labEmit(fxc.fxB,time,fxc.sB,e)) : [];
     const col=[ca[0]+(cb[0]-ca[0])*e, ca[1]+(cb[1]-ca[1])*e, ca[2]+(cb[2]-ca[2])*e];
     const balls=suppressSolidDots(
-        transBalls(seg.pairs,lt,time,segParams(P,seg.ov),fxc,seg.morphLayers,seg.ease).concat(emit), seg, states, lt);
+        transBalls(seg.pairs,lt,time,segParams(P,seg.ov),fxc,seg.morphLayers,seg.ease,w).concat(emit), seg, states, lt);
     // 🌈 彩虹按同一个 e 交叉淡化:只有一端开彩虹时,颜色在过渡里平滑淡入/淡出,端点精确归零。
     if(fxc){ applyLabTint(balls, fxA, time, 1-e, col); applyLabTint(balls, fxB, time, e, col); }
     return {seg, balls:applyCam(balls, cam),
       cam:camIdentity(cam)?null:cam,
       // 动态几何 fx 按过渡进度交叉淡化:离场状态 1→e、入场状态 e(用位置同款缓动 e)—— 微光/波浪慢慢消失。
-      solids:attachFxWarp(solidsOf(seg,states,lt), states, time, si=> si===seg.a ? 1-e : (si===seg.b ? e : 1)),
+      solids:attachFxWarp(solidsOf(seg,states,lt), states, time, si=> si===seg.a ? 1-e : (si===seg.b ? e : 1), w),
       col};
   }
 }

@@ -2,7 +2,7 @@
 // 停留↔过渡边界连续。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hasFx, behaviorDisp, buildSequence, sampleFrame } from '../src/engine.js';
+import { hasFx, behaviorDisp, buildSequence, sampleFrame, fxPhaseAt } from '../src/engine.js';
 
 const P0={ ease:'linear', stag:0, amp:0, freq:.4, match:'sortXY', flow:0, stretch:0 };
 const D=(x,y)=>({x,y,r:.02});
@@ -74,6 +74,32 @@ test('sampleFrame:停留段施加动态几何;停留↔过渡边界连续(无跳
     const d=Math.hypot(before.balls[i].x-after.balls[i].x, before.balls[i].y-after.balls[i].y);
     assert.ok(d<2e-3, `边界点${i}位移跳变=${d}`);
   }
+});
+
+test('逐帧变频:过渡期相位连续、瞬时频率从 freqA 单调升到 freqB(chirp)', () => {
+  // kf1 慢(0.3Hz)→ kf2 快(2.0Hz),停留+过渡+停留,seamless 环。
+  const A={hold:2, dur:2, color:'#fff', fx:{slosh:0.8,freq:0.3}, dots:[D(.3,.3)]};
+  const B={hold:2, dur:2, color:'#fff', fx:{slosh:0.8,freq:2.0}, dots:[D(.6,.7)]};
+  const states=[A,B];
+  const SEQ=buildSequence(states, true, P0);   // seamless=true → 含回绕过渡
+  const T=SEQ.T;
+  // 1) 相位单调非减且无【突跳】:任一步进都远小于一整圈(真断裂会是 O(2π))。
+  const N=2000, step=2*Math.PI*2.5*(T/N)*1.6; // 允许上限=最高频(2.5Hz)下的单步推进×余量
+  let prev=fxPhaseAt(SEQ,0), maxJump=0, mono2=true;
+  for(let i=1;i<=N;i++){ const p=fxPhaseAt(SEQ, i/N*T*0.9999);
+    if(p<prev-1e-9) mono2=false; maxJump=Math.max(maxJump, p-prev); prev=p; }
+  assert.ok(mono2, '相位应单调非减');
+  assert.ok(maxJump < step, `相位有突跳=${maxJump} (上限${step})`);
+  // 2) 过渡段(g∈[2,4])瞬时频率(相位数值导数/2π)从 ~freqA 单调升到 ~freqB
+  const dg=1e-3, instF=g=>(fxPhaseAt(SEQ,g+dg)-fxPhaseAt(SEQ,g-dg))/(2*dg)/(2*Math.PI);
+  const fStart=instF(2.02), fEnd=instF(3.98);
+  assert.ok(fStart>0.25 && fStart<0.6, `过渡起点频率≈freqA, 实=${fStart}`);
+  assert.ok(fEnd>1.6 && fEnd<2.3, `过渡终点频率≈freqB, 实=${fEnd}`);
+  let mono=true; for(let g=2.1; g<3.9; g+=0.1) if(instF(g+0.1) < instF(g)-1e-6) mono=false;
+  assert.ok(mono, '过渡期瞬时频率应单调递增(chirp)');
+  // 3) 无缝:整轨相位≈2π 的整数倍(回绕点精确对齐,循环无缝)
+  const cycles=fxPhaseAt(SEQ, T-1e-6)/(2*Math.PI);
+  assert.ok(Math.abs(cycles-Math.round(cycles))<0.02, `整轨应为整数圈, 实=${cycles}`);
 });
 
 test('sampleFrame:无 fx 的状态行为不变(回归)', () => {
