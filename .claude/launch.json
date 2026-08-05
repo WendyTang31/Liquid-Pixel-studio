@@ -7,6 +7,12 @@
       "runtimeArgs": ["run", "dev"],
       "port": 5173,
       "autoPort": true
+    },
+    {
+      "name": "emotion-mixer",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "../AV-Expression-Language", "--port", "5174", "--strictPort"],
+      "port": 5174
     }
   ]
 }

@@ -3,7 +3,7 @@
 // "停留↔过渡边界连续"—— 这是整个工具"预览==导出、时间轴可拖"的根基。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LAB_FX, labDisp, labEmit, hasLabFx, dotsStat, DEF_STAT } from '../src/labfx.js';
+import { LAB_FX, labDisp, labEmit, labTint, applyLabTint, hasLabFx, dotsStat, DEF_STAT } from '../src/labfx.js';
 import { EASE, hasFx, behaviorDisp, buildSequence, sampleFrame } from '../src/engine.js';
 
 const P0 = { ease: 'linear', stag: 0, amp: 0, freq: .4, match: 'sortXY', flow: 0, stretch: 0 };
@@ -139,6 +139,108 @@ test('发射器:气泡半径两端为 0(自然生灭,不会凭空出现/消失)'
 
 test('发射器:fade=0 不产出任何球(过渡端点精确归零 → 与停留段严丝合缝)', () => {
   assert.equal(labEmit({ bubble: 1, boil: 1, drip: 1, freq: 1 }, 3.3, ST, 0).length, 0);
+});
+
+// ── 🖼 意象组 ──
+test('翻腾 churn:Taylor-Green 涡阵精确无散度(体积不塌)', () => {
+  const fx = { churn: 1, freq: .6 }, h = 1e-4, t = .9;
+  const at = (x, y) => labDisp(x, y, .5, .5, t, fx, ST);
+  const div = (at(.42 + h, .58).dx - at(.42 - h, .58).dx) / (2 * h)
+    + (at(.42, .58 + h).dy - at(.42, .58 - h).dy) / (2 * h);
+  assert.ok(Math.abs(div) < 1e-6, `散度应≈0,实测 ${div}`);
+});
+
+test('阳光 sunshine:位移沿径向,且光芒方向上明显强于两瓣之间', () => {
+  const fx = { sunshine: 1, freq: .6 }, t = .5;
+  const radialAt = ang => {
+    const x = .5 + .25 * Math.cos(ang), y = .5 + .25 * Math.sin(ang);
+    const d = labDisp(x, y, .5, .5, t, fx, ST);
+    return d.dx * Math.cos(ang) + d.dy * Math.sin(ang);          // 径向分量
+  };
+  // 光芒会缓慢转动,所以"哪个角度在瓣上"随时间变 —— 扫一圈取分布,而不是钉死某个角度。
+  const vals = []; for (let i = 0; i < 240; i++) vals.push(radialAt(i / 240 * Math.PI * 2));
+  const mx = Math.max(...vals), med = [...vals].sort((a, b) => a - b)[120];
+  assert.ok(mx > 1e-4, '应有向外位移');
+  assert.ok(mx > med * 5, `瓣应远强于中位,实测 ${mx} vs ${med}`);
+  // 12 道:数一圈里的局部极大(收尖后波峰应恰好 12 个)
+  let peaks = 0;
+  for (let i = 0; i < 240; i++) {
+    const p = vals[(i + 239) % 240], c = vals[i], n = vals[(i + 1) % 240];
+    if (c > p && c >= n && c > mx * 0.2) peaks++;
+  }
+  assert.equal(peaks, 12, `应为 12 道光芒,实测 ${peaks}`);
+});
+
+test('飞鸟 bird:振翅不对称(下压快而强、回收慢而弱),翅尖幅度大于身体', () => {
+  const fx = { bird: 1, freq: 1 };
+  const wingAt = t => labDisp(.5 + ST.rad, .5, .5, .5, t, fx, ST).dy;
+  let down = 0, up = 0;
+  for (let t = 0; t < 1; t += 0.005) { const v = wingAt(t); if (v < down) down = v; if (v > up) up = v; }
+  assert.ok(Math.abs(down) > Math.abs(up) * 1.2, `下压应强于回收:${down} vs ${up}`);
+  const tip = Math.abs(labDisp(.5 + ST.rad, .5, .5, .5, .1, fx, ST).dy);
+  const body = Math.abs(labDisp(.5 + ST.rad * 0.05, .5, .5, .5, .1, fx, ST).dy);
+  assert.ok(tip > body * 2, '翅尖幅度应远大于身体');
+});
+
+test('落叶/悬浮:逐点异相(不同点不同步 → 一群各自飘,而非整体平移)', () => {
+  for (const fx of [{ leaf: 1, freq: .6 }, { floaty: 1, freq: .6 }]) {
+    const a = labDisp(.31, .42, .5, .5, .7, fx, ST), b = labDisp(.66, .59, .5, .5, .7, fx, ST);
+    assert.ok(Math.abs(a.dx - b.dx) > 1e-5 || Math.abs(a.dy - b.dy) > 1e-5, '应异相');
+  }
+});
+
+test('拉丝 stringy:沿径向外拉,且中段最细(两端粗中间细)', () => {
+  const fx = { stringy: 1, freq: .6 }, t = .3;
+  const mid = labDisp(.5 + ST.rad * .5, .5, .5, .5, t, fx, ST);
+  const edge = labDisp(.5 + ST.rad * .99, .5, .5, .5, t, fx, ST);
+  assert.ok(mid.dx > 0 && edge.dx > 0, '应向外拉');
+  assert.ok(mid.rf < edge.rf, `中段应比外端细:${mid.rf} vs ${edge.rf}`);
+});
+
+test('天气类发射器:粒子在形体外也出现,半径两端渐隐,数量随强度增长', () => {
+  for (const [key, slots] of [['snow', 22], ['rain', 20], ['smoke', 12], ['ember', 16]]) {
+    const fx = { [key]: 1, freq: 1.2 };
+    let seen = 0, outside = 0;
+    for (let t = 0; t < 6; t += 0.02) {
+      for (const b of labEmit(fx, t, ST, 1)) {
+        assert.ok(b.r > 0, `${key} 不应产出零半径`);
+        assert.ok(isFinite(b.x) && isFinite(b.y), `${key} 坐标非有限`);
+        seen++; if (b.y < ST.y0 || b.y > ST.y1) outside++;
+      }
+    }
+    assert.ok(seen > 200, `${key} 应持续产出,实测 ${seen}`);
+    assert.ok(outside > 0, `${key} 应有粒子出现在形体外`);
+    assert.equal(labEmit(fx, 3.3, ST, 0).length, 0, `${key} fade=0 应完全不产出`);
+  }
+});
+
+test('雨丝:一滴由 3 个递减的球连成(融合后成一根丝)', () => {
+  const balls = [];
+  for (let t = 0; t < 3; t += 0.01) balls.push(...labEmit({ rain: 1, freq: 1 }, t, ST, 1));
+  assert.ok(balls.length % 3 === 0, '球数应为 3 的倍数');
+  assert.ok(balls[0].r > balls[1].r && balls[1].r > balls[2].r, '同一滴内半径应递减');
+});
+
+test('彩虹 rainbow:只改颜色不改形状;色相按绝对位置铺开;fade=0 时不改色', () => {
+  const fx = { rainbow: 1, freq: .6 };
+  const d = labDisp(.3, .4, .5, .5, 1.1, fx, ST);
+  assert.ok(Math.abs(d.dx) < 1e-12 && Math.abs(d.dy) < 1e-12 && Math.abs(d.rf - 1) < 1e-12, '不应位移');
+  const base = [20, 20, 20];
+  const bs = [{ x: .2, y: .3, r: .02 }, { x: .8, y: .3, r: .02 }];
+  applyLabTint(bs, fx, 1.0, 1, base);
+  assert.ok(bs[0].c && bs[1].c, '应上色');
+  assert.ok(Math.hypot(...bs[0].c.map((v, i) => v - bs[1].c[i])) > 20, '不同位置应是不同色相');
+  const off = [{ x: .2, y: .3, r: .02 }];
+  applyLabTint(off, fx, 1.0, 0, base);
+  assert.equal(off[0].c, undefined, 'fade=0 不应改色');
+  const [r, g, b] = labTint(.3, .4, 1, fx);
+  for (const v of [r, g, b]) assert.ok(v >= 0 && v <= 255, '色值应在 0..255');
+});
+
+test('新效果全部计入 hasLabFx(否则引擎根本不会去求值)', () => {
+  for (const k of ['sunshine', 'leaf', 'bird', 'floaty', 'shimmer', 'rainbow',
+    'snow', 'rain', 'smoke', 'ember', 'swell', 'churn', 'stringy'])
+    assert.equal(hasLabFx({ [k]: 0.5 }), true, `${k} 未被 hasLabFx 认出`);
 });
 
 test('dotsStat:质心/包围盒正确;空点集回退到默认(不崩)', () => {

@@ -106,12 +106,43 @@ export const LAB_FX = [
     title: '沸腾:更密更快更小的气泡 + 表面躁动。介于「气泡=喜悦」与「飞溅=暴怒」之间 —— 表达"还没爆发的怒气"、压力积聚。' },
   { g: '⏱ 节奏', key: 'drip', label: '滴落', min: 0, max: 1, step: .05, def: 0, dp: 2,
     title: '滴落:水珠从底边脱落、按自由落体(∝t²)下坠并渐隐。表达渗漏、消耗、哀伤。' },
+  // 🖼 意象 —— 不是抽象物理量,而是【一眼认得出的自然现象】。
+  // 抽象质感(碎裂/粘滞)靠观众自己联想才有情绪;意象自带文化含义(阳光=善意、落叶=萧瑟),
+  // 在陌生人只看半秒的路口场景里,认得出比说得准更要紧。
+  { g: '🖼 意象', key: 'sunshine', label: '阳光', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '阳光:12 道光芒沿径向张开、缓慢转动并随呼吸明灭,光芒方向上的点还会微微变大。表达善意、开放、被照拂。' },
+  { g: '🖼 意象', key: 'leaf', label: '落叶飘动', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '落叶:逐点各自走 8 字翻转轨迹(左右摇摆 + 上下翻面),彼此异相。表达闲散、萧瑟、随风而动。' },
+  { g: '🖼 意象', key: 'bird', label: '飞鸟振翅', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '飞鸟:快下压、慢回收的不对称振翅(对称正弦只会像呼吸,不像飞),越靠外侧翅幅越大,身体反向轻微起伏。表达自由、启程、轻盈。' },
+  { g: '🖼 意象', key: 'floaty', label: '悬浮漂游', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '悬浮:整体缓慢上浮并左右游移,伴随极轻微的胀缩 —— 水里的气泡群。表达失重、梦境、放空。' },
+  { g: '🖼 意象', key: 'shimmer', label: '波光', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '波光:三组交叉行波形成焦散(水面反光的网格),既位移也调亮度。表达粼粼、灵动、水边。' },
+  { g: '🖼 意象', key: 'rainbow', label: '彩虹', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '彩虹:按【绝对位置】铺色相并缓慢流动(不随形体质心走 → 过渡时颜色不跳变)。唯一改颜色而不改形状的效果,可与任何效果叠加。' },
+  { g: '🖼 意象', key: 'snow', label: '落雪', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '落雪:细小雪片从形体上方飘落、横向摇摆着穿过。表达寒冷、静谧、时间流逝。' },
+  { g: '🖼 意象', key: 'rain', label: '雨丝', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '雨丝:快速下落的短线(每滴由 3 个递减的球连成 —— metaball 融合后就是一根雨丝)。表达阴郁、匆忙、天气。' },
+  { g: '🖼 意象', key: 'smoke', label: '烟', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '烟:从形体顶部升起,边升边膨胀边淡出,并随高度左右飘。表达消散、余韵、热。' },
+  { g: '🖼 意象', key: 'ember', label: '火星', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '火星:细小亮点从底部加速上窜、边升边缩灭。表达灼热、危险、余怒未消。' },
+  // 🌊 流体与材质(续)
+  { g: '🌊 流体与材质·续', key: 'swell', label: '涌浪', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '涌浪:整个形体上只有半个波长的长周期横向大浪 —— 是"涌"不是"抖"。表达深沉、蓄势、海。' },
+  { g: '🌊 流体与材质·续', key: 'churn', label: '翻腾', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '翻腾:相邻涡胞旋向相反的涡阵(Taylor-Green,精确无散度)—— 单个漩涡只会整体转,涡阵才会"翻"。表达煮沸、暗涌、内耗。' },
+  { g: '🌊 流体与材质·续', key: 'stringy', label: '拉丝', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '拉丝:沿径向拉长、且中段变细(两端粗中间细)—— 蜂蜜/胶的黏连。表达黏着、拖泥带水、难以脱身。' },
 ];
 
 // 幅度类键(不含"参数"类):只要任一 > 0 就需要求值。参数类(风向/目标点/边数/粘滞/同步度)单独放着不触发。
 const AMP_KEYS = LAB_FX.filter(s => !s.keep).map(s => s.key);
-const EMIT_KEYS = ['bubble', 'boil', 'drip'];
-const DISP_KEYS = AMP_KEYS.filter(k => !EMIT_KEYS.includes(k));
+const EMIT_KEYS = ['bubble', 'boil', 'drip', 'snow', 'rain', 'smoke', 'ember'];
+const TINT_KEYS = ['rainbow'];   // 只改颜色,既不位移也不发射球
+const DISP_KEYS = AMP_KEYS.filter(k => !EMIT_KEYS.includes(k) && !TINT_KEYS.includes(k));
 
 export const hasLabFx = fx => { if (!fx) return false; for (const k of AMP_KEYS) if (fx[k]) return true; return false; };
 export const hasLabDisp = fx => { if (!fx) return false; for (const k of DISP_KEYS) if (fx[k]) return true; return false; };
@@ -239,8 +270,80 @@ export function labDisp(x, y, cx, cy, t, fx, st) {
     dy += a * Math.cos(w * 1.15 + ph * TAU * 1.7);
   }
 
+  // ── 🖼 意象组 ──
+  if (fx.sunshine) { // 12 道光芒瓣:cos 的高次幂把花瓣收尖(否则是软软的椭圆,不像"射线")
+    const rx = x - cx, ry = y - cy, d = Math.hypot(rx, ry) + 1e-6, th = Math.atan2(ry, rx);
+    const ray = Math.pow(0.5 + 0.5 * Math.cos(12 * (th - w * 0.06)), 3);
+    const k = fx.sunshine * FXB * 2.4 * ray * (0.5 + 0.5 * Math.sin(w * 0.5)) * (0.3 + 0.7 * d / rad);
+    dx += rx / d * k; dy += ry / d * k;
+    rf *= 1 + fx.sunshine * 0.25 * ray;              // 光芒方向上的点也更亮更大
+  }
+  if (fx.leaf) { // 8 字翻转:左右摇摆的频率是上下翻面的一半 —— 这个 2:1 才是"叶子在翻",否则只是平移
+    const ph = dotPh(x, y, fx), a = fx.leaf * FXB * 2.4, s = w * 0.6 + ph * TAU;
+    dx += a * (Math.sin(s) + 0.4 * Math.sin(2.3 * s + 1.1));
+    dy += a * 0.5 * Math.sin(2 * s);
+  }
+  if (fx.bird) { // 不对称振翅:快下压(35% 周期)、慢回收(65%)。对称正弦读作呼吸,不对称才读作飞
+    const a = fx.bird * FXB * 3.0, wing = Math.min(1, Math.abs(x - cx) / rad);
+    const ph = ((t * f) % 1 + 1) % 1;
+    const flap = ph < 0.35 ? Math.sin(Math.PI * ph / 0.35) : -0.7 * Math.sin(Math.PI * (ph - 0.35) / 0.65);
+    dy -= a * flap * Math.pow(wing, 1.5);            // 翅尖幅度最大
+    dy += a * 0.25 * flap * (1 - wing);              // 身体反向起伏(振翅的反作用)
+  }
+  if (fx.floaty) { // 缓慢上浮 + 侧向游移 + 极轻微胀缩,逐点异相 → 一群各自漂着的气泡
+    const ph = dotPh(x, y, fx), a = fx.floaty * FXB * 2.0;
+    dy -= a * (0.5 + 0.5 * Math.sin(w * 0.5 + ph * TAU));
+    dx += a * 0.6 * Math.sin(w * 0.37 + ph * TAU * 1.4);
+    rf *= 1 + fx.floaty * 0.12 * Math.sin(w * 0.7 + ph * TAU);
+  }
+  if (fx.shimmer) { // 三组交叉行波 = 焦散网格(水面反光);既推点也调亮度,亮度部分让它"闪"
+    const a = fx.shimmer * FXB * 1.2;
+    const p = Math.sin(9.1 * x + w * 0.8) + Math.sin(7.7 * y - w * 0.63) + Math.sin(6.3 * (x + y) + w * 0.45);
+    dx += a * 0.5 * Math.cos(9.1 * x + w * 0.8);
+    dy += a * 0.5 * Math.cos(7.7 * y - w * 0.63);
+    rf *= 1 + fx.shimmer * 0.22 * (p / 3);
+  }
+  // ── 🌊 流体与材质(续)──
+  if (fx.swell) { // 长波:整个形体只容得下半个波 → 是"涌"不是"抖"
+    const a = fx.swell * FXB * 2.6, u = 2.4 * (x - cx) / rad - w * 0.5;
+    dy += a * Math.sin(u); dx += a * 0.3 * Math.cos(u);
+  }
+  if (fx.churn) { // Taylor-Green 涡阵:相邻胞旋向相反,且精确无散度(∂dx/∂x + ∂dy/∂y = 0)
+    const a = fx.churn * FXB * 2.0, k = 5.0;
+    dx += a * Math.sin(k * x) * Math.cos(k * y + w * 0.5);
+    dy -= a * Math.cos(k * x) * Math.sin(k * y + w * 0.5);
+  }
+  if (fx.stringy) { // 沿径向拉长 + 中段变细:两端粗中间细才是"丝",等粗只是被拉远
+    const rx = x - cx, ry = y - cy, d = Math.hypot(rx, ry) + 1e-6, s = Math.min(1, d / rad);
+    const k = fx.stringy * FXB * 3.0 * s * (0.6 + 0.4 * Math.sin(w * 0.4));
+    dx += rx / d * k; dy += ry / d * k;
+    rf *= 1 - fx.stringy * 0.45 * Math.sin(Math.PI * s);
+  }
+
   if (vis) { const damp = 1 - 0.55 * vis; dx *= damp; dy *= damp; }
   return { dx, dy, rf };
+}
+
+// ── 彩虹:唯一只改【颜色】的效果 ──
+// 色相按【绝对坐标】铺开,而不是相对形体质心 —— 相对质心的话,过渡期质心一移动,
+// 整片颜色会跟着滑,端点还会跳变。绝对坐标下颜色是空间里固定的一层,任何形变都不影响连续性。
+export function labTint(x, y, t, fx) {
+  const f = Math.min(2.5, fx.freq || 0.6);
+  return hsv(((x * 0.85 + y * 0.28 + t * f * 0.06) % 1 + 1) % 1, 0.85, 1);
+}
+// strength = 过渡期的交叉淡化系数(与实心场/发射器用同一个 e),端点精确归零。
+export function applyLabTint(balls, fx, t, strength, baseRGB) {
+  if (!fx || !fx.rainbow || strength <= 1e-3) return;
+  const s = Math.min(1, fx.rainbow * strength);
+  for (const b of balls) {
+    const c = labTint(b.x, b.y, t, fx), base = b.c || baseRGB;
+    b.c = [base[0] + (c[0] - base[0]) * s, base[1] + (c[1] - base[1]) * s, base[2] + (c[2] - base[2]) * s];
+  }
+}
+function hsv(h, s, v) {
+  const i = Math.floor(h * 6), f2 = h * 6 - i, p = v * (1 - s), q = v * (1 - f2 * s), u = v * (1 - (1 - f2) * s);
+  const [r, g, b] = [[v, u, p], [q, v, p], [p, v, u], [p, q, v], [u, p, v], [v, p, q]][i % 6];
+  return [r * 255, g * 255, b * 255];
 }
 
 // ── 发射器:产生【额外的球】而非位移(气泡/沸腾/滴落本质是"多出来的物质")。──
@@ -267,6 +370,51 @@ function emitDrips(out, g, slots, f, t, st, fade) {
     if (r > 1e-4) out.push({ x, y, r });
   }
 }
+// 天气类发射器:粒子从形体【外面】穿过或升起,所以生成范围按包围盒外扩。
+// 生命周期两端都做渐生渐隐(min(1,life*k) × min(1,(1-life)*k)),否则循环回卷时会"啪"地闪现。
+function emitFalling(out, g, slots, seed, rate, rr, sway, f, t, st, fade, up) {
+  const w0 = st.x1 - st.x0, span = (st.y1 - st.y0) + 0.55;
+  for (let k = 0; k < slots; k++) {
+    const per = 0.9 + 2.4 * hash1(k * seed + 1), phase = hash1(k * seed + 2), lane = hash1(k * seed + 3);
+    const life = ((t * f * rate / per + phase) % 1 + 1) % 1;
+    const x = st.x0 - 0.09 + (w0 + 0.18) * lane + sway * Math.sin(life * TAU * 2 + phase * TAU);
+    const y = up ? st.y1 + 0.12 - span * life : st.y0 - 0.24 + span * life;
+    const r = g * rr * Math.min(1, life * 9) * Math.min(1, (1 - life) * 6) * fade;
+    if (r > 1e-4) out.push({ x, y, r });
+  }
+}
+function emitRain(out, g, slots, f, t, st, fade) {
+  const w0 = st.x1 - st.x0, span = (st.y1 - st.y0) + 0.6;
+  for (let k = 0; k < slots; k++) {
+    const per = 0.5 + 0.5 * hash1(k * 7.77 + 1), phase = hash1(k * 7.77 + 2), lane = hash1(k * 7.77 + 3);
+    const life = ((t * f * 1.2 / per + phase) % 1 + 1) % 1;
+    const x = st.x0 - 0.08 + (w0 + 0.16) * lane, y = st.y0 - 0.3 + span * life;
+    const r = g * 0.010 * Math.min(1, life * 12) * Math.min(1, (1 - life) * 8) * fade;
+    if (r <= 1e-4) continue;
+    // 一滴雨 = 3 个递减的球连成一条 —— metaball 融合后就是一根雨丝,不用另加"线"这种图元
+    for (let s = 0; s < 3; s++) out.push({ x, y: y - s * 0.022, r: r * (1 - s * 0.28) });
+  }
+}
+function emitSmoke(out, g, slots, f, t, st, fade) {
+  for (let k = 0; k < slots; k++) {
+    const per = 1.6 + 2.2 * hash1(k * 11.3 + 1), phase = hash1(k * 11.3 + 2), lane = hash1(k * 11.3 + 3);
+    const life = ((t * f * 0.4 / per + phase) % 1 + 1) % 1;
+    const x = st.x0 + (st.x1 - st.x0) * (0.3 + 0.4 * lane) + 0.09 * Math.sin(life * 3.1 + phase * TAU) * life;
+    const y = st.y0 - life * 0.42;
+    const r = g * (0.012 + 0.05 * life) * (1 - life) * Math.min(1, life * 8) * fade; // 边升边胀边淡
+    if (r > 1e-4) out.push({ x, y, r });
+  }
+}
+function emitEmber(out, g, slots, f, t, st, fade) {
+  for (let k = 0; k < slots; k++) {
+    const per = 1.1 + 1.7 * hash1(k * 17.1 + 1), phase = hash1(k * 17.1 + 2), lane = hash1(k * 17.1 + 3);
+    const life = ((t * f * 0.7 / per + phase) % 1 + 1) % 1;
+    const x = st.x0 + (st.x1 - st.x0) * (0.15 + 0.7 * lane) + 0.05 * Math.sin(life * 7 + phase * TAU);
+    const y = st.y1 - (st.y1 - st.y0 + 0.3) * life * (0.6 + 0.4 * life);   // 加速上窜
+    const r = g * 0.011 * (1 - life) * Math.min(1, life * 12) * fade;
+    if (r > 1e-4) out.push({ x, y, r });
+  }
+}
 export function labEmit(fx, t, st, fade) {
   const out = [];
   if (!fx || fade <= 1e-3 || !hasLabEmit(fx)) return out;
@@ -276,5 +424,9 @@ export function labEmit(fx, t, st, fade) {
   if (fx.bubble) emitBubbles(out, fx.bubble, 9, 1.0, 0.032, f, t, st, fade);
   if (fx.boil) emitBubbles(out, fx.boil, 18, 2.0, 0.015, f, t, st, fade);
   if (fx.drip) emitDrips(out, fx.drip, 7, f, t, st, fade);
+  if (fx.snow) emitFalling(out, fx.snow, 22, 3.91, 0.35, 0.012, 0.03, f, t, st, fade, false);
+  if (fx.rain) emitRain(out, fx.rain, 20, f, t, st, fade);
+  if (fx.smoke) emitSmoke(out, fx.smoke, 12, f, t, st, fade);
+  if (fx.ember) emitEmber(out, fx.ember, 16, f, t, st, fade);
   return out;
 }

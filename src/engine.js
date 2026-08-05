@@ -4,7 +4,7 @@ import { hex2rgb } from './utils.js';
 import { W, H } from './config.js';
 import { pairVectorShapes, solidOutlinePolys, rasterizeVectorSolids } from './vector.js';
 import { segEdgeFx, displaceOutline, splatterDropletPolys, polysCentroid } from './edgefx.js';
-import { labDisp, labEmit, hasLabFx, dotsStat } from './labfx.js';
+import { labDisp, labEmit, applyLabTint, hasLabFx, dotsStat } from './labfx.js';
 
 // 缓动:端点连续、速度/加速度在端点收敛(smootherstep 最柔)。
 // 物理组(backOut/elasticOut/bounceOut)刻意在中途越过 1 再回落 —— 过冲/弹跳/回弹的"手感"
@@ -489,15 +489,16 @@ export function sampleFrame(SEQ, states, g, time, P){
         solids=attachFxWarp([...vsolid, ...base], states, time);
       } else solids=attachFxWarp(solidsOf(seg,states,0), states, time);
     } else solids=attachFxWarp(solidsOf(seg,states,0), states, time); // 停留期动态几何也晃动实心/矢量
-    return {seg, col:hex2rgb(st.color), cam:camIdentity(cam)?null:cam,
-      solids,
-      // 🧪 发射器(气泡/沸腾/滴落)产生的是【额外的球】,追加在数组末尾 ——
-      // 轨迹叠加层依赖"头部球在前 N 位"的约定,故新球一律往后加,不打乱下标。
-      balls:applyCam(suppressSolidDots(st.dots.map(b=>{ const ph=dotPhase(b.x,b.y);
+    const col=hex2rgb(st.color);
+    // 🧪 发射器(气泡/雪/雨/烟/火星…)产生的是【额外的球】,追加在数组末尾 ——
+    // 轨迹叠加层依赖"头部球在前 N 位"的约定,故新球一律往后加,不打乱下标。
+    const balls=suppressSolidDots(st.dots.map(b=>{ const ph=dotPhase(b.x,b.y);
         let X=b.x+P.amp*drift(ph,time,P), Y=b.y+P.amp*drift(ph+3.1,time,P), R=b.r;
         if(fxOn){ const d=behaviorDisp(b.x,b.y,fs.cx,fs.cy,time,fx,fs); X+=d.dx; Y+=d.dy; R*=d.rf; }
         return {x:X, y:Y, r:R, c:b.c, sfA:b.sf};
-      }).concat(fxOn?labEmit(fx,time,fs,1):[]), seg, states, 0), cam)};
+      }).concat(fxOn?labEmit(fx,time,fs,1):[]), seg, states, 0);
+    applyLabTint(balls, fx, time, 1, col);        // 🌈 彩虹:逐球上色(含发射出来的球)
+    return {seg, col, cam:camIdentity(cam)?null:cam, solids, balls:applyCam(balls, cam)};
   } else {
     const lt=(g-seg.t0)/seg.dur, ca=hex2rgb(states[seg.a].color), cb=hex2rgb(states[seg.b].color);
     const e=EASE.smoothstep(lt), cam=camAt(seg,states,lt);
@@ -508,11 +509,15 @@ export function sampleFrame(SEQ, states, g, time, P){
     // 🧪 发射器按过渡进度交叉淡化(离场 1−e、入场 e):e=0/1 时另一端半径精确为 0,
     // 与相邻停留段严丝合缝 —— 与实心场的淡化用的是同一个 e,气泡不会在变形瞬间闪断。
     const emit=fxc ? labEmit(fxc.fxA,time,fxc.sA,1-e).concat(labEmit(fxc.fxB,time,fxc.sB,e)) : [];
-    return {seg, balls:applyCam(suppressSolidDots(
-        transBalls(seg.pairs,lt,time,segParams(P,seg.ov),fxc,seg.morphLayers,seg.ease).concat(emit), seg, states, lt), cam),
+    const col=[ca[0]+(cb[0]-ca[0])*e, ca[1]+(cb[1]-ca[1])*e, ca[2]+(cb[2]-ca[2])*e];
+    const balls=suppressSolidDots(
+        transBalls(seg.pairs,lt,time,segParams(P,seg.ov),fxc,seg.morphLayers,seg.ease).concat(emit), seg, states, lt);
+    // 🌈 彩虹按同一个 e 交叉淡化:只有一端开彩虹时,颜色在过渡里平滑淡入/淡出,端点精确归零。
+    if(fxc){ applyLabTint(balls, fxA, time, 1-e, col); applyLabTint(balls, fxB, time, e, col); }
+    return {seg, balls:applyCam(balls, cam),
       cam:camIdentity(cam)?null:cam,
       // 动态几何 fx 按过渡进度交叉淡化:离场状态 1→e、入场状态 e(用位置同款缓动 e)—— 微光/波浪慢慢消失。
       solids:attachFxWarp(solidsOf(seg,states,lt), states, time, si=> si===seg.a ? 1-e : (si===seg.b ? e : 1)),
-      col:[ca[0]+(cb[0]-ca[0])*e, ca[1]+(cb[1]-ca[1])*e, ca[2]+(cb[2]-ca[2])*e]};
+      col};
   }
 }

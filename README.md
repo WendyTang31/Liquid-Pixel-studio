@@ -10,7 +10,7 @@ but aren't experts in After Effects or Blender.
 
 [**▶ Live demo**](https://wendytang31.github.io/Liquid-Pixel-studio/) · runs in the browser, nothing to install
 
-![tests](https://img.shields.io/badge/tests-106%20passing-2cc4f5) ![license](https://img.shields.io/badge/license-MIT-2cc4f5) ![runs in](https://img.shields.io/badge/runs%20in-browser-2cc4f5)
+![tests](https://img.shields.io/badge/tests-115%20passing-2cc4f5) ![license](https://img.shields.io/badge/license-MIT-2cc4f5) ![runs in](https://img.shields.io/badge/runs%20in-browser-2cc4f5)
 
 <div align="center">
    
@@ -47,10 +47,13 @@ and publishing is just static hosting.
      morphs together), or *freeze* (never moves).
 4. **Style it.** Dynamic Geometry (slosh / ripple / jagged / splatter), Ink Deposit (edge ink + bleed),
    stroke vs fill, colors, per‑state camera and in‑state loops (blink / walk).
-   **🧪 Lab Physics** adds 26 more per‑state qualities — gravity sag, buoyancy, pressure, heartbeat,
-   turbulence, vortex, wind, viscosity, melt, evaporate, attract/repel, lean, coherence, shatter,
-   crystallize, sand, whip, tremor, bubble, boil, drip — plus `spring` / `anticipate` / `hesitate`
-   easings. They're additive displacement fields, so they stack: a mix of sliders is a mix of physics.
+   **🧪 Lab Physics** adds 39 more per‑state qualities in seven groups — *real dynamics* (gravity sag,
+   buoyancy, pressure, heartbeat), *fluid & material* (turbulence, vortex, wind, viscosity, melt,
+   evaporate, swell, churn, stringy), *collective & deixis* (attract/repel, lean, coherence),
+   *structure* (shatter, crystallize, sand, whip), *rhythm* (tremor, bubble, boil, drip), and
+   *imagery* (sunshine, falling leaf, bird wingbeat, floating, caustics, rainbow, snow, rain, smoke,
+   embers) — plus `spring` / `anticipate` / `hesitate` easings. They're additive displacement fields,
+   so they stack: a mix of sliders is a mix of physics.
 5. **Preview.** Hit **▶ Preview** to loop the whole sequence.
 6. **Put it on a 3D model.** **🚗 3D Preview** → load a `.glb` (or use the demo car) → project via **🧩 UV map**
    (Blender unwrap) or **🌀 Wrap** (cylindrical). Dim the model's own texture with **Model tex** so your animation reads.
@@ -110,7 +113,7 @@ Nothing here is required — every action also has a button — but these make t
 npm install
 npm run dev      # editor on http://localhost:5173
 npm run build    # static dist/  (index.html + viewer.html)
-npm test         # 106 unit tests
+npm test         # 115 unit tests
 ```
 
 The build is fully static — host `dist/` on **GitHub Pages / Cloudflare Pages / Netlify** for free.
@@ -130,7 +133,7 @@ src/
   vector.js      vector / puppet morph, constraints (self/linked/free/freeze)
   render.js      CPU tile field renderer + solid SDF sampler + ink deposit
   edgefx.js      edge geometry (fine wave / jagged / splatter)
-  labfx.js       lab physics: 26 analytic displacement/emitter fields (emotion test bench)
+  labfx.js       lab physics: 39 analytic displacement/emitter/tint fields (emotion test bench)
   pipeline.js    shapes → mask → dots / SDF
   state.js       data model, undo/redo, project serialize
   export.js      PNG zip / MP4 / WebM
