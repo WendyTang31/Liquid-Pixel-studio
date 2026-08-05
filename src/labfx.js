@@ -1,0 +1,280 @@
+// 实验物理效果层(Lab FX):在既有「动态几何」之外新增一批可独立开关的物理质感,
+// 用于验证"动效物理质感 ↔ 情绪"的映射(AV 灯语语言研究:愤怒=锯齿/飞溅,喜悦=气泡/弹簧,
+// 疲惫=下垂/融化,机器=同步/棱角,人=异相/圆润)。
+//
+// 铁律 —— 全部是【纯解析场】:只依赖(点的基础坐标, 形体统计量 stat, 全局时间 t),
+// 不做时间积分、不保存任何状态。这样任意时刻可凭空求值 → 时间轴可拖、导出确定性、预览==导出。
+// 真实的弹簧/群集/碰撞/布料都是【有状态积分器】,会毁掉这个根基,故这里一律取其解析近似:
+//   · 弹簧 → 阻尼振荡的闭式解(见 engine.js 的 spring 缓动)
+//   · 群集/流体 → 相干正弦场、势函数的 curl(无散度,体积不塌)
+//   · 碰撞/沉降 → 带地板钳位的确定性生命周期
+// 质感一致,而不引入隐藏状态。
+//
+// 光敏红线:所有振荡频率与既有 fx 一样硬钳 ≤2.5Hz;逐点效果默认异相(coherence=0),
+// 聚合亮度平滑,不产生 3–30Hz 频闪。颤抖/碎裂等"激烈"效果一律做成【位置抖动】而非亮度抖动。
+//
+// 与 engine.behaviorDisp 的关系:labDisp 的结果【加】在既有效果之上(同为可加位移场),
+// 所以情绪混合 = 位移场的加权和,无需任何特判 —— 这正是本工具能当"情绪调音台"的原因。
+const TAU = 6.283185307;
+const FXB = 0.04;            // 位移基准幅度(归一化画布),与 engine.behaviorDisp 同一基准
+
+const hash1 = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+// 逐点相位:同一坐标永远得到同一相位(与 engine.dotPhase 同构 —— 保证停留↔过渡边界零跳变)。
+// coherence=0 → 各点异相(有机、活的);=1 → 相位全归零、整体同步(机械、指令、警报)。
+// 这一个标量就是"圆/人 ⇄ 方/车"在【时间维度】上的表达,与采样器在空间维度上的作用互补。
+const dotPh = (x, y, fx) => {
+  const s = Math.sin(x * 269.5 + y * 183.3) * 43758.5453, fr = s - Math.floor(s);
+  return fr * (1 - Math.min(1, Math.max(0, fx.coherence || 0)));
+};
+
+// 形体统计量:质心 + 平均半径 + 包围盒。重力/融化/沉降/气泡都需要"形体自身的尺度与上下界",
+// 否则效果幅度会随图形大小失真(小图形被扯烂、大图形纹丝不动)。
+// 与 centroid 一样只是"当前点集的函数",不引入状态。
+export function dotsStat(dots) {
+  if (!dots || !dots.length) return { cx: .5, cy: .5, rad: .25, x0: .25, y0: .25, x1: .75, y1: .75 };
+  let sx = 0, sy = 0, x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const d of dots) {
+    sx += d.x; sy += d.y;
+    if (d.x < x0) x0 = d.x; if (d.x > x1) x1 = d.x;
+    if (d.y < y0) y0 = d.y; if (d.y > y1) y1 = d.y;
+  }
+  const n = dots.length, cx = sx / n, cy = sy / n;
+  let sr = 0; for (const d of dots) sr += Math.hypot(d.x - cx, d.y - cy);
+  return { cx, cy, rad: Math.max(0.02, sr / n), x0, y0, x1, y1 };
+}
+export const DEF_STAT = { cx: .5, cy: .5, rad: .25, x0: .25, y0: .25, x1: .75, y1: .75 };
+
+// ── 效果表:UI(滑块行)、回填、监听全部由这张表驱动 ——
+// 单一事实来源,新增一个效果 = 表里加一行 + labDisp 里加一个 if。
+// keep:true 的项即使为 0 也要写进 fx(它们是"参数"而非"幅度",如风向、结晶边数)。
+// dp = 显示小数位。
+export const LAB_FX = [
+  // ⚙ 真实动力学 —— 情绪的"体重与体力"
+  { g: '⚙ 真实动力学', key: 'gravity', label: '重力下垂', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '重力下垂:整体向下沉,离中轴越远垂得越多(悬链线感),伴极缓沉降呼吸。表达疲惫、认输、力竭。' },
+  { g: '⚙ 真实动力学', key: 'buoyancy', label: '浮力上浮', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '浮力上浮:缓慢上升并轻微摆荡,像在水里/无重力。表达轻盈、放松、走神。与「重力下垂」是同一轴的两端。' },
+  { g: '⚙ 真实动力学', key: 'pressure', label: '膨胀/收缩', min: -1, max: 1, step: .05, def: 0, dp: 2,
+    title: '压力:沿法线整体外胀(正)或内缩(负),外层动得多 → 像充气而不是整体平移。外胀=得意/怒气积聚,内缩=泄气/退让。' },
+  { g: '⚙ 真实动力学', key: 'pulse', label: '心跳', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '心跳:lub-dub 双击式径向脉冲(不是正弦)。表达活着、紧张、临近。频率即唤醒度。' },
+  // 🌊 流体与材质 —— 情绪的"材料"
+  { g: '🌊 流体与材质', key: 'turbulence', label: '湍流', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '湍流:势函数的 curl → 无散度流场(体积不被压缩,这正是 curl noise 的价值)。三组不可通约频率 → 长时间不重复。表达不安、心神不宁。' },
+  { g: '🌊 流体与材质', key: 'vortex', label: '漩涡', min: -1, max: 1, step: .05, def: 0, dp: 2,
+    title: '漩涡:绕质心的切向场,涡核处最强、外围衰减,且缓慢正反转(恒定旋转会把点越缠越死)。表达眩晕、被吸入、困惑。' },
+  { g: '🌊 流体与材质', key: 'wind', label: '风', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '风:定向推力 + 阵风包络(两条不可通约慢正弦叠加 → 时强时弱但确定),迎风面先受力。可直接映射车速。' },
+  { g: '🌊 流体与材质', key: 'windDir', label: '风向°', min: 0, max: 360, step: 5, def: 0, dp: 0, keep: true,
+    title: '风向(度):0=向右,90=向下,180=向左,270=向上。' },
+  { g: '🌊 流体与材质', key: 'viscosity', label: '粘滞', min: 0, max: 1, step: .05, def: 0, dp: 2, keep: true,
+    title: '粘滞(修饰器,只作用于本实验区效果):同时压低幅度并放慢相位 → 同一个效果变"稠"。高粘滞=沉重/迟钝/抗拒,低粘滞=轻快/易激动。' },
+  { g: '🌊 流体与材质', key: 'melt', label: '融化', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '融化:越靠下流得越多(上层还挂着),触底向两侧摊开。表达崩溃、耗尽、放弃。' },
+  { g: '🌊 流体与材质', key: 'evaporate', label: '蒸发', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '蒸发:逐点各自错开地上升并缩小消失、再重新长出(两端都渐变,不会"啪"地出现)。表达注意力流失、脱离、心不在焉。' },
+  // 👥 集体与指向 —— 情绪的"社交朝向"
+  { g: '👥 集体与指向', key: 'attract', label: '吸引/排斥', min: -1, max: 1, step: .05, def: 0, dp: 2,
+    title: '吸引(正)/排斥(负):朝向或背离下面的目标点,近处更强。把目标点设成"被搭话的那个人"的方位 = 指示(deixis),这是"我说的是你"最强的表达。' },
+  { g: '👥 集体与指向', key: 'attX', label: '目标X', min: 0, max: 1, step: .01, def: .5, dp: 2, keep: true,
+    title: '吸引/排斥的目标点水平位置(0=左,1=右)。' },
+  { g: '👥 集体与指向', key: 'attY', label: '目标Y', min: 0, max: 1, step: .01, def: .5, dp: 2, keep: true,
+    title: '吸引/排斥的目标点垂直位置(0=上,1=下)。' },
+  { g: '👥 集体与指向', key: 'lean', label: '倾斜', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '倾斜:底部不动、越往上偏移越大的剪切(像身体前倾)。朝某人前倾=关注/压迫,后仰=退让。' },
+  { g: '👥 集体与指向', key: 'leanDir', label: '倾斜°', min: 0, max: 360, step: 5, def: 0, dp: 0, keep: true,
+    title: '倾斜方向(度):0=向右,90=向下,180=向左,270=向上。' },
+  { g: '👥 集体与指向', key: 'coherence', label: '同步度', min: 0, max: 1, step: .05, def: 0, dp: 2, keep: true,
+    title: '同步度(修饰器):0=各点异相(有机、活的、像人),1=全体同相(机械、指令、像警报)。本区所有逐点效果(蒸发/沉降/颤抖)共用。这是"圆=人 / 方=车"在时间维度上的表达。' },
+  // 🧱 结构 —— 情绪的"完整性"
+  { g: '🧱 结构', key: 'shatter', label: '碎裂', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '碎裂:按角度分成 7 块碎片,各自朝不同方向错开地崩开再合拢(块与块之间刻意不连续 = 断裂感)。表达愤怒、失控、警报。是「飞溅」的刚性对应物。' },
+  { g: '🧱 结构', key: 'crystallize', label: '结晶', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '结晶:把圆润边界连续推成正多边形 —— 圆(人/友善)→ 棱角(机器/敌意)的连续硬化。做成随时间推进的通道 = "耐心正在耗尽"。' },
+  { g: '🧱 结构', key: 'crystalN', label: '结晶边数', min: 3, max: 12, step: 1, def: 6, dp: 0, keep: true,
+    title: '结晶目标多边形的边数(3=三角最尖锐,12=接近圆)。' },
+  { g: '🧱 结构', key: 'sand', label: '流沙沉降', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '流沙:各点错开地加速下落、堆到底面停住,并在两端渐隐渐生。表达凝聚力失效、耗散、垮塌。' },
+  { g: '🧱 结构', key: 'whip', label: '鞭梢/绳', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '鞭梢:相位随离锚点距离滞后 → 波从锚点向梢部传播,幅度随距离平方增长(绳/尾巴/旗)。未设「波浪锚点」时以顶部中心为锚。' },
+  // ⏱ 节奏
+  { g: '⏱ 节奏', key: 'tremor', label: '颤抖', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '颤抖:逐点异相的小幅高频抖动 —— 只抖【位置】不抖【亮度】,故不构成频闪;频率同样钳在 ≤2.5Hz。表达恐惧、紧绷、寒冷、强忍。' },
+  { g: '⏱ 节奏', key: 'bubble', label: '气泡', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '气泡:形体内部不断生出小球上浮、到顶胀大后破掉(半径正弦包络 → 两端自然为 0)。metaball 原生效果。表达喜悦、雀跃、笑意 —— 情绪表里的"兴奋"通道。' },
+  { g: '⏱ 节奏', key: 'boil', label: '沸腾', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '沸腾:更密更快更小的气泡 + 表面躁动。介于「气泡=喜悦」与「飞溅=暴怒」之间 —— 表达"还没爆发的怒气"、压力积聚。' },
+  { g: '⏱ 节奏', key: 'drip', label: '滴落', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '滴落:水珠从底边脱落、按自由落体(∝t²)下坠并渐隐。表达渗漏、消耗、哀伤。' },
+];
+
+// 幅度类键(不含"参数"类):只要任一 > 0 就需要求值。参数类(风向/目标点/边数/粘滞/同步度)单独放着不触发。
+const AMP_KEYS = LAB_FX.filter(s => !s.keep).map(s => s.key);
+const EMIT_KEYS = ['bubble', 'boil', 'drip'];
+const DISP_KEYS = AMP_KEYS.filter(k => !EMIT_KEYS.includes(k));
+
+export const hasLabFx = fx => { if (!fx) return false; for (const k of AMP_KEYS) if (fx[k]) return true; return false; };
+export const hasLabDisp = fx => { if (!fx) return false; for (const k of DISP_KEYS) if (fx[k]) return true; return false; };
+export const hasLabEmit = fx => { if (!fx) return false; for (const k of EMIT_KEYS) if (fx[k]) return true; return false; };
+
+// 湍流的势函数:三组不可通约的空间频率。curl(∂ψ/∂y, −∂ψ/∂x) 天然无散度 → 点不会被压缩成团。
+const OCT_A = [1, 0.5, 0.25], OCT_X = [7.3, 13.7, 23.1], OCT_Y = [6.1, 17.3, 11.9], OCT_W = [1, 1.73, 2.61];
+const TNORM = 1 / OCT_A.reduce((s, A, k) => s + A * Math.max(OCT_X[k], OCT_Y[k]), 0);
+
+// ── 主位移场:返回【增量】{dx,dy,rf},由 engine 加到既有效果之上。──
+// x,y = 点的基础坐标(归一化);cx,cy = 形体质心;st = dotsStat;t = 全局时间(秒)。
+export function labDisp(x, y, cx, cy, t, fx, st) {
+  let dx = 0, dy = 0, rf = 1;
+  if (!hasLabDisp(fx)) return { dx, dy, rf };
+  st = st || DEF_STAT;
+  const vis = Math.min(1, Math.max(0, fx.viscosity || 0));
+  // 粘滞:放慢相位 + 压低幅度 = 同一个动作变"稠"。只作用于本层,不改既有 fx 的语义。
+  const f = Math.min(2.5, fx.freq || 0.6) * (1 - 0.7 * vis);
+  const w = TAU * f * t;
+  const rad = Math.max(0.02, st.rad), hSpan = Math.max(1e-6, st.y1 - st.y0);
+
+  if (fx.gravity) { // 悬链线式下垂:离中轴越远垂得越多,叠极缓沉降呼吸(静止的下垂读作"坏了",会动才读作"累了")
+    const hx = Math.min(1, Math.abs(x - cx) / rad);
+    dy += fx.gravity * FXB * 2.2 * (0.25 + 0.75 * hx * hx) * (0.85 + 0.15 * Math.sin(w));
+  }
+  if (fx.buoyancy) { // 上浮 + 侧向摆荡(纯上浮像整体平移,加摆荡才有"浮在液体里"的质感)
+    const a = fx.buoyancy * FXB * 1.6;
+    dy -= a * (0.6 + 0.4 * Math.sin(w));
+    dx += a * 0.35 * Math.sin(0.7 * w + 3.1 * (y - cy) / rad);
+  }
+  if (fx.pressure) { // 沿径向充气/泄气:幅度 ∝ 离质心距离 → 外层动得多,才像"胀"而不是"整体挪"
+    const rx = x - cx, ry = y - cy, d = Math.hypot(rx, ry) + 1e-6;
+    const k = fx.pressure * FXB * 1.8 * (0.5 + 0.5 * Math.sin(w)) * (d / rad);
+    dx += rx / d * k; dy += ry / d * k;
+  }
+  if (fx.pulse) { // lub-dub 双击:两个错开的高斯冲击,而非正弦 —— 正弦读作"呼吸",双击才读作"心跳"
+    const rx = x - cx, ry = y - cy, d = Math.hypot(rx, ry) + 1e-6;
+    const ph = ((t * f) % 1 + 1) % 1;
+    const thump = s => Math.exp(-Math.pow((ph - s) / 0.055, 2));
+    const k = fx.pulse * FXB * 1.5 * (thump(0.06) + 0.62 * thump(0.20)) * (0.35 + 0.65 * d / rad);
+    dx += rx / d * k; dy += ry / d * k;
+  }
+  if (fx.turbulence) { // 势函数的 curl:解析可导、精确无散度,比噪声网格便宜一个数量级
+    let vx = 0, vy = 0;
+    for (let k = 0; k < 3; k++) {
+      const c = Math.cos(OCT_X[k] * x + OCT_Y[k] * y + OCT_W[k] * w);
+      vx += OCT_A[k] * OCT_Y[k] * c; vy -= OCT_A[k] * OCT_X[k] * c;
+    }
+    const a = fx.turbulence * FXB * 1.4 * TNORM;
+    dx += a * vx; dy += a * vy;
+  }
+  if (fx.vortex) { // 涡核:exp 衰减 × 线性增长 → 中间某个半径最强(真实涡的速度剖面)
+    const rx = x - cx, ry = y - cy, d = Math.hypot(rx, ry) + 1e-6;
+    const k = fx.vortex * FXB * 1.8 * Math.exp(-d / (rad * 0.9)) * (d / rad) * Math.sin(w * 0.5 + 1.2);
+    dx += -ry / d * k; dy += rx / d * k;
+  }
+  if (fx.wind) { // 阵风 + 迎风面先受力(相位随沿风向的投影滞后)→ 有"吹过去"的时间差,而非整体平移
+    const ang = (fx.windDir || 0) * Math.PI / 180;
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const gust = 0.45 + 0.35 * Math.sin(w * 0.37) + 0.20 * Math.sin(w * 0.91 + 2.1);
+    const lead = ((x - cx) * ca + (y - cy) * sa) / rad;
+    const k = fx.wind * FXB * 2.0 * gust * (1 + 0.35 * Math.sin(w - 1.6 * lead));
+    dx += ca * k; dy += sa * k;
+  }
+  if (fx.melt) { // 越靠下流得越多(上层还挂着),触底朝两侧摊开
+    const depth = Math.min(1, Math.max(0, (y - st.y0) / hSpan)), flow = depth * depth;
+    const a = fx.melt * FXB * 3.0;
+    dy += a * flow * (0.7 + 0.3 * Math.sin(w * 0.5 + 4 * x));
+    dx += a * 0.5 * flow * Math.sign(x - cx || 1) * Math.abs(Math.sin(w * 0.31 + 2.7 * x));
+  }
+  if (fx.evaporate) { // 逐点错开的生命周期:渐生 → 上升 → 渐隐。两端都渐变,故不会"啪"地出现/消失
+    const ph = dotPh(x, y, fx), life = ((t * f * 0.5 + ph) % 1 + 1) % 1;
+    const visible = Math.min(1, life / 0.12) * Math.min(1, (1 - life) / 0.35);
+    dy -= fx.evaporate * FXB * 6 * life * life;
+    rf *= 1 - fx.evaporate * (1 - visible);
+  }
+  if (fx.attract) { // 指示(deixis):把目标点放在"被搭话的人"的方位,整块朝他倾去 = "我说的是你"
+    const ax = fx.attX == null ? .5 : fx.attX, ay = fx.attY == null ? .5 : fx.attY;
+    const rx = ax - x, ry = ay - y, d = Math.hypot(rx, ry) + 1e-6;
+    const k = fx.attract * FXB * 2.5 * (0.4 + 0.6 * Math.min(1, rad / d)) * (0.75 + 0.25 * Math.sin(w));
+    dx += rx / d * k; dy += ry / d * k;
+  }
+  if (fx.lean) { // 底部固定的剪切 = 身体前倾/后仰,而不是整体平移(平移没有"姿态"的意思)
+    const ang = (fx.leanDir || 0) * Math.PI / 180;
+    const h = Math.min(1, Math.max(0, (st.y1 - y) / hSpan));
+    const k = fx.lean * FXB * 3.0 * h * (0.8 + 0.2 * Math.sin(w * 0.5));
+    dx += Math.cos(ang) * k; dy += Math.sin(ang) * k;
+  }
+  if (fx.shatter) { // 按角度切 7 块,各块整体错开地崩开再合拢。块与块之间【刻意不连续】—— 那就是断裂
+    const rx = x - cx, ry = y - cy, d = Math.hypot(rx, ry) + 1e-6;
+    const CELLS = 7, s = ((Math.atan2(ry, rx) / TAU) % 1 + 1) % 1, cell = Math.floor(s * CELLS);
+    const hh = hash1(cell * 3.77 + 1);
+    const ang = (cell + 0.5) / CELLS * TAU + (hh - 0.5) * 0.7;
+    const env = Math.max(0, Math.sin(w * 0.5 + hh * TAU));
+    const k = fx.shatter * FXB * 4.0 * (0.45 + 0.55 * hh) * env * (0.3 + 0.7 * d / rad);
+    dx += Math.cos(ang) * k; dy += Math.sin(ang) * k;
+  }
+  if (fx.crystallize) { // 正 N 边形的极半径:边中点被压进去、顶点留在外 → 圆连续变成多边形
+    const N = Math.max(3, Math.round(fx.crystalN || 6));
+    const rx = x - cx, ry = y - cy, d = Math.hypot(rx, ry) + 1e-6;
+    const seg = TAU / N, th = Math.atan2(ry, rx);
+    const poly = Math.cos(seg / 2) / Math.cos(((th % seg) + seg) % seg - seg / 2);
+    const k = fx.crystallize * (poly - 1) * d * (0.85 + 0.15 * Math.sin(w * 0.4));
+    dx += rx / d * k; dy += ry / d * k;
+  }
+  if (fx.sand) { // 加速下落 + 地板钳位 + 两端渐隐渐生(否则循环回卷时会"啪"地弹回原位)
+    const ph = dotPh(x, y, fx), rate = 0.55 + 0.9 * hash1(ph * 91.7 + 5);
+    const life = ((t * f * 0.4 * rate + ph) % 1 + 1) % 1;
+    const floor = st.y1 + 0.02, room = Math.max(0, floor - y);
+    const visible = Math.min(1, life / 0.10) * Math.min(1, (1 - life) / 0.25);
+    dy += fx.sand * Math.min(room, life * life * room * 1.6);
+    dx += fx.sand * FXB * 0.25 * Math.sin(ph * TAU + w * 0.3) * life * life;
+    rf *= 1 - fx.sand * (1 - visible);
+  }
+  if (fx.whip) { // 相位随离锚点距离滞后 → 波从锚点向梢部【传播】;幅度 ∝ 距离² → 梢部甩得最狠
+    const ax = fx.anchor ? fx.anchor.x : cx, ay = fx.anchor ? fx.anchor.y : st.y0;
+    const rx = x - ax, ry = y - ay, d = Math.hypot(rx, ry) + 1e-6;
+    const s = Math.min(1.5, d / rad);
+    const k = fx.whip * FXB * 3.5 * s * s * Math.sin(w - 2.4 * s);
+    dx += -ry / d * k; dy += rx / d * k;
+  }
+  if (fx.tremor) { // 只抖【位置】不抖【亮度】→ 不构成频闪;频率同样钳 ≤2.5Hz,逐点异相
+    const ph = dotPh(x, y, fx), a = fx.tremor * FXB * 0.9;
+    dx += a * Math.sin(w + ph * TAU);
+    dy += a * Math.cos(w * 1.15 + ph * TAU * 1.7);
+  }
+
+  if (vis) { const damp = 1 - 0.55 * vis; dx *= damp; dy *= damp; }
+  return { dx, dy, rf };
+}
+
+// ── 发射器:产生【额外的球】而非位移(气泡/沸腾/滴落本质是"多出来的物质")。──
+// fade 用于过渡期按状态交叉淡化(离场 1→0、入场 0→1),半径乘 fade → 端点精确归零,与停留段严丝合缝。
+// 所有槽位的周期/相位/水平位置都由 hash 定死 → 确定性,拖时间轴与导出完全一致。
+// 亮度安全:各槽异相且半径包络两端为 0,聚合亮度平滑,不产生频闪。
+function emitBubbles(out, g, slots, rate, rmax, f, t, st, fade) {
+  for (let k = 0; k < slots; k++) {
+    const per = 0.9 + 1.8 * hash1(k * 5.31 + 1), phase = hash1(k * 5.31 + 2), lane = hash1(k * 5.31 + 3);
+    const life = ((t * f * rate / per + phase) % 1 + 1) % 1;
+    const x = st.x0 + (st.x1 - st.x0) * (0.12 + 0.76 * lane) + 0.012 * Math.sin(life * TAU * 1.5 + phase * TAU);
+    const y = st.y1 - (st.y1 - st.y0) * life;              // 底 → 顶
+    const r = g * rmax * Math.sin(Math.PI * life) * fade;   // 先胀后破,两端为 0 = 自然生灭
+    if (r > 1e-4) out.push({ x, y, r });
+  }
+}
+function emitDrips(out, g, slots, f, t, st, fade) {
+  for (let k = 0; k < slots; k++) {
+    const per = 1.1 + 2.0 * hash1(k * 9.17 + 1), phase = hash1(k * 9.17 + 2), lane = hash1(k * 9.17 + 3);
+    const life = ((t * f * 0.6 / per + phase) % 1 + 1) % 1;
+    const x = st.x0 + (st.x1 - st.x0) * (0.15 + 0.7 * lane);
+    const y = st.y1 + life * life * 0.42;                   // 自由落体 ∝ t²
+    const r = g * 0.026 * Math.min(1, life * 8) * Math.min(1, (1 - life) * 2.2) * fade;
+    if (r > 1e-4) out.push({ x, y, r });
+  }
+}
+export function labEmit(fx, t, st, fade) {
+  const out = [];
+  if (!fx || fade <= 1e-3 || !hasLabEmit(fx)) return out;
+  st = st || DEF_STAT;
+  const vis = Math.min(1, Math.max(0, fx.viscosity || 0));
+  const f = Math.min(2.5, fx.freq || 0.6) * (1 - 0.7 * vis);
+  if (fx.bubble) emitBubbles(out, fx.bubble, 9, 1.0, 0.032, f, t, st, fade);
+  if (fx.boil) emitBubbles(out, fx.boil, 18, 2.0, 0.015, f, t, st, fade);
+  if (fx.drip) emitDrips(out, fx.drip, 7, f, t, st, fade);
+  return out;
+}

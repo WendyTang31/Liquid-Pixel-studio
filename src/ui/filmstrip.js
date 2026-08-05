@@ -8,6 +8,7 @@ import { syncClipUI } from './clipPanel.js';
 import { copyKeyframes, pasteKeyframes, transformKeyframes, deleteKeyframes, hasClipboard } from './keyframes.js';
 import { setMode } from './stage.js';
 import { makeState, pushUndo, groupTail } from '../state.js';
+import { LAB_FX } from '../labfx.js';
 
 export function setActive(i){
   store.active=i; store.selStates=[i]; store.sel=null; updateSelBox(); syncStateUI();
@@ -66,6 +67,9 @@ export function syncStateUI(){
   fxg('fxSpring','vFxSpring','spring',0); fxg('fxLiquid','vFxLiquid','liquid',0);
   fxg('fxRipple','vFxRipple','ripple',0); fxg('fxTwinkle','vFxTwinkle','twinkle',0);
   fxg('fxWobble','vFxWobble','wobble',0);
+  // 🧪 实验物理回填:同样由 LAB_FX 表驱动,面板未生成时(极早期调用)静默跳过。
+  for(const s of LAB_FX){ const el=$('lab_'+s.key); if(!el) continue;
+    const v=fx[s.key]??s.def; el.value=v; $('vlab_'+s.key).textContent=(+v).toFixed(s.dp); }
   // 📷 本状态镜头回填
   const cm=s.cam||{x:0.5,y:0.5,z:1,rot:0};
   $('camZ').value=cm.z;   $('vCamZ').textContent=(+cm.z).toFixed(2)+'×';

@@ -260,6 +260,9 @@
           <option value="backOut">回弹 backOut</option>
           <option value="elasticOut">弹性 elasticOut</option>
           <option value="bounceOut">弹跳 bounceOut</option>
+          <option value="spring">🧪 弹簧 spring(真·阻尼振荡)</option>
+          <option value="anticipate">🧪 预备 anticipate(先蓄力再出发)</option>
+          <option value="hesitate">🧪 迟疑 hesitate(途中三次减速)</option>
         </select></div>
       <div class="row"><label class="ck" title="速度曲线(三次贝塞尔):独立控制过渡的【起步】与【落位】速度,勾选即覆盖上面的缓动。要相邻状态无缝,把下一段的『起步』设成本段的『落位』(或点🔗按钮)。"><input type="checkbox" id="trSpeedOn"> ⚡ 速度曲线(起步/落位)</label></div>
       <div id="trSpeedBox" style="display:none">
@@ -316,6 +319,14 @@
         <select id="efxScope" style="flex:1"><option value="span">整段(含过渡)</option><option value="hold">仅停留</option></select></div>
       <div class="row"><label title="仅『整段』时限定作用的状态区间(1 基,含两端;留空=全部)。例:2 到 4 = 只在第2~4个状态及其之间的过渡出现。">状态</label>
         <input type="text" id="efxFrom" style="width:40px" placeholder="1"> 到 <input type="text" id="efxTo" style="width:40px" placeholder="末"></div>
+    </div>
+    <div class="selbox" title="实验物理效果:一批新的物理质感,用于测试「动效物理质感 ↔ 情绪」的对应关系。全部为逐状态参数(与「动态几何」一样存进工程文件),纯解析场 → 时间轴可拖、预览==导出。频率与「动态几何」共用上面那个『频率 Hz』滑块,同样硬钳 ≤2.5Hz。">
+      <div class="small">🧪 实验物理(情绪测试台)</div>
+      <div class="small" style="opacity:.55;line-height:1.5;margin:2px 0 4px">
+        每项可独立开关、可叠加(位移场相加)。滑到 0 = 关闭。悬停标签看该效果表达什么情绪。</div>
+      <div id="labFxRows"></div>
+      <div class="row" style="margin-top:4px">
+        <button id="labFxClear" style="flex:1" title="把本状态的全部实验效果归零(不影响上面的动态几何)">↺ 清空本状态实验效果</button></div>
     </div>
     <div class="row">
       <button id="stLeft" title="前移">←</button>
@@ -412,6 +423,9 @@
         <option value="backOut">回弹 backOut</option>
         <option value="elasticOut">弹性 elasticOut</option>
         <option value="bounceOut">弹跳 bounceOut</option>
+        <option value="spring">🧪 弹簧 spring(真·阻尼振荡)</option>
+        <option value="anticipate">🧪 预备 anticipate(先蓄力再出发)</option>
+        <option value="hesitate">🧪 迟疑 hesitate(途中三次减速)</option>
       </select></div>
     <div class="row"><label>错峰</label><input type="range" id="pStag" min="0" max="1" step="0.01" value="0.3"><div class="val" id="vStag">0.30</div></div>
     <div class="row"><label title="过渡时点沿相干弧线流动而非直线,0=关">流场</label><input type="range" id="pFlow" min="0" max="1" step="0.05" value="0"><div class="val" id="vFlow">0.00</div></div>

@@ -37,7 +37,9 @@ test('缓动端点连续:每种 ease 都满足 f(0)=0, f(1)=1', () => {
   }
 });
 
-const PHYSICS_EASES = ['backOut', 'elasticOut', 'bounceOut']; // 有意非单调(过冲/弹跳)
+// 有意非单调:过冲/弹跳(backOut/elasticOut/bounceOut/spring)、反向蓄力(anticipate)。
+// hesitate 刻意保持单调(只"顿"不倒退),故不在此列 —— 它必须通过下面的单调断言。
+const PHYSICS_EASES = ['backOut', 'elasticOut', 'bounceOut', 'spring', 'anticipate'];
 
 test('缓动单调不减(采样 0..1;物理组除外——它们有意过冲/回落)', () => {
   for (const name of Object.keys(EASE)) {

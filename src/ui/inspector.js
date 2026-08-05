@@ -11,6 +11,29 @@ import { applyShapeBBox, shapeToPath } from '../shapes.js';
 import { renderLayers } from './layers.js';
 import { renderGuides } from './arrange.js';
 import { bezierEase, EASE } from '../engine.js';
+import { LAB_FX } from '../labfx.js';
+
+// 🧪 实验物理面板:按 LAB_FX 表生成滑块行(同 g 分组,组间插一条小标题)。
+// 生成而非手写 HTML —— 20+ 个效果手写会立刻和实现脱节;这样表就是唯一事实来源。
+// 中文文案由 i18n 的 MutationObserver 接手翻译,和静态文案一样处理。
+function buildLabFxRows(){
+  const box=$('labFxRows'); if(!box || box.childElementCount) return;
+  let group=null;
+  for(const s of LAB_FX){
+    if(s.g!==group){ group=s.g;
+      const h=document.createElement('div');
+      h.className='small'; h.style.cssText='opacity:.6;margin-top:6px';
+      h.textContent=group; box.appendChild(h); }
+    const row=document.createElement('div'); row.className='row';
+    const lab=document.createElement('label'); lab.title=s.title; lab.textContent=s.label;
+    const inp=document.createElement('input');
+    inp.type='range'; inp.id='lab_'+s.key; inp.min=s.min; inp.max=s.max; inp.step=s.step; inp.value=s.def;
+    inp.title=s.title;
+    const val=document.createElement('div'); val.className='val'; val.id='vlab_'+s.key;
+    val.textContent=(+s.def).toFixed(s.dp);
+    row.append(lab, inp, val); box.appendChild(row);
+  }
+}
 
 // ⚡ 速度曲线预览:按当前控件值画过渡的进度曲线(端点斜率=起步/落位速度)。
 function drawSpeedCurve(){
@@ -508,6 +531,24 @@ export function initInspector(){
     const fx=cur().fx; if(fx&&fx.anchor) fx.anchor.y=v; });
   $('fxAnchorReach').addEventListener('input',e=>{ const v=parseFloat(e.target.value); $('vFxAnchorReach').textContent=v.toFixed(2);
     const fx=cur().fx||(cur().fx={}); fx.anchorReach=v; });
+  // ── 🧪 实验物理(labfx):滑块行、监听、回填全部由 LAB_FX 表驱动 ——
+  // 单一事实来源:新增一个效果只需在 labfx.js 的表里加一行,UI 自动长出来,不用碰这里。
+  buildLabFxRows();
+  for(const spec of LAB_FX){
+    const el=$('lab_'+spec.key); if(!el) continue;
+    el.addEventListener('input',e=>{
+      const v=parseFloat(e.target.value);
+      $('vlab_'+spec.key).textContent=v.toFixed(spec.dp);
+      // keep 项是"参数"(风向/目标点/边数/粘滞/同步度),为 0 也要留着;幅度项为 0 则删键,
+      // 保证工程文件干净、hasFx 判定不被空值拖累。sampleFrame 每帧现读 fx,无需 seqDirty。
+      const fx=cur().fx||(cur().fx={});
+      if(spec.keep || v) fx[spec.key]=v; else delete fx[spec.key];
+    });
+  }
+  $('labFxClear').onclick=()=>{ const fx=cur().fx; if(!fx) return;
+    pushUndo();
+    for(const spec of LAB_FX) delete fx[spec.key];
+    syncStateUI(); };
   // 🖋 墨水沉积(全局 P.ink):按 SDF 深度上色,边缘沉墨 + 内部晕染。逐帧现读,即时生效。
   if($('inkOn')){
     $('inkOn').addEventListener('change',e=>{ P.ink.on=e.target.checked; });
