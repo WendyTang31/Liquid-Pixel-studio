@@ -166,6 +166,27 @@ function elementToFillSubs(el){
   return elementToSubs(el);
 }
 
+// 元素是【描边】还是【填充】:计算样式里 fill:none(或全透明)且 stroke 存在、线宽>0 → 描边。
+// 用它保留 SVG 的描边语义(如走路骨架的四肢线),导入后【不自动填实】,可继续调线宽 / 切换填充。
+function strokeInfoOf(el){
+  const cs=(el.ownerDocument.defaultView||window).getComputedStyle?.(el);
+  const fill=(cs?.fill ?? el.getAttribute('fill') ?? '').trim();
+  const stroke=(cs?.stroke ?? el.getAttribute('stroke') ?? '').trim();
+  const sw=parseFloat(cs?.strokeWidth ?? el.getAttribute('stroke-width')) || 0;
+  // 只把 none/transparent 或【4 段 rgba 且 alpha=0】视为无填充 —— 注意 rgb(0,0,0)=纯黑(蓝通道0)不是透明!
+  const noFill = fill==='none' || fill==='transparent' || (fill.startsWith('rgba(') && /,\s*0(\.0+)?\s*\)\s*$/.test(fill));
+  const hasStroke = !!stroke && stroke!=='none' && sw>0;
+  return { isStroke: noFill && hasStroke, sw };
+}
+// m 的线性缩放因子(把局部线宽换算到 viewBox 空间;纯旋转/平移=1)。
+function matScale(m){ return m ? (Math.sqrt(Math.abs(m.a*m.d - m.b*m.c))||1) : 1; }
+// 一个源元素 → 子路径 + 该组的描边宽度(0=填充)。描边:取中心线(不填胶囊);填充:走 elementToFillSubs。
+function elementToImportSubs(el, m){
+  const info=strokeInfoOf(el);
+  const subs = info.isStroke ? elementToSubs(el) : elementToFillSubs(el);
+  return { subs, sw: info.isStroke ? info.sw*matScale(m) : 0 };
+}
+
 // 是否含 SMIL 动画(<animate>/<animateTransform>/<animateMotion>)—— 有则可采样成关键帧序列。
 export function svgHasAnimation(svgText){
   return /<animate(Transform|Motion)?[\s>]/i.test(svgText||'');
@@ -222,7 +243,8 @@ export function importSvgAnimation(svgText, W, H, allocLid, nextId, opts={}){
       prims.forEach((el,ei)=>{
         let m=null;
         if(rootInv){ try{ const s=el.getScreenCTM(); if(s) m=rootInv.multiply(s); }catch(_){} }
-        elementToFillSubs(el).forEach((sub,si)=>{ applyMatrix(sub, m); sub._lid=baseLid[ei]*100+si; frame.push(sub); });
+        const {subs, sw}=elementToImportSubs(el, m);       // 描边元素 → 中心线+线宽;填充 → 轮廓
+        subs.forEach((sub,si)=>{ applyMatrix(sub, m); sub._lid=baseLid[ei]*100+si; sub._sw=sw; frame.push(sub); });
       });
       raw.push({frame, t, sig:frameSig(frame)});
     }
@@ -249,8 +271,10 @@ export function importSvgAnimation(svgText, W, H, allocLid, nextId, opts={}){
   const T=p=>({x:p.x*sc+ox, y:p.y*sc+oy});
   const outFrames=frames.map(fr=>fr.map(s=>{
     const pts=s.anchors.map(a=>{ const o=T(a); if(a.hIn)o.hIn=T(a.hIn); if(a.hOut)o.hOut=T(a.hOut); return o; });
-    return { id:nextId(), type:'path', bezier:true, points:pts, bool:'add', solidFill:true,
-             layerId:s._lid, ...pathBBox(pts) };
+    const sw=(s._sw||0)*sc;                              // 描边线宽同样按拟合比例缩放
+    return { id:nextId(), type:'path', bezier:true, points:pts, bool:'add', layerId:s._lid,
+             ...(sw>0.3 ? {strokeW:+sw.toFixed(2)} : {solidFill:true}),   // 描边→线宽(不填);填充→实心
+             ...pathBBox(pts) };
   }));
   return { frames:outFrames, cycleSec, durations, holds, states:outFrames.length };
 }
@@ -270,7 +294,8 @@ export function importSvgShapes(svgText, W, H, nextId){
     for(const el of svg.querySelectorAll('path,rect,circle,ellipse,line,polyline,polygon')){
       let m=null;
       if(rootInv){ try{ const s=el.getScreenCTM(); if(s) m=rootInv.multiply(s); }catch(_){} }
-      for(const sub of elementToFillSubs(el)) subs.push(applyMatrix(sub, m));
+      const {subs:esubs, sw}=elementToImportSubs(el, m);   // 保留描边:描边元素→中心线+线宽,不自动填实
+      for(const sub of esubs){ applyMatrix(sub, m); sub._sw=sw; subs.push(sub); }
     }
   } finally { holder.remove(); }
   if(!subs.length) throw new Error('SVG 里没有可导入的矢量形状(path/rect/circle/ellipse/polygon)');
@@ -284,6 +309,8 @@ export function importSvgShapes(svgText, W, H, nextId){
   const T=p=>({x:p.x*sc+ox, y:p.y*sc+oy});
   return subs.map(s=>{
     const pts=s.anchors.map(a=>{ const o=T(a); if(a.hIn)o.hIn=T(a.hIn); if(a.hOut)o.hOut=T(a.hOut); return o; });
-    return { id:nextId(), type:'path', bezier:true, points:pts, bool:'add', solidFill:true, ...pathBBox(pts) };
+    const sw=(s._sw||0)*sc;
+    return { id:nextId(), type:'path', bezier:true, points:pts, bool:'add',
+             ...(sw>0.3 ? {strokeW:+sw.toFixed(2)} : {solidFill:true}), ...pathBBox(pts) };
   });
 }
