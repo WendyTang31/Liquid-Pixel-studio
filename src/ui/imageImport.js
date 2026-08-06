@@ -10,6 +10,8 @@ import { luminanceHistogram, alphaHistogram, hasMeaningfulAlpha, otsuThreshold, 
 import { importSvgShapes, importSvgAnimation, svgHasAnimation } from '../svg.js';
 import { updateSelBox } from './inspector.js';
 import { renderStrip, setActive } from './filmstrip.js';
+import { makeCharacter, framesFromAnim } from '../characters.js';
+import { renderCharacters } from './charpanel.js';
 
 const WORK_MAX=480;  // 工作分辨率上限:与画布同级即可,更高分辨率对最终蒙版无意义
 const FIT_MAX=300;   // 导入后默认摆放尺寸上限(画布内留边距,可再拖拽缩放)
@@ -62,23 +64,13 @@ export async function importSvgFile(file){
       ()=>store.layerSeq=(store.layerSeq||0)+1, ()=>store.shapeId++); }
     catch(err){ setHint('⚠ '+err.message); return; }
     if(anim && anim.frames.length){
+      // 🚶 动画 SVG → 一个【角色】(并行动画轨),不挤占主时间轴:独立循环 + X/Y 位移,可与其它角色同屏。
       pushUndo();
-      let at=store.active;
-      const avg=Math.max(0.06, anim.cycleSec/anim.frames.length);   // 无逐帧时长时的兜底
-      const clipId=store.clipSeq=(store.clipSeq||0)+1; // 各帧归为一个「动画片段(大图层)」,可整体缩放/移动/调速/循环
-      anim.frames.forEach((shapes,i)=>{
-        const st=makeState(`${base} ${i+1}`, cur().color);
-        st.hold=anim.holds?.[i]||0;               // 静止保持期(如抬头停顿)按真实时长保留
-        st.dur=anim.durations?.[i]||avg;           // 逐帧过渡时长 = SVG 真实节奏(走路快、停顿久)
-        st.clip={ id:clipId, name:base, loops:1 };
-        st.shapes.push(...shapes);
-        store.states.splice(++at, 0, st);
-        rasterize(st); resample(st);
-      });
-      store.sel=null; updateSelBox();
-      setActive(at); renderStrip(); store.seqDirty=true;
+      const ch=makeCharacter(base, framesFromAnim(anim), anim.cycleSec);
+      store.characters.push(ch); store.activeChar=store.characters.length-1;
+      renderCharacters(); store.seqDirty=true;
       const nLimb=anim.frames[0].length;
-      setHint(`✓ 已导入 SVG 动画:${anim.frames.length} 帧关键帧 · ${nLimb} 个肢体(周期 ${anim.cycleSec.toFixed(2)}s,按 SVG 自带 keyTimes 采样、保留走路与停顿,相邻帧木偶变形无缝循环)`);
+      setHint(`✓ 已导入走路小人「${base}」为角色:${anim.frames.length} 帧 · ${nLimb} 肢体(独立循环 ${anim.cycleSec.toFixed(2)}s)。在「🚶 角色」面板里设左右起止位置 = 自动走动;可再导入更多小人同屏并行。`);
       return;
     }
   }

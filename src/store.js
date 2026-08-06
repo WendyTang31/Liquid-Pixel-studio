@@ -16,6 +16,9 @@ export const store = {
   view:{z:1, ox:0, oy:0},            // 画布视口(归一化):缩放 z + 左上角 ox/oy;可见区=[ox,ox+1/z]²
   panning:false, spaceHeld:false,    // 平移中 / 空格按住(空格+拖=平移)
   recorder:null, chunks:[], exporting:false,
+  // 🚶 角色(并行动画轨):每个 = 一段导入的循环动画(如走路小人),独立循环 + X/Y 位移,
+  // 全部同时合成到画面。不挤占主时间轴 → 用轻量结构管理多个小人。见 characters.js。
+  characters:[], charSeq:0, activeChar:-1,
 };
 
 // 当前编辑状态。到处都要用,单独导出一个取值器。

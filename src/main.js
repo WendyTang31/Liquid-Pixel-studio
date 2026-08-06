@@ -17,6 +17,8 @@ import { initTimeline } from './ui/timeline.js';
 import { renderLayers } from './ui/layers.js';
 import { initArrange } from './ui/arrange.js';
 import { initI18n } from './i18n.js';
+import { serializeCharacters, loadCharacters } from './characters.js';
+import { renderCharacters } from './ui/charpanel.js';
 
 // ── 顶栏:组操作 + 工程 ──
 function initTopbar(){
@@ -57,7 +59,7 @@ function initTopbar(){
   $('view3dBtn').onclick=()=>{
     autosave();
     try{ localStorage.setItem('morph3d-project', JSON.stringify(
-      {version:4, states:serializeStates(), active:store.active, params:P})); }catch(_){}
+      {version:4, states:serializeStates(), active:store.active, params:P, characters:serializeCharacters()})); }catch(_){}
     // 同窗切换(PS 式单窗口工作流):window.open 会造成两个编辑器实例
     // 各自定时存档、互相覆盖 —— "回来发现改动被复原"正是这么来的。
     location.href='viewer.html';
@@ -90,7 +92,7 @@ function seedExample(){
 
 // ── PS 式会话:每次改动即时存档(autosave.js 挂在 pushUndo 上)+ 隐藏/离开兜底;
 //    启动时若有存档则恢复而非种子示例。参数滑块不走 pushUndo,由 15s 定时器兜住。──
-initAutosave(()=>({version:4, states:serializeStates(), active:store.active, params:P}));
+initAutosave(()=>({version:4, states:serializeStates(), active:store.active, params:P, characters:serializeCharacters()}));
 const autosave=autosaveNow;
 
 // ── 多窗口隔离:每个标签页各自独立会话。第二个窗口不覆盖、也不"同步"第一个的进度 ——
@@ -125,6 +127,7 @@ function tryRestoreAutosave(){
     const d=JSON.parse(raw); if(!d.states?.length) return false;
     if(d.params) Object.assign(P, d.params);
     hydrate({states:d.states, active:d.active??0});
+    loadCharacters(d.characters); renderCharacters();   // 🚶 并行角色轨随会话恢复
     return true;
   }catch(_){ return false; }
 }
@@ -164,7 +167,7 @@ initArrange();
 initFoldableSections();
 const restored=tryRestoreAutosave();
 if(!restored) seedExample();
-renderStrip(); syncStateUI(); syncUI(); renderLayers();
+renderStrip(); syncStateUI(); syncUI(); renderLayers(); renderCharacters();
 setMode('play');
 startLoop();
 if(restored) setHint('✓ 已恢复上次编辑(自动保存)· 若要全新开始:🗑 全部');

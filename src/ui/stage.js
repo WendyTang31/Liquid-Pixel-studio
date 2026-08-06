@@ -20,6 +20,7 @@ import { drawSkinRef, skinWindowAt, skinHandleAt, skinCursorAt, getSelSkin, sele
   skinHasUndo, fitSelSkin, clearSelSkinCrop } from './skinRef.js';
 import { tlTick } from './timeline.js';
 import { computeVectorPolys, rasterizeVectorSolids } from '../vector.js';
+import { charactersSolids } from '../characters.js';
 import { rigMatrices, rigApply, poseShapes, rigIdent } from '../rig.js';
 
 // 🦴 选中 rig 形状时:算它摆好姿势后的世界点 + 当前关节世界位置(供叠加层显示与摆动交互)。
@@ -325,7 +326,8 @@ function tick(now){
     $('tVal').textContent=store.g.toFixed(1)+'s';
     const fr=sampleFrame(store.SEQ, store.states, store.g, store.clock, P);
     // 矢量图层(AE 关联图层):独立于点阵,轮廓直接插值 → SDF solid,并入实心渲染
-    const solids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(store.states, store.SEQ, store.g, store.clock, P)));
+    const solids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(store.states, store.SEQ, store.g, store.clock, P)))
+      .concat(charactersSolids(store.clock)); // 🚶 并行角色轨:各自循环 + 位移,同屏合成
     // 实心场是 CPU 采样(SDF 纹理未进 GL 着色器);有实心或已缩放时走 CPU 视口渲染
     if(gpuOn() && !solids.length && !zoomed){ glCv.style.display='block'; glRender(fr.balls, fr.col, P); ctx.clearRect(0,0,W,H); }
     else { if(glCv) glCv.style.display='none'; previewRender(fr.balls, fr.col, P, solids.length?solids:null, fr.cam, store.view); }
@@ -336,6 +338,8 @@ function tick(now){
     // 实心蒙版内的点抑制(r=0),边缘由矢量 SDF 主导;编辑态不套镜头,SDF 与点同在画布坐标系。
     // 矢量图层的停留态已并入 s._sdf(实心显示);编辑态直接用它即可
     let solid = s.solid && s._sdf ? [{sdf:s._sdf, w:1}] : null;
+    const chSolids=charactersSolids(store.clock);       // 🚶 编辑态也显示角色(便于摆位/调走动)
+    if(chSolids.length) solid=(solid||[]).concat(chSolids);
     const editBalls=s.dots.map((b,i)=>({x:b.x+P.amp*drift(i*2.3,store.clock,P),y:b.y+P.amp*drift(i*2.3+3,store.clock,P),
       r:(solid&&b.sf)?0:b.r, c:b.c}));
     if(gpuOn() && !solid && !zoomed){ glCv.style.display='block'; glRender(editBalls, hex2rgb(s.color), P); ctx.clearRect(0,0,W,H); }

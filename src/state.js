@@ -9,6 +9,8 @@ import { scheduleAutosave } from './autosave.js';
 import { renderStrip, syncStateUI } from './ui/filmstrip.js';
 import { updateSelBox, syncUI } from './ui/inspector.js';
 import { setMode } from './ui/stage.js';
+import { serializeCharacters, loadCharacters } from './characters.js';
+import { renderCharacters } from './ui/charpanel.js';
 
 // 一个状态 = 形状对象 + 手动点 + 颜色 + 停留/过渡时长 + 派生的 dots 与画布缓存。
 export function makeState(name,color){
@@ -99,6 +101,7 @@ export function saveProject(){
   const nDecal=v.view3d?.decals?.length||0;
   downloadBlob(new Blob([JSON.stringify(
     {version:4, states:serializeStates(), active:store.active, params:P,
+     characters:serializeCharacters(),
      view3d:v.view3d, uvlayout:v.uvlayout}, null, 2)],
     {type:'application/json'}),
     `morph-project-${new Date().toISOString().slice(0,10)}.json`);
@@ -112,6 +115,7 @@ export function loadProject(data){
     if(data.states){ /* v4 */
       if(data.params) Object.assign(P, data.params);
       hydrate({states:data.states, active:data.active??0});
+      loadCharacters(data.characters); renderCharacters(); // 🚶 并行角色轨随工程恢复
     } else if(data.A||data.B){ /* v3 兼容:A/B → 两个状态 */
       if(data.params) Object.assign(P, data.params);
       const cA=data.params?.colA||'#98f5d0', cB=data.params?.colB||'#98f5d0';
