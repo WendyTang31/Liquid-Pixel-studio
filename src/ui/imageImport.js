@@ -64,11 +64,12 @@ export async function importSvgFile(file){
     if(anim && anim.frames.length){
       pushUndo();
       let at=store.active;
-      const dur=Math.max(0.06, anim.cycleSec/anim.frames.length); // 逐帧过渡=周期/帧数,还原真实节奏
-      const clipId=store.clipSeq=(store.clipSeq||0)+1; // 8 帧归为一个「动画片段(大图层)」,可整体缩放/移动/调速/循环
+      const avg=Math.max(0.06, anim.cycleSec/anim.frames.length);   // 无逐帧时长时的兜底
+      const clipId=store.clipSeq=(store.clipSeq||0)+1; // 各帧归为一个「动画片段(大图层)」,可整体缩放/移动/调速/循环
       anim.frames.forEach((shapes,i)=>{
         const st=makeState(`${base} ${i+1}`, cur().color);
-        st.hold=0; st.dur=dur;
+        st.hold=anim.holds?.[i]||0;               // 静止保持期(如抬头停顿)按真实时长保留
+        st.dur=anim.durations?.[i]||avg;           // 逐帧过渡时长 = SVG 真实节奏(走路快、停顿久)
         st.clip={ id:clipId, name:base, loops:1 };
         st.shapes.push(...shapes);
         store.states.splice(++at, 0, st);
@@ -77,7 +78,7 @@ export async function importSvgFile(file){
       store.sel=null; updateSelBox();
       setActive(at); renderStrip(); store.seqDirty=true;
       const nLimb=anim.frames[0].length;
-      setHint(`✓ 已导入 SVG 动画:${anim.frames.length} 帧关键帧 · ${nLimb} 个肢体(周期 ${anim.cycleSec.toFixed(2)}s,相邻帧木偶变形,无缝循环)`);
+      setHint(`✓ 已导入 SVG 动画:${anim.frames.length} 帧关键帧 · ${nLimb} 个肢体(周期 ${anim.cycleSec.toFixed(2)}s,按 SVG 自带 keyTimes 采样、保留走路与停顿,相邻帧木偶变形无缝循环)`);
       return;
     }
   }

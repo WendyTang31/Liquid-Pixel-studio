@@ -171,11 +171,28 @@ export function svgHasAnimation(svgText){
   return /<animate(Transform|Motion)?[\s>]/i.test(svgText||'');
 }
 
-// 动画 SVG → 关键帧序列。把 SMIL 动画(嵌套 <animateTransform> 骨架,如走路循环)在若干时间点
-// 采样:每个时刻用 setCurrentTime 定住,读各图元的 getScreenCTM(含被动画的祖先变换),把肢体
-// 变成实心轮廓 —— 每个源元素分配一个【贯穿所有帧的 layerId】,于是相邻帧间做木偶变形,平滑复现走路。
-// 返回 { frames:[[shape,…],…], cycleSec } 或 null(无动画)。allocLid:分配新 layerId 的函数。
-export function importSvgAnimation(svgText, W, H, allocLid, nextId, frameCount=8){
+// SMIL 里所有 <animate*> 的 keyTimes 并集(0..1)= 动画真正定义的关键帧时刻。
+// 用它采样,才不会像固定 N 帧那样把「周期性走路」采成同一相位(帧 1-4 全同、走路消失)。
+function collectKeyTimes(svg){
+  const set=new Set();
+  svg.querySelectorAll('animate,animateTransform,animateMotion').forEach(a=>{
+    const kt=a.getAttribute('keyTimes'); if(!kt) return;
+    kt.split(';').forEach(s=>{ const v=parseFloat(s); if(isFinite(v)) set.add(Math.min(1,Math.max(0,v))); });
+  });
+  return [...set].sort((a,b)=>a-b);
+}
+// 帧姿态签名:所有锚点坐标量化拼接 —— 同姿态(静止保持期)→ 同签名,用于折叠连续静止帧。
+function frameSig(frame){ let s=''; for(const sub of frame) for(const a of sub.anchors) s+=(a.x*10|0)+','+(a.y*10|0)+';'; return s; }
+// 均匀抽稀到 n 个(保留首尾)。
+function uniformPick(arr, n){ if(arr.length<=n) return arr;
+  const out=[]; for(let i=0;i<n;i++) out.push(arr[Math.round(i*(arr.length-1)/(n-1))]); return out; }
+
+// 动画 SVG → 关键帧序列。把 SMIL 动画(嵌套 <animateTransform> 骨架,如走路循环)在【SVG 自带的 keyTimes】
+// 逐时刻采样:setCurrentTime 定住,读各图元 getScreenCTM(含被动画的祖先变换)→ 实心轮廓;每个源元素分配
+// 一个贯穿所有帧的 layerId → 相邻帧木偶变形,平滑复现走路。连续静止帧折叠成一帧并记为 hold(保留停顿节奏)。
+// 返回 { frames, cycleSec, durations, holds, states } 或 null(无动画)。
+export function importSvgAnimation(svgText, W, H, allocLid, nextId, opts={}){
+  if(typeof opts==='number') opts={frameCount:opts};   // 向后兼容旧签名(第6参=帧数)
   if(!svgHasAnimation(svgText)) return null;
   const svg=parseSvgDoc(svgText);
   // 周期:取首个 animateTransform 的 dur(如 "1.1s"),没有则默认 1s
@@ -183,17 +200,21 @@ export function importSvgAnimation(svgText, W, H, allocLid, nextId, frameCount=8
   const durEl=svg.querySelector('[dur]');
   if(durEl){ const m=/([\d.]+)\s*(ms|s)?/.exec(durEl.getAttribute('dur')||'');
     if(m) cycleSec=parseFloat(m[1])*(m[2]==='ms'?0.001:1) || 1; }
+  const MAXF=Math.max(8, opts.maxFrames||48);
+  // 采样时刻:优先用 SMIL 自带 keyTimes(真正的关键帧);没有则均匀密采样兜底。去掉 τ=1 收尾(与 τ=0 同姿)。
+  let times=collectKeyTimes(svg).map(k=>k*cycleSec);
+  if(times.length<3){ const n=Math.max(8, opts.frameCount||48); times=[]; for(let f=0;f<n;f++) times.push((f/n)*cycleSec); }
+  times=times.filter((t,i,a)=> t<cycleSec-1e-6 && (i===0||t>a[i-1]+1e-9));
   const holder=document.createElement('div');
   holder.style.cssText='position:absolute;left:-99999px;top:0;opacity:0;pointer-events:none';
   holder.appendChild(svg); document.body.appendChild(holder);
-  const frames=[];
+  const raw=[];
   try{
     try{ svg.pauseAnimations(); }catch(_){}
     const prims=[...svg.querySelectorAll('path,rect,circle,ellipse,line,polyline,polygon')];
     // 每个元素一个稳定 layerId(贯穿所有帧)。多子路径元素按 *100+subIdx 派生,仍恒定。
     const baseLid=prims.map(()=>allocLid());
-    for(let f=0; f<frameCount; f++){
-      const t=(f/frameCount)*cycleSec;
+    for(const t of times){
       try{ svg.setCurrentTime(t); }catch(_){}
       let root=null; try{ root=svg.getScreenCTM(); }catch(_){}
       const rootInv=root?root.inverse():null;
@@ -201,14 +222,23 @@ export function importSvgAnimation(svgText, W, H, allocLid, nextId, frameCount=8
       prims.forEach((el,ei)=>{
         let m=null;
         if(rootInv){ try{ const s=el.getScreenCTM(); if(s) m=rootInv.multiply(s); }catch(_){} }
-        const subs=elementToFillSubs(el);
-        subs.forEach((sub,si)=>{ applyMatrix(sub, m);
-          sub._lid=baseLid[ei]*100+si; frame.push(sub); });
+        elementToFillSubs(el).forEach((sub,si)=>{ applyMatrix(sub, m); sub._lid=baseLid[ei]*100+si; frame.push(sub); });
       });
-      frames.push(frame);
+      raw.push({frame, t, sig:frameSig(frame)});
     }
   } finally { holder.remove(); }
-  if(!frames.length || !frames[0].length) throw new Error('SVG 动画里没有可采样的图元');
+  if(!raw.length || !raw[0].frame.length) throw new Error('SVG 动画里没有可采样的图元');
+  // 折叠【连续相同姿态】(静止保持期)→ 一帧,静止时长记进该帧的 hold;移动帧照留 → 走路 8 个周期完整保留。
+  const kept=[];
+  for(const r of raw){ const prev=kept[kept.length-1];
+    if(prev && prev.sig===r.sig){ prev.tEnd=r.t; } else kept.push({frame:r.frame, t:r.t, tEnd:r.t, sig:r.sig}); }
+  const picks = kept.length>MAXF ? uniformPick(kept, MAXF) : kept;   // 仍过多 → 均匀抽稀(保序保首尾)
+  // 逐帧时长:hold=本帧静止保持;dur=到下一帧(末帧回绕首帧)的过渡时长 → 还原真实节奏(走路快、抬头停顿久)。
+  const durations=[], holds=[];
+  for(let i=0;i<picks.length;i++){ const c=picks[i], n=picks[(i+1)%picks.length];
+    holds.push(Math.max(0, c.tEnd - c.t));
+    durations.push(Math.max(0.04, i<picks.length-1 ? (n.t - c.tEnd) : (cycleSec - c.tEnd + picks[0].t))); }
+  const frames=picks.map(p=>p.frame);
   // 全帧统一包围盒 → 同一拟合变换(图形定住,只有肢体在动,不逐帧跳动/缩放)
   let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
   const seen=p=>{ if(p.x<minX)minX=p.x; if(p.x>maxX)maxX=p.x; if(p.y<minY)minY=p.y; if(p.y>maxY)maxY=p.y; };
@@ -222,7 +252,7 @@ export function importSvgAnimation(svgText, W, H, allocLid, nextId, frameCount=8
     return { id:nextId(), type:'path', bezier:true, points:pts, bool:'add', solidFill:true,
              layerId:s._lid, ...pathBBox(pts) };
   }));
-  return { frames:outFrames, cycleSec };
+  return { frames:outFrames, cycleSec, durations, holds, states:outFrames.length };
 }
 
 // 主入口:SVG 文本 → 本工具 path 形状数组(已应用变换、等比拟合进 W×H 画布并居中)。
