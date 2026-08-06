@@ -13,7 +13,7 @@ export function makeCharacter(name, frames, cycleSec){
     id:++store.charSeq, name:name||`角色 ${store.charSeq}`,
     states:frames, SEQ:null, seqDirty:true, cycleSec:cycleSec||1,
     x0:0, y0:0, x1:0, y1:0,      // 位移:循环内从 (x0,y0) 线性走到 (x1,y1)(px,画布坐标偏移)
-    scale:1, speed:1, visible:true,
+    scale:1, rot:0, speed:1, visible:true,   // rot=整体旋转(度)
   };
 }
 // 把导入动画(anim.frames/durations/holds)转成角色的 state 帧(computeVectorPolys/buildSequence 所需字段)。
@@ -39,9 +39,11 @@ export function charPolys(ch, clock){
   const { SEQ, t, prog }=charTime(ch, clock);
   const dx=(ch.x0||0)+((ch.x1||0)-(ch.x0||0))*prog, dy=(ch.y0||0)+((ch.y1||0)-(ch.y0||0))*prog;
   const sc=ch.scale||1, cx=W/2, cy=H/2;
+  const ang=(ch.rot||0)*Math.PI/180, ca=Math.cos(ang), sa=Math.sin(ang); // 整体旋转(绕画面中心)
   const polys=computeVectorPolys(ch.states, SEQ, t, clock*(ch.speed||1), P);
   return polys.map(o=>({ ...o,
-    poly:o.poly.map(p=>({ x:cx+(p.x-cx)*sc+dx, y:cy+(p.y-cy)*sc+dy })),
+    poly:o.poly.map(p=>{ const rx=(p.x-cx)*sc, ry=(p.y-cy)*sc;   // 相对中心 → 缩放 → 旋转 → 位移
+      return { x:cx + (rx*ca - ry*sa) + dx, y:cy + (rx*sa + ry*ca) + dy }; }),
     strokeW:(o.strokeW||0)*sc }));
 }
 // 给定角色数组 → 合成实心(每个角色一块 SDF solid)。store 无关 → 编辑器与 3D 预览器共用。
@@ -52,13 +54,16 @@ export function charSolidsFrom(chars, clock){
   return out;
 }
 // 编辑器:合成 store 里的所有角色。并入主渲染的 solids 数组即可同屏并行播放。
-export function charactersSolids(clock){ return charSolidsFrom(store.characters, clock); }
+// 正在「编辑帧」的角色跳过 —— 它此刻就是主时间轴,已由主渲染画出,避免重影。
+export function charactersSolids(clock){
+  return charSolidsFrom(store.characters.filter(c=>c!==store.editingChar), clock);
+}
 
 // ── 序列化(随工程存/取)。SEQ 是派生的,不存;打开时重建。──
 export function serializeCharacters(){
   return store.characters.map(ch=>({
     id:ch.id, name:ch.name, cycleSec:ch.cycleSec,
-    x0:ch.x0, y0:ch.y0, x1:ch.x1, y1:ch.y1, scale:ch.scale, speed:ch.speed, visible:ch.visible,
+    x0:ch.x0, y0:ch.y0, x1:ch.x1, y1:ch.y1, scale:ch.scale, rot:ch.rot||0, speed:ch.speed, visible:ch.visible,
     states:ch.states.map(s=>({ name:s.name, color:s.color, hold:s.hold, dur:s.dur,
       shapes:JSON.parse(JSON.stringify(s.shapes)) })),
   }));
@@ -70,7 +75,7 @@ export function hydrateCharacters(arr){
       shapes:s.shapes||[], dots:[], manual:[], trans:{}, cam:null, loop:null, isPose:false,
       hold:s.hold||0, dur:s.dur||0.1 }));
     return { id:d.id, name:d.name, states:frames, SEQ:null, seqDirty:true, cycleSec:d.cycleSec||1,
-      x0:d.x0||0, y0:d.y0||0, x1:d.x1||0, y1:d.y1||0, scale:d.scale??1, speed:d.speed??1,
+      x0:d.x0||0, y0:d.y0||0, x1:d.x1||0, y1:d.y1||0, scale:d.scale??1, rot:d.rot||0, speed:d.speed??1,
       visible:d.visible!==false };
   });
 }

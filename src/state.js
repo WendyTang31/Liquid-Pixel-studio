@@ -23,7 +23,7 @@ export function makeState(name,color){
 }
 
 // 序列化:只留数据字段,深拷贝 shapes/manual。cam/isPose/loop 缺省时不写入,老工程原样可读。
-export const serializeStates=()=>store.states.map(s=>({id:s.id,name:s.name,color:s.color,hold:s.hold,dur:s.dur,
+export const serializeStates=(arr=store.states)=>arr.map(s=>({id:s.id,name:s.name,color:s.color,hold:s.hold,dur:s.dur,
   trans:JSON.parse(JSON.stringify(s.trans||{})), cam:s.cam?{...s.cam}:undefined,
   isPose:s.isPose||undefined, loop:s.loop?{...s.loop}:undefined, solid:s.solid||undefined,
   clip:s.clip?{...s.clip}:undefined,
@@ -100,7 +100,7 @@ export function saveProject(){
   const v=read3dView();
   const nDecal=v.view3d?.decals?.length||0;
   downloadBlob(new Blob([JSON.stringify(
-    {version:4, states:serializeStates(), active:store.active, params:P,
+    {version:4, states:serializeStates(store.editingChar?store._mainStates:store.states), active:store.active, params:P,
      characters:serializeCharacters(),
      view3d:v.view3d, uvlayout:v.uvlayout}, null, 2)],
     {type:'application/json'}),

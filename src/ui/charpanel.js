@@ -2,6 +2,7 @@
 // / 上下位置 / 缩放 / 速度 / 删除。位移与缩放不改帧,故无需重建序列 —— 逐帧现读、即时生效。
 import { store } from '../store.js';
 import { W, H } from '../config.js';
+import { enterCharEdit } from './charedit.js';
 
 const $=id=>document.getElementById(id);
 
@@ -21,10 +22,16 @@ export function renderCharacters(){
     const name=document.createElement('input'); name.value=ch.name; name.title='角色名(双击改)';
     name.style.cssText='flex:1;background:transparent;border:none;color:#dfe;font:12px system-ui;outline:none';
     name.onchange=()=>{ ch.name=name.value||ch.name; };
+    const editing=(store.editingChar===ch);
+    const edit=document.createElement('span'); edit.textContent=editing?'✏️…':'✏️'; edit.style.cursor='pointer';
+    edit.title=editing?'正在编辑此角色的帧':'编辑此角色的帧(改图形 / 每帧停留·过渡时长)';
+    edit.onclick=e=>{ e.stopPropagation(); enterCharEdit(ch); };
     const del=document.createElement('span'); del.textContent='🗑'; del.style.cursor='pointer'; del.title='删除该角色';
-    del.onclick=e=>{ e.stopPropagation(); store.characters.splice(idx,1);
+    del.onclick=e=>{ e.stopPropagation(); if(store.editingChar===ch) return; store.characters.splice(idx,1);
       store.activeChar=Math.min(store.activeChar, store.characters.length-1); renderCharacters(); };
-    head.append(eye,name,del); card.appendChild(head);
+    head.append(eye,name,edit,del); card.appendChild(head);
+    if(editing){ const bar=document.createElement('div'); bar.textContent='✏ 编辑中 —— 顶部「✓ 完成编辑角色」保存';
+      bar.style.cssText='font:11px system-ui;color:#2cc4f5'; card.appendChild(bar); }
     // 数值行工厂
     const rowNum=(label,a,b,ka,kb,step=10,title='')=>{
       const r=document.createElement('div'); r.style.cssText='display:flex;align-items:center;gap:4px;font:11px system-ui;color:#9fb'; r.title=title;
@@ -44,12 +51,15 @@ export function renderCharacters(){
     scaleI.title='缩放'; scaleI.style.cssText='width:48px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
     scaleI.onclick=e=>e.stopPropagation(); scaleI.oninput=()=>{ ch.scale=Math.max(0.05,parseFloat(scaleI.value)||1); };
     const speedI=document.createElement('input'); speedI.type='number'; speedI.step='0.1'; speedI.min='0.1'; speedI.value=ch.speed;
-    speedI.title='走动/播放速度'; speedI.style.cssText='width:48px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
+    speedI.title='走动/播放速度'; speedI.style.cssText='width:44px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
     speedI.onclick=e=>e.stopPropagation(); speedI.oninput=()=>{ ch.speed=Math.max(0.1,parseFloat(speedI.value)||1); };
+    const rotI=document.createElement('input'); rotI.type='number'; rotI.step='5'; rotI.value=Math.round(ch.rot||0);
+    rotI.title='整体旋转(度)'; rotI.style.cssText='width:44px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
+    rotI.onclick=e=>e.stopPropagation(); rotI.oninput=()=>{ ch.rot=parseFloat(rotI.value)||0; };
     const cross=document.createElement('button'); cross.textContent='整屏走过'; cross.title='一键设为从画面左外走到右外';
     cross.style.cssText='font:11px system-ui;background:#223;border:1px solid #2a3330;border-radius:4px;color:#8ef;cursor:pointer;padding:2px 6px';
     cross.onclick=e=>{ e.stopPropagation(); ch.x0=-W*0.62; ch.x1=W*0.62; ch.y0=ch.y1=0; renderCharacters(); };
-    r3.append(mkLabel('缩放'),scaleI,mkLabel('速度'),speedI,cross); card.appendChild(r3);
+    r3.append(mkLabel('缩放'),scaleI,mkLabel('旋转'),rotI,mkLabel('速度'),speedI,cross); card.appendChild(r3);
     box.appendChild(card);
   });
 }

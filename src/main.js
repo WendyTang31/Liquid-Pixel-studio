@@ -59,7 +59,7 @@ function initTopbar(){
   $('view3dBtn').onclick=()=>{
     autosave();
     try{ localStorage.setItem('morph3d-project', JSON.stringify(
-      {version:4, states:serializeStates(), active:store.active, params:P, characters:serializeCharacters()})); }catch(_){}
+      {version:4, states:serializeStates(store.editingChar?store._mainStates:store.states), active:store.active, params:P, characters:serializeCharacters()})); }catch(_){}
     // 同窗切换(PS 式单窗口工作流):window.open 会造成两个编辑器实例
     // 各自定时存档、互相覆盖 —— "回来发现改动被复原"正是这么来的。
     location.href='viewer.html';
@@ -92,7 +92,7 @@ function seedExample(){
 
 // ── PS 式会话:每次改动即时存档(autosave.js 挂在 pushUndo 上)+ 隐藏/离开兜底;
 //    启动时若有存档则恢复而非种子示例。参数滑块不走 pushUndo,由 15s 定时器兜住。──
-initAutosave(()=>({version:4, states:serializeStates(), active:store.active, params:P, characters:serializeCharacters()}));
+initAutosave(()=>({version:4, states:serializeStates(store.editingChar?store._mainStates:store.states), active:store.active, params:P, characters:serializeCharacters()}));
 const autosave=autosaveNow;
 
 // ── 多窗口隔离:每个标签页各自独立会话。第二个窗口不覆盖、也不"同步"第一个的进度 ——
