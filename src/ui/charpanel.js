@@ -20,14 +20,16 @@ export function renderCharacters(){
     const card=document.createElement('div');
     card.style.cssText='border:1px solid #2a3330;border-radius:6px;padding:6px 7px;background:'
       +(idx===store.activeChar?'#1c2622':'#161b19')+';display:flex;flex-direction:column;gap:5px';
-    card.onclick=()=>{ store.activeChar=idx; renderCharacters(); };
+    card.onclick=()=>{ store.activeChar=idx; enterCharEdit(ch); }; // 点卡片 = 打开该角色的帧(载入胶片条编辑)
     // 头行:显隐 + 名 + 删除
     const head=document.createElement('div'); head.style.cssText='display:flex;align-items:center;gap:6px';
     const eye=document.createElement('span'); eye.textContent=ch.visible?'👁':'🚫'; eye.style.cursor='pointer'; eye.title='显示/隐藏';
     eye.onclick=e=>{ e.stopPropagation(); ch.visible=!ch.visible; renderCharacters(); };
-    const name=document.createElement('input'); name.value=ch.name; name.title='角色名(双击改)';
+    const name=document.createElement('input'); name.value=ch.name; name.title='角色名(点这里直接改)';
     name.style.cssText='flex:1;background:transparent;border:none;color:#dfe;font:12px system-ui;outline:none';
-    name.onchange=()=>{ ch.name=name.value||ch.name; };
+    name.onclick=e=>e.stopPropagation();               // 别让点名字触发卡片(会重建面板→输不进字)
+    name.onkeydown=e=>{ e.stopPropagation(); if(e.key==='Enter') name.blur(); };
+    name.oninput=()=>{ ch.name=name.value; };           // 逐字生效,不依赖失焦
     const editing=(store.editingChar===ch);
     const edit=document.createElement('span'); edit.textContent=editing?'✏️…':'✏️'; edit.style.cursor='pointer';
     edit.title=editing?'正在编辑此角色的帧':'编辑此角色的帧(改图形 / 每帧停留·过渡时长)';

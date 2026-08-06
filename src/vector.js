@@ -240,10 +240,12 @@ function hermitePt(pa,pb,pp,pn, seg, u){
   return q;
 }
 
-export function computeVectorPolys(states, SEQ, g, time, Pr){
+export function computeVectorPolys(states, SEQ, g, time, Pr, includeHold=false){
   const Pcfg = Pr || P; // 渲染参数:调用方传入(视口/3D 各自 P);未传时退回全局配置 P(node 单测)
   const {seg, lt}=segAt(SEQ, g);
-  if(seg.type==='hold') return []; // 停留由状态实心 SDF 显示,不重复画
+  // 停留:主编辑器由状态实心 SDF 显示,故默认返回空(不重复画)。但【角色】只走本函数、无 SDF 兜底,
+  // 必须 includeHold=true 才能在停留帧画出静态轮廓 —— 否则带 hold 的帧(如抬头停顿)会整段消失(闪烁)。
+  if(seg.type==='hold') return includeHold ? solidOutlinePolys(states[seg.si]) : [];
   const A=states[seg.a], B=states[seg.b], e=(seg.ease||smooth)(lt); // 与点阵同一速度曲线(可调起步/落位)
   const ca=hex2rgb(A.color), cb=hex2rgb(B.color), out=[];
   // 🌊 整体剪影变形:把两状态各自【所有矢量图层】并成一个剪影(多连通=多轮廓),整条轮廓逐点最短路

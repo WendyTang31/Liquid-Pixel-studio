@@ -40,7 +40,7 @@ export function charPolys(ch, clock){
   const dx=(ch.x0||0)+((ch.x1||0)-(ch.x0||0))*prog, dy=(ch.y0||0)+((ch.y1||0)-(ch.y0||0))*prog;
   const sc=ch.scale||1, cx=W/2, cy=H/2;
   const ang=(ch.rot||0)*Math.PI/180, ca=Math.cos(ang), sa=Math.sin(ang); // 整体旋转(绕画面中心)
-  const polys=computeVectorPolys(ch.states, SEQ, t, clock*(ch.speed||1), P);
+  const polys=computeVectorPolys(ch.states, SEQ, t, clock*(ch.speed||1), P, true); // includeHold:停留帧也画,不闪烁
   return polys.map(o=>({ ...o,
     poly:o.poly.map(p=>{ const rx=(p.x-cx)*sc, ry=(p.y-cy)*sc;   // 相对中心 → 缩放 → 旋转 → 位移
       return { x:cx + (rx*ca - ry*sa) + dx, y:cy + (rx*sa + ry*ca) + dy }; }),
