@@ -12,7 +12,7 @@ export const hasEdgeFx=fx=>!!(fx&&(fx.fineWave||fx.jagged||fx.splatter));
 export function segEdgeFx(P, seg, states){
   const e=P&&P.efx; if(!e || (!e.fineWave && !e.jagged && !e.splatter)) return null;
   const n=states.length, from=Math.max(0,e.from|0), to=(e.to==null||e.to<0)?n-1:Math.min(n-1,e.to);
-  const vals={fineWave:e.fineWave||0, jagged:e.jagged||0, splatter:e.splatter||0, freq:e.freq||0.6};
+  const vals={fineWave:e.fineWave||0, jagged:e.jagged||0, splatter:e.splatter||0, freq:e.freq||0.6, jagMotion:e.jagMotion||'pulse'};
   if(seg.type==='hold') return (seg.si>=from && seg.si<=to) ? vals : null;
   if(e.scope!=='span') return null;                                   // 仅停留模式:过渡不施加
   return (seg.a>=from && seg.a<=to && seg.b>=from && seg.b<=to) ? vals : null;
@@ -23,7 +23,7 @@ export function blendEdgeFx(a, b, e){
   const g=(k)=>((a&&a[k])||0)*(1-e) + ((b&&b[k])||0)*e;
   const fw=g('fineWave'), jg=g('jagged'), sp=g('splatter');
   if(!fw && !jg && !sp) return null;
-  return { fineWave:fw, jagged:jg, splatter:sp, freq:(a&&a.freq)||(b&&b.freq)||0.6 };
+  return { fineWave:fw, jagged:jg, splatter:sp, freq:(a&&a.freq)||(b&&b.freq)||0.6, jagMotion:(a&&a.jagMotion)||(b&&b.jagMotion)||'pulse' };
 }
 
 // 少量"触须"槽:各有角度/周期/相位,时隐时现地向外冲出再收回(飞溅的丝状喷射)。
@@ -57,10 +57,18 @@ export function displaceOutline(poly, cx, cy, time, fx){
     const s=i/N; let d=0;                                  // 弧参数 [0,1)
     if(fx.fineWave)                                        // 细密行波:24 道涟漪【绕轮廓流动】(相位速度足够快 → 明显动),幅=半径 ~5%
       d += fx.fineWave*0.05*R * Math.sin(TAU*24*s - time*f*TAU*4);
-    if(fx.jagged){                                         // 锯齿尖刺(p2):9 个变长尖峰,pow 收尖,缓慢起伏
-      const K=9, x=s*K + time*f*0.22, cell=Math.floor(x), fr=x-cell;
+    if(fx.jagged){                                         // 锯齿尖刺(p2):9 个变长尖峰,pow 收尖。
+      // 动作模式:pulse=伸缩(逐齿脉动·默认原样);flow=电锯(齿沿轮廓匀速流动、幅度恒定);quiver=微颤(齿位置高频小抖)。
+      const K=9, mode=fx.jagMotion||'pulse';
+      let travel, amp;                                     // travel=齿沿轮廓移动的相位;amp=幅度调制(null=用逐齿脉动)
+      if(mode==='flow'){        travel=time*f*2.4;  amp=1; }                        // 🪚 电锯:匀速流动、幅恒定
+      else if(mode==='quiver'){ travel=time*f*0.22 + 0.10*Math.sin(time*f*TAU*2.4); // 🫨 微颤:位置高频小抖
+                                amp=0.92+0.08*Math.sin(time*f*TAU*3.1); }
+      else {                    travel=time*f*0.22;  amp=null; }                    // 伸缩(原样)
+      const x=s*K + travel, cell=Math.floor(x), fr=x-cell;
       const len=0.4+0.6*hash(cell*2.31+1), tri=1-Math.abs(2*fr-1);
-      const spike=Math.pow(tri, 2.4), pulse=0.72+0.28*Math.sin(time*f*TAU + cell);
+      const spike=Math.pow(tri, 2.4);
+      const pulse = amp!=null ? amp : (0.72+0.28*Math.sin(time*f*TAU + cell));
       d += fx.jagged*0.28*R * len*spike*pulse;             // 恒向外 = 星尖(半径的 ~28%)
     }
     if(fx.splatter)                                        // 飞溅触须:窄、时隐时现的外冲长刺(半径的 ~30%)

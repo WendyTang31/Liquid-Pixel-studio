@@ -381,7 +381,7 @@ export function syncUI(){
     set('fxFineWave',e.fineWave); $('vFxFineWave').textContent=(+e.fineWave).toFixed(2);
     set('fxJagged',e.jagged); $('vFxJagged').textContent=(+e.jagged).toFixed(2);
     set('fxSplatter',e.splatter); $('vFxSplatter').textContent=(+e.splatter).toFixed(2);
-    set('efxScope',e.scope||'span');
+    set('efxScope',e.scope||'span'); if($('jagMotion')) set('jagMotion', e.jagMotion||'pulse');
     set('efxFrom', e.from>0?e.from+1:''); set('efxTo', e.to>=0?e.to+1:''); }
   if($('inkOn') && P.ink){ $('inkOn').checked=!!P.ink.on; // 🖋 墨水沉积回填
     set('inkIntensity',P.ink.intensity); $('vInkIntensity').textContent=(+P.ink.intensity).toFixed(2);
@@ -516,6 +516,7 @@ export function initInspector(){
   for(const [id,key,valId] of [['fxFineWave','fineWave','vFxFineWave'],['fxJagged','jagged','vFxJagged'],['fxSplatter','splatter','vFxSplatter']])
     $(id).addEventListener('input',e=>{ const v=parseFloat(e.target.value); $(valId).textContent=v.toFixed(2); P.efx[key]=v>0?v:0; });
   $('efxScope').addEventListener('change',e=>{ P.efx.scope=e.target.value; });
+  if($('jagMotion')) $('jagMotion').addEventListener('change',e=>{ P.efx.jagMotion=e.target.value; }); // 🪚 锯齿动作:伸缩/流动/微颤
   const efxRange=()=>{ const f=parseInt($('efxFrom').value), t=parseInt($('efxTo').value);
     P.efx.from = isFinite(f)&&f>0 ? f-1 : 0;        // UI 1 基 → 内部 0 基
     P.efx.to   = isFinite(t)&&t>0 ? t-1 : -1; };     // 留空/非法 = 到末尾

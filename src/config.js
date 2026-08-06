@@ -17,7 +17,7 @@ export const P = {
   thr:1.1, soft:0.12, match:'ot', silhouette:false,
   // 边缘几何(全局):细波/锯齿/飞溅。scope='span' 贯穿整段(停留+过渡),'hold' 仅停留;
   // from/to = 生效的状态区间(0 基;to<0 = 到末尾)。逐帧现读,不需重建序列。
-  efx:{ fineWave:0, jagged:0, splatter:0, freq:0.6, scope:'span', from:0, to:-1 },
+  efx:{ fineWave:0, jagged:0, splatter:0, freq:0.6, scope:'span', from:0, to:-1, jagMotion:'pulse' },
   // 墨水沉积(水墨):按 SDF 深度给实心上色 —— 边缘沉积深墨(angle 那一侧更重),内部向背景晕染变淡。
   // 全局、对所有实心/矢量形状生效,停留与过渡同款。intensity=0 或 on=false 则关闭。
   ink:{ on:false, intensity:0.6, angle:90, edge:1.1, bleed:0.5, dir:0.7, clear:0, dark:0.85 },

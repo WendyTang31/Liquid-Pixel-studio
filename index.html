@@ -314,6 +314,8 @@
       <div class="small" style="opacity:.6;margin-top:4px">✦ 边缘几何(全局·重建轮廓·仅对实心/矢量形状)</div>
       <div class="row"><label title="细密波浪:沿轮廓的高频小幅波纹,比「边缘波」细得多、每段更小(几何级重建,任意分辨率锐利);幅度按图形自身大小缩放">细波</label><input type="range" id="fxFineWave" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxFineWave">0.00</div></div>
       <div class="row"><label title="锯齿尖刺:像 Illustrator Roughen 的星形尖角边缘(p2)—— 沿法线的变长尖峰,缓慢起伏;幅度按图形大小缩放">锯齿</label><input type="range" id="fxJagged" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxJagged">0.00</div></div>
+      <div class="row"><label title="锯齿动作:『伸缩』=尖峰原地脉动(默认);『流动(电锯)』=锯齿沿轮廓匀速流动、幅度恒定,像链锯的齿链;『微颤』=齿位置高频小抖,像电锯空转的震颤。速度由上面『频率 Hz』控制。">锯齿动作</label>
+        <select id="jagMotion" style="flex:1"><option value="pulse">伸缩</option><option value="flow">流动(电锯)</option><option value="quiver">微颤</option></select></div>
       <div class="row"><label title="飞溅:实心形状偶发向外喷出丝状触须 + 甩出细小墨点水珠,水珠飞出后半径渐隐、自行消失(墨迹飞溅 p1)">飞溅</label><input type="range" id="fxSplatter" min="0" max="1" step="0.05" value="0"><div class="val" id="vFxSplatter">0.00</div></div>
       <div class="row"><label title="边缘几何作用范围:『整段』=贯穿停留+过渡,全程连续(停留=0 时也能看到);『仅停留』=只在每个状态停留期出现(停留为0时几乎不可见)">范围</label>
         <select id="efxScope" style="flex:1"><option value="span">整段(含过渡)</option><option value="hold">仅停留</option></select></div>
