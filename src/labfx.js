@@ -95,8 +95,8 @@ export const LAB_FX = [
     title: '结晶目标多边形的边数(3=三角最尖锐,12=接近圆)。' },
   { g: '🧱 结构', key: 'anger', label: '愤怒尖刺', min: 0, max: 1, step: .05, def: 0, dp: 2,
     title: '愤怒尖刺:把圆润轮廓炸成不规则的爆炸星芒(尖角外突、谷内凹、长短不一),并随相位急促颤动 —— 圆(平静)连续硬化成尖刺(暴怒)。想要更锋利的矢量尖角,可叠加「边缘几何·锯齿」。' },
-  { g: '🧱 结构', key: 'angerN', label: '尖刺数', min: 5, max: 16, step: 1, def: 10, dp: 0, keep: true,
-    title: '爆炸星芒的尖刺数量(少=大而利,多=密而碎)。' },
+  { g: '🧱 结构', key: 'angerN', label: '尖刺数', min: 5, max: 40, step: 1, def: 12, dp: 0, keep: true,
+    title: '爆炸星芒的尖刺数量(少=大而利,多=密而碎的小三角)。' },
   { g: '🧱 结构', key: 'sand', label: '流沙沉降', min: 0, max: 1, step: .05, def: 0, dp: 2,
     title: '流沙:各点错开地加速下落、堆到底面停住,并在两端渐隐渐生。表达凝聚力失效、耗散、垮塌。' },
   { g: '🧱 结构', key: 'whip', label: '鞭梢/绳', min: 0, max: 1, step: .05, def: 0, dp: 2,
@@ -256,19 +256,17 @@ export function labDisp(x, y, cx, cy, t, fx, st, wIn) {
     const k = fx.crystallize * (poly - 1) * d * (0.85 + 0.15 * Math.sin(w * 0.4));
     dx += rx / d * k; dy += ry / d * k;
   }
-  if (fx.anger) { // 愤怒尖刺:极径按角度被推成不规则星芒 —— 尖处外突、谷处内凹、每根刺长短不一,并急促颤动。
+  if (fx.anger) { // 愤怒尖刺:极径按角度被推成【直边尖角】的不规则星芒 —— 尖处外突、谷处内凹、每根刺长短不一。
+    // 纯静态定型:不含任何时间项 → 尖刺长度固定不抖(如动画暂停);跨关键帧变形时仍由过渡平滑增减。
     const rx = x - cx, ry = y - cy, d = Math.hypot(rx, ry) + 1e-6, th = Math.atan2(ry, rx);
     const N = Math.max(3, Math.round(fx.angerN || 10));
     const s = ((th / TAU) % 1 + 1) % 1, cell = Math.floor(s * N), frac = s * N - cell;
-    const tent = 1 - Math.abs(2 * frac - 1);          // 0(两刺之间的谷)→ 1(刺尖)
-    const spike = Math.pow(tent, 0.4);                 // 锐化:尖而非圆
-    const jit = 0.35 + 0.65 * hash1(cell * 3.37 + 1);  // 每根刺长短不一(参考图的不规则爆炸感)
-    const quiver = 0.82 + 0.18 * Math.sin(w * 1.3 + cell * 2.1); // 怒气急促颤动(相位驱动 → 可平滑变频)
-    const edge = d / rad;                              // 外层动得多、内核几乎不动 → 只把"轮廓"扎成星
-    const out = fx.anger * FXB * 5.0 * spike * jit * quiver * edge;        // 尖处向外突
-    const vin = fx.anger * FXB * 1.8 * Math.pow(1 - tent, 1.5) * edge;     // 谷处向内凹(星芒的凹角)
-    const kk = out - vin;
-    dx += rx / d * kk; dy += ry / d * kk;
+    const tent = 1 - Math.abs(2 * frac - 1);           // 三角波:0(两刺间的谷)→ 1(刺尖)
+    const zig = tent * 2 - 1;                           // −1(谷)→ +1(尖)的纯三角波:直边尖角(而非圆润花瓣)
+    const jit = 0.3 + 0.7 * hash1(cell * 3.37 + 1);     // 每根刺长短不一(由 cell 哈希 → 固定,不随时间变)
+    const edge = d / rad;                               // 外层动得多、内核几乎不动 → 只把"轮廓"扎成星
+    const k = fx.anger * FXB * 4.5 * zig * jit * edge;  // 无时间项 → 星形静止,尖处外突、谷处内凹
+    dx += rx / d * k; dy += ry / d * k;
   }
   if (fx.sand) { // 加速下落 + 地板钳位 + 两端渐隐渐生(否则循环回卷时会"啪"地弹回原位)
     const ph = dotPh(x, y, fx), rate = 0.55 + 0.9 * hash1(ph * 91.7 + 5);

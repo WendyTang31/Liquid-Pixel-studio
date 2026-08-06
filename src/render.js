@@ -22,7 +22,7 @@ function bilin(D,x,y){
 // invX/invY 把目标像素映射回归一化画布坐标(处理 stretch/fit 与任意分辨率)。SDF 为 2× 分辨率。
 // 动态几何位移场的粗网格缓存:behaviorDisp 是平滑场,预采样 GW×GH 一次、逐像素双线性插值,
 // 把每帧的三角函数量从"每像素一次"降到"每格一次"(~百万→几百),消除加了动态几何后的卡顿。
-const GW=41, GH=25;
+const GW=61, GH=37;  // 位移场粗网格:够密才能解析「愤怒尖刺/密集锯齿」这类高角频细节(仍远低于逐像素成本)
 function buildWarpGrid(warp){
   const g=new Float32Array(GW*GH*3);
   for(let j=0;j<GH;j++) for(let i=0;i<GW;i++){ const d=warp(i/(GW-1), j/(GH-1));
