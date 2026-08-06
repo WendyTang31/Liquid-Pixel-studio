@@ -18,6 +18,7 @@ import { buildSequence, sampleFrame } from '../engine.js';
 import { createSizedRenderer } from '../render.js';
 import { stateDots, shapesSdf } from '../pipeline.js';
 import { computeVectorPolys, rasterizeVectorSolids } from '../vector.js';
+import { hydrateCharacters, charSolidsFrom } from '../characters.js';
 import { hasRig, poseShapes } from '../rig.js';
 import { decodeImageShape } from '../image.js';
 import { downloadBlob } from '../utils.js';
@@ -121,8 +122,10 @@ async function loadProjectData(data, gi=0){
       dots:stateDots(d.shapes, d.manual||[], gr.P)}); // 与编辑器同一采样核心(彩色/逐形状覆盖同步生效)
   }
   gr.states=out; gr.SEQ=buildSequence(out, true, gr.P);
+  if(gi===0) viewerChars=hydrateCharacters(data.characters); // 🚶 并行角色轨随工程带入 3D(合成进主投影贴图)
   hint(`✓ 「${gr.name}」已载入:${out.length} 个状态 · 循环 ${gr.SEQ.T.toFixed(1)}s`);
 }
+let viewerChars=[];  // 从工程载入的角色(走路小人),合成进第 0 组的投影贴图
 
 /* ══════════════ 场景 ══════════════ */
 const scene=new THREE.Scene();
@@ -1231,6 +1234,7 @@ function frame(now){
     const fr=sampleFrame(gr.SEQ, gr.states, g%gr.SEQ.T, clock, gr.P);
     // 矢量图层轮廓变形并入 solids —— 修复"3D 上过渡时小人突然消失"(2D 一直渲,3D 之前漏了)
     const vsolids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(gr.states, gr.SEQ, g%gr.SEQ.T, clock, gr.P)));
+    if(gr===groups[0] && viewerChars.length) vsolids.push(...charSolidsFrom(viewerChars, clock)); // 🚶 并行角色轨合成
     gr.renderTex(fr.balls, fr.col, gr.P, vsolids, fr.cam);
     gr.screenTex.needsUpdate=true; gr.screenTexUV.needsUpdate=true;
   }

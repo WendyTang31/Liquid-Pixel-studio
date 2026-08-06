@@ -44,13 +44,15 @@ export function charPolys(ch, clock){
     poly:o.poly.map(p=>({ x:cx+(p.x-cx)*sc+dx, y:cy+(p.y-cy)*sc+dy })),
     strokeW:(o.strokeW||0)*sc }));
 }
-// 所有可见角色 → 合成实心(每个角色一块 SDF solid)。并入主渲染的 solids 数组即可同屏并行播放。
-export function charactersSolids(clock){
+// 给定角色数组 → 合成实心(每个角色一块 SDF solid)。store 无关 → 编辑器与 3D 预览器共用。
+export function charSolidsFrom(chars, clock){
   const out=[];
-  for(const ch of store.characters){ const polys=charPolys(ch, clock);
+  for(const ch of chars||[]){ const polys=charPolys(ch, clock);
     if(polys.length) out.push(...rasterizeVectorSolids(polys)); }
   return out;
 }
+// 编辑器:合成 store 里的所有角色。并入主渲染的 solids 数组即可同屏并行播放。
+export function charactersSolids(clock){ return charSolidsFrom(store.characters, clock); }
 
 // ── 序列化(随工程存/取)。SEQ 是派生的,不存;打开时重建。──
 export function serializeCharacters(){
@@ -61,8 +63,9 @@ export function serializeCharacters(){
       shapes:JSON.parse(JSON.stringify(s.shapes)) })),
   }));
 }
-export function loadCharacters(arr){
-  store.characters=(arr||[]).map(d=>{
+// 纯构造:工程数据 → 角色数组(不写 store)。编辑器与 3D 预览器共用。
+export function hydrateCharacters(arr){
+  return (arr||[]).map(d=>{
     const frames=(d.states||[]).map((s,i)=>({ id:i+1, name:s.name||`f${i+1}`, color:s.color||'#000',
       shapes:s.shapes||[], dots:[], manual:[], trans:{}, cam:null, loop:null, isPose:false,
       hold:s.hold||0, dur:s.dur||0.1 }));
@@ -70,6 +73,9 @@ export function loadCharacters(arr){
       x0:d.x0||0, y0:d.y0||0, x1:d.x1||0, y1:d.y1||0, scale:d.scale??1, speed:d.speed??1,
       visible:d.visible!==false };
   });
+}
+export function loadCharacters(arr){
+  store.characters=hydrateCharacters(arr);
   store.charSeq=Math.max(0, ...store.characters.map(c=>c.id||0));
   store.activeChar=store.characters.length?0:-1;
 }
