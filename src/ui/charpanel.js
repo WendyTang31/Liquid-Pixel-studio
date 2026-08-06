@@ -2,7 +2,7 @@
 // / 上下位置 / 缩放 / 速度 / 删除。位移与缩放不改帧,故无需重建序列 —— 逐帧现读、即时生效。
 import { store } from '../store.js';
 import { W, H } from '../config.js';
-import { enterCharEdit } from './charedit.js';
+import { enterCharEdit, combineSelectedIntoCharacter } from './charedit.js';
 
 const $=id=>document.getElementById(id);
 
@@ -10,6 +10,12 @@ export function renderCharacters(){
   const box=$('charList'); if(!box) return;
   box.innerHTML='';
   const hint=$('charHint'); if(hint) hint.style.display=store.characters.length?'none':'block';
+  // 顶部:把主时间轴上 Shift+多选的帧组合成一个角色
+  const combine=document.createElement('button'); combine.textContent='＋ 选中帧 → 角色';
+  combine.title='在胶片条 Shift+点选若干帧,点此把它们组合成一个角色(移出主时间轴,可独立循环/走位)';
+  combine.style.cssText='font:11px system-ui;background:#1a2b22;border:1px solid #2a3330;border-radius:5px;color:#8ef;cursor:pointer;padding:4px 6px;margin-bottom:2px';
+  combine.onclick=()=>combineSelectedIntoCharacter();
+  box.appendChild(combine);
   store.characters.forEach((ch,idx)=>{
     const card=document.createElement('div');
     card.style.cssText='border:1px solid #2a3330;border-radius:6px;padding:6px 7px;background:'

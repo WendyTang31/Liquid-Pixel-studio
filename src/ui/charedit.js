@@ -8,7 +8,8 @@ import { rasterize, resample } from '../pipeline.js';
 import { setMode } from './stage.js';
 import { renderCharacters } from './charpanel.js';
 import { updateSelBox } from './inspector.js';
-import { makeState } from '../state.js';
+import { makeState, pushUndo } from '../state.js';
+import { makeCharacter } from '../characters.js';
 import { $, setHint } from '../utils.js';
 
 // 角色帧(轻量对象:仅 shapes/hold/dur)→ 完整可编辑状态(带蒙版/幽灵画布等)。反之编辑器工具无法作用。
@@ -48,6 +49,38 @@ export function exitCharEdit(){
   setHint(`✓ 已保存角色「${ch.name}」的帧改动`);
 }
 export const isEditingChar=()=>!!store.editingChar;
+
+// 把主时间轴上【多选的帧】组合成一个角色(移出主时间轴)。胶片条 Shift+点选 → store.selStates。
+// 让每帧形状可矢量变形+渲染:保留已有 layerId;缺失则按【形状序号】赋同一 layerId(逐帧对应),并置实心。
+export function combineSelectedIntoCharacter(){
+  if(store.editingChar){ setHint('请先「✓ 完成编辑角色」再组合'); return; }
+  const raw=(store.selStates&&store.selStates.length)?store.selStates:[store.active];
+  const idxs=[...new Set(raw)].filter(i=>i>=0&&i<store.states.length).sort((a,b)=>a-b);
+  if(idxs.length<1){ setHint('先在胶片条 Shift+点选要组合的帧,再点「选中帧→角色」'); return; }
+  pushUndo();
+  const lidBase=(store.layerSeq=(store.layerSeq||0)+1)*1000;
+  const frames=idxs.map((si,fi)=>{
+    const s=store.states[si];
+    const shapes=(s.shapes||[]).map((sh,k)=>{ const c=JSON.parse(JSON.stringify(sh));
+      if(c.bool!=='sub'){ if(c.layerId==null) c.layerId=lidBase+k;          // 逐帧同序号 → 同一图层,可连续变形
+        if(!c.solidFill && !(c.strokeW>0)) c.solidFill=true; }             // 保证能渲染(实心)
+      return c; });
+    return { id:fi+1, name:s.name||`f${fi+1}`, color:s.color||'#000', shapes, dots:[], manual:[],
+      trans:{}, cam:null, loop:null, isPose:false, hold:s.hold||0, dur:s.dur||0.3 };
+  });
+  const totalSec=frames.reduce((a,f)=>a+(f.hold||0)+(f.dur||0),0)||1;
+  const ch=makeCharacter('角色', frames, totalSec);
+  store.characters.push(ch); store.activeChar=store.characters.length-1;
+  // 移出主时间轴(至少留 1 帧;若全选则补一个空状态)
+  let keep=store.states.filter((_,i)=>!idxs.includes(i));
+  if(!keep.length) keep=[makeState('状态 1', frames[0].color)];
+  store.states=keep; store.active=Math.min(store.active, store.states.length-1);
+  store.selStates=[store.active]; store.sel=null; store.selMulti=[];
+  store.states.forEach(s=>{ rasterize(s); resample(s); });
+  rebuildSequence(); setActive(store.active); renderStrip(); syncStateUI(); updateSelBox();
+  renderCharacters();
+  setHint(`✓ 已把 ${idxs.length} 帧组合成角色「${ch.name}」—— 在🚶角色面板设走位/缩放/旋转,或✏️编辑帧`);
+}
 
 function showEditBanner(ch){
   let b=$('charEditBanner');
