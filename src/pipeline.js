@@ -197,7 +197,12 @@ export function updateThumb(s){
   c.fillStyle='#000'; c.fillRect(0,0,tw,th);
   c.drawImage(s.mask,0,0,tw,th);
   c.globalCompositeOperation='multiply';
-  c.fillStyle=s.color; c.fillRect(0,0,tw,th);
+  // 深色角色(色近黑)在黑底缩略图里会整片黑、看不见剪影 → 用浅色显示轮廓;彩色状态仍用本色。
+  // hex2rgb 对 3 位简写(#000)可能返回 NaN → 兜底当作深色(用浅色画),否则缩略图会整片黑。
+  const rgb=hex2rgb(s.color)||[0,0,0];
+  const lum=(isFinite(rgb[0])&&isFinite(rgb[1])&&isFinite(rgb[2]))?(rgb[0]+rgb[1]+rgb[2])/3:0;
+  c.fillStyle = lum<70 ? '#8fa6c0' : s.color;
+  c.fillRect(0,0,tw,th);
   c.globalCompositeOperation='source-over';
 }
 

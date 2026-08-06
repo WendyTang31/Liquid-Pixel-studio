@@ -2,7 +2,8 @@
 // / 上下位置 / 缩放 / 速度 / 删除。位移与缩放不改帧,故无需重建序列 —— 逐帧现读、即时生效。
 import { store } from '../store.js';
 import { W, H } from '../config.js';
-import { enterCharEdit, combineSelectedIntoCharacter } from './charedit.js';
+import { charLoopSec, setCharLoopSec } from '../characters.js';
+import { enterCharEdit, combineSelectedIntoCharacter, newEmptyCharacter } from './charedit.js';
 
 const $=id=>document.getElementById(id);
 
@@ -11,11 +12,16 @@ export function renderCharacters(){
   box.innerHTML='';
   const hint=$('charHint'); if(hint) hint.style.display=store.characters.length?'none':'block';
   // 顶部:把主时间轴上 Shift+多选的帧组合成一个角色
-  const combine=document.createElement('button'); combine.textContent='＋ 选中帧 → 角色';
+  const topRow=document.createElement('div'); topRow.style.cssText='display:flex;gap:4px;margin-bottom:2px';
+  const combine=document.createElement('button'); combine.textContent='＋ 选中帧→角色';
   combine.title='在胶片条 Shift+点选若干帧,点此把它们组合成一个角色(移出主时间轴,可独立循环/走位)';
-  combine.style.cssText='font:11px system-ui;background:#1a2b22;border:1px solid #2a3330;border-radius:5px;color:#8ef;cursor:pointer;padding:4px 6px;margin-bottom:2px';
+  combine.style.cssText='flex:1;font:11px system-ui;background:#1a2b22;border:1px solid #2a3330;border-radius:5px;color:#8ef;cursor:pointer;padding:4px 6px';
   combine.onclick=()=>combineSelectedIntoCharacter();
-  box.appendChild(combine);
+  const neu=document.createElement('button'); neu.textContent='＋ 新建角色';
+  neu.title='新建一个空角色并进入编辑 → Ctrl+V 把剪切(Ctrl+X)的帧贴进来';
+  neu.style.cssText='flex:1;font:11px system-ui;background:#1a2230;border:1px solid #2a3330;border-radius:5px;color:#8ef;cursor:pointer;padding:4px 6px';
+  neu.onclick=()=>newEmptyCharacter();
+  topRow.append(combine,neu); box.appendChild(topRow);
   store.characters.forEach((ch,idx)=>{
     const card=document.createElement('div');
     card.style.cssText='border:1px solid #2a3330;border-radius:6px;padding:6px 7px;background:'
@@ -58,16 +64,18 @@ export function renderCharacters(){
     const scaleI=document.createElement('input'); scaleI.type='number'; scaleI.step='0.05'; scaleI.min='0.05'; scaleI.value=ch.scale;
     scaleI.title='缩放'; scaleI.style.cssText='width:48px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
     scaleI.onclick=e=>e.stopPropagation(); scaleI.oninput=()=>{ ch.scale=Math.max(0.05,parseFloat(scaleI.value)||1); };
-    const speedI=document.createElement('input'); speedI.type='number'; speedI.step='0.1'; speedI.min='0.1'; speedI.value=ch.speed;
-    speedI.title='走动/播放速度'; speedI.style.cssText='width:44px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
-    speedI.onclick=e=>e.stopPropagation(); speedI.oninput=()=>{ ch.speed=Math.max(0.1,parseFloat(speedI.value)||1); };
+    const durI=document.createElement('input'); durI.type='number'; durI.step='0.1'; durI.min='0.1';
+    try{ durI.value=+charLoopSec(ch).toFixed(2); }catch(_){ durI.value=ch.cycleSec||1; }
+    durI.title='整体循环时长(秒):走完一整圈用多久 —— 改它即调整体快慢(即之前片段的「总时长」)';
+    durI.style.cssText='width:48px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
+    durI.onclick=e=>e.stopPropagation(); durI.oninput=()=>{ const v=parseFloat(durI.value); if(v>0) setCharLoopSec(ch,v); };
     const rotI=document.createElement('input'); rotI.type='number'; rotI.step='5'; rotI.value=Math.round(ch.rot||0);
     rotI.title='整体旋转(度)'; rotI.style.cssText='width:44px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
     rotI.onclick=e=>e.stopPropagation(); rotI.oninput=()=>{ ch.rot=parseFloat(rotI.value)||0; };
     const cross=document.createElement('button'); cross.textContent='整屏走过'; cross.title='一键设为从画面左外走到右外';
     cross.style.cssText='font:11px system-ui;background:#223;border:1px solid #2a3330;border-radius:4px;color:#8ef;cursor:pointer;padding:2px 6px';
     cross.onclick=e=>{ e.stopPropagation(); ch.x0=-W*0.62; ch.x1=W*0.62; ch.y0=ch.y1=0; renderCharacters(); };
-    r3.append(mkLabel('缩放'),scaleI,mkLabel('旋转'),rotI,mkLabel('速度'),speedI,cross); card.appendChild(r3);
+    r3.append(mkLabel('缩放'),scaleI,mkLabel('旋转'),rotI,mkLabel('时长'),durI,cross); card.appendChild(r3);
     box.appendChild(card);
   });
 }

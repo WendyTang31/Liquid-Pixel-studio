@@ -26,6 +26,9 @@ export function framesFromAnim(anim){
 }
 
 function ensureSEQ(ch){ if(ch.seqDirty || !ch.SEQ){ ch.SEQ=buildSequence(ch.states, true, P); ch.seqDirty=false; } return ch.SEQ; }
+// 角色一整圈的实际时长(秒)= 序列固有周期 / 速度。UI 用它显示/设置「整体 loop 时长」。
+export function charLoopSec(ch){ return ensureSEQ(ch).T / (ch.speed||1); }
+export function setCharLoopSec(ch, sec){ const T=ensureSEQ(ch).T; ch.speed = T / Math.max(0.05, sec||1); }
 
 // 角色在墙钟 clock 时刻的循环时间 t 与位移进度 prog(0..1)。speed 缩放循环快慢。
 export function charTime(ch, clock){

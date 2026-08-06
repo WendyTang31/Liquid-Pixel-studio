@@ -45,6 +45,18 @@ export function pasteKeyframes(){
   store.selStates=newIdx; setActive(newIdx[0]); store.selStates=newIdx; renderStrip(); store.seqDirty=true;
   setHint(`📌 已粘贴 ${clipboard.length} 帧(已选中新帧 —— 整体右移即让下一圈往前走)`);
 }
+// ✂ 剪切:复制到剪贴板 + 从当前时间轴删除。用于把帧从一个角色/主时间轴挪到另一个角色:
+// Ctrl+X 剪 → 「＋新建角色」进它的编辑 → Ctrl+V 贴入。
+export function cutKeyframes(){
+  const idx=sel(); if(!idx.length) return;
+  if(idx.length>=store.states.length){ setHint('⚠ 不能剪切全部帧(至少留 1 帧);想全部转移请先「＋新建角色」再逐段挪'); return; }
+  clipboard=idx.map(i=>serializeState(store.states[i]));
+  pushUndo();
+  for(const i of [...idx].sort((a,b)=>b-a)) store.states.splice(i,1);
+  store.selStates=[]; setActive(Math.max(0, Math.min(idx[0], store.states.length-1)));
+  renderStrip(); store.seqDirty=true;
+  setHint(`✂ 已剪切 ${clipboard.length} 帧 —— 到目标角色(可「＋新建角色」)里 Ctrl+V 贴入`);
+}
 export function transformKeyframes(opts){
   const idx=sel(); if(!idx.length) return; pushUndo();
   transformStates(store.states, idx, opts);
@@ -66,7 +78,8 @@ export function initKeyframeKeys(){
     const tag=(document.activeElement?.tagName||'').toLowerCase();
     if(tag==='input'||tag==='textarea'||tag==='select'||store.mode==='play') return;
     if(!(e.ctrlKey||e.metaKey)) return;
-    if(e.key==='c' && store.selStates?.length>=2){ copyKeyframes(); e.preventDefault(); }
+    if(e.key==='c' && store.selStates?.length>=1){ copyKeyframes(); e.preventDefault(); }
+    else if(e.key==='x' && store.selStates?.length>=1){ cutKeyframes(); e.preventDefault(); }   // ✂ 剪切帧
     else if(e.key==='v' && clipboard.length){ pasteKeyframes(); e.preventDefault(); }
   });
 }

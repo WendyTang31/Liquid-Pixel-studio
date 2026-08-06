@@ -50,6 +50,15 @@ export function exitCharEdit(){
 }
 export const isEditingChar=()=>!!store.editingChar;
 
+// ＋新建空角色:造一个只含 1 个占位空帧的角色并进入其编辑 → Ctrl+V 把剪切的帧贴进来(再删掉占位帧)。
+export function newEmptyCharacter(){
+  const blank={ id:1, name:'f1', color:'#000', shapes:[], dots:[], manual:[], trans:{}, cam:null, loop:null, isPose:false, hold:0, dur:0.3 };
+  const ch=makeCharacter('新角色', [blank], 0.3);
+  store.characters.push(ch); store.activeChar=store.characters.length-1;
+  enterCharEdit(ch);
+  setHint('＋ 已新建空角色 —— Ctrl+V 把刚剪切的帧贴进来(占位空帧可删)');
+}
+
 // 把主时间轴上【多选的帧】组合成一个角色(移出主时间轴)。胶片条 Shift+点选 → store.selStates。
 // 让每帧形状可矢量变形+渲染:保留已有 layerId;缺失则按【形状序号】赋同一 layerId(逐帧对应),并置实心。
 export function combineSelectedIntoCharacter(){

@@ -346,7 +346,7 @@ function tick(now){
     else { if(glCv) glCv.style.display='none'; previewRender(editBalls, hex2rgb(s.color), P, solid, null, store.view); }
     ctx.drawImage(s.ghost,0,0);
     overlayOnion();
-    if(!store.hideOverlays && $('showSkin')?.checked) drawSkinRef(ctx); // 车面参考(UV 皮肤式)
+    if(!store.hideOverlays && !store.editingChar && $('showSkin')?.checked) drawSkinRef(ctx); // 车面参考(UV);编辑角色帧时隐藏(那张黄底 UV 与角色无关)
     if(store.dragAct==='draw'&&store.dragStart&&store.dragNow){
       ctx.strokeStyle='rgba(152,245,208,0.8)'; ctx.setLineDash([4,3]); ctx.lineWidth=1;
       const x0=store.dragStart.x,y0=store.dragStart.y,x1=store.dragNow.x,y1=store.dragNow.y;

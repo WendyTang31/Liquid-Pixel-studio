@@ -3,7 +3,9 @@
 import { W, H } from './config.js';
 
 export const $ = id => document.getElementById(id);
-export const hex2rgb = h => [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+export const hex2rgb = h => { h=h||'#000000';
+  if(h.length===4) h='#'+h[1]+h[1]+h[2]+h[2]+h[3]+h[3]; // 3 位简写 #abc → #aabbcc(否则蓝通道会 slice 成空 = NaN)
+  return [parseInt(h.slice(1,3),16)||0, parseInt(h.slice(3,5),16)||0, parseInt(h.slice(5,7),16)||0]; };
 export const FONT = s => `900 ${s}px system-ui, "PingFang SC", sans-serif`;
 
 // 底部提示行。集中一个入口,免得各模块到处缓存 hint 元素。
