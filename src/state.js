@@ -30,7 +30,11 @@ export const serializeStates=(arr=store.states)=>arr.map(s=>({id:s.id,name:s.nam
   fx:(s.fx&&Object.keys(s.fx).length)?{...s.fx}:undefined,
   guides:s.guides?.length?JSON.parse(JSON.stringify(s.guides)):undefined,
   shapes:JSON.parse(JSON.stringify(s.shapes)), manual:JSON.parse(JSON.stringify(s.manual))}));
-const snapshot=()=>({states:serializeStates(), active:store.active});
+// 快照含角色列表 → Ctrl+Z 能撤销角色的增/删/组合/粘贴等。编辑角色帧时(撤销栈已隔离)只存帧、
+// 不动角色列表,以免 hydrate 重建角色对象、打断 editingChar 引用。
+const snapshot=()=> store.editingChar
+  ? {states:serializeStates(), active:store.active}
+  : {states:serializeStates(), active:store.active, characters:serializeCharacters()};
 
 export function pushUndo(){ store.undoStack.push(snapshot());
   if(store.undoStack.length>60) store.undoStack.shift(); store.redoStack.length=0;
@@ -54,6 +58,7 @@ export function hydrate(data){
   store.active=Math.min(data.active??0, store.states.length-1);
   store.sel=null; updateSelBox();
   store.states.forEach(s=>{rasterize(s); resample(s);});
+  if(data.characters && !store.editingChar){ loadCharacters(data.characters); renderCharacters(); } // 🚶 撤销/重做恢复角色列表
   renderStrip(); syncStateUI(); store.seqDirty=true;
   reviveImageShapes();
 }

@@ -52,6 +52,7 @@ export const isEditingChar=()=>!!store.editingChar;
 
 // ＋新建空角色:造一个只含 1 个占位空帧的角色并进入其编辑 → Ctrl+V 把剪切的帧贴进来(再删掉占位帧)。
 export function newEmptyCharacter(){
+  pushUndo();                                            // 可 Ctrl+Z 撤销"新建角色"
   const blank={ id:1, name:'f1', color:'#000', shapes:[], dots:[], manual:[], trans:{}, cam:null, loop:null, isPose:false, hold:0, dur:0.3 };
   const ch=makeCharacter('新角色', [blank], 0.3);
   store.characters.push(ch); store.activeChar=store.characters.length-1;

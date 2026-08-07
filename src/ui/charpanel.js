@@ -2,8 +2,10 @@
 // / 上下位置 / 缩放 / 速度 / 删除。位移与缩放不改帧,故无需重建序列 —— 逐帧现读、即时生效。
 import { store } from '../store.js';
 import { W, H } from '../config.js';
+import { setHint } from '../utils.js';
 import { charLoopSec, setCharLoopSec } from '../characters.js';
 import { enterCharEdit, combineSelectedIntoCharacter, newEmptyCharacter } from './charedit.js';
+import { pushUndo } from '../state.js';
 
 const $=id=>document.getElementById(id);
 
@@ -41,7 +43,10 @@ export function renderCharacters(){
     edit.title=editing?'正在编辑此角色的帧':'编辑此角色的帧(改图形 / 每帧停留·过渡时长)';
     edit.onclick=e=>{ e.stopPropagation(); enterCharEdit(ch); };
     const del=document.createElement('span'); del.textContent='🗑'; del.style.cursor='pointer'; del.title='删除该角色';
-    del.onclick=e=>{ e.stopPropagation(); if(store.editingChar===ch) return; store.characters.splice(idx,1);
+    del.onclick=e=>{ e.stopPropagation();
+      if(store.editingChar===ch){ setHint('请先「✓ 完成编辑角色」再删除'); return; }
+      pushUndo();                                       // 可 Ctrl+Z 撤销删除
+      store.characters.splice(idx,1);
       store.activeChar=Math.min(store.activeChar, store.characters.length-1); renderCharacters(); };
     head.append(eye,name,edit,del); card.appendChild(head);
     if(editing){ const bar=document.createElement('div'); bar.textContent='✏ 编辑中 —— 顶部「✓ 完成编辑角色」保存';

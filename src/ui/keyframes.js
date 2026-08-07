@@ -77,6 +77,10 @@ export function initKeyframeKeys(){
   addEventListener('keydown', e=>{
     const tag=(document.activeElement?.tagName||'').toLowerCase();
     if(tag==='input'||tag==='textarea'||tag==='select'||store.mode==='play') return;
+    // Delete/Backspace:多选帧(≥2)且未选中任何形状 → 直接删这些帧。单选帧的删除交给形状删除逻辑/删除状态按钮,避免误删。
+    if((e.key==='Delete'||e.key==='Backspace') && !(e.ctrlKey||e.metaKey) && store.selStates?.length>=2 && !store.sel){
+      deleteKeyframes(); e.preventDefault(); e.stopImmediatePropagation(); return;
+    }
     if(!(e.ctrlKey||e.metaKey)) return;
     if(e.key==='c' && store.selStates?.length>=1){ copyKeyframes(); e.preventDefault(); }
     else if(e.key==='x' && store.selStates?.length>=1){ cutKeyframes(); e.preventDefault(); }   // ✂ 剪切帧
