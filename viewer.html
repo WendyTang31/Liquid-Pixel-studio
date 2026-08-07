@@ -118,6 +118,9 @@
   <div class="row">
     <button id="addGroup" style="flex:1" title="载入另一个工程 .json 作为动画 2,与动画 1 同时播放">➕ 新动画(节点)</button>
   </div>
+  <div class="small" style="opacity:.6;line-height:1.5;margin:2px 0 4px">
+    💡 同一动画组里的多个投影面【共享同一段动画】,由下方「画面分区」切分 —— 所以走动的图案会从一个面【跑到】另一个面(前脸→侧面),不是各播各的。<br>
+    想让车的<b>前脸</b>和<b>侧面</b>各放【不同 / 独立】的动画:点「➕ 新动画(节点)」新建一组,把它的投影面放到另一个面上即可(两组各有自己的动画与时间线)。</div>
   <input type="file" id="groupFile" accept=".json" style="display:none">
 
   <div id="wrapProps" style="display:none">
