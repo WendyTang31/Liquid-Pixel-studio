@@ -4,7 +4,12 @@ import { P } from './config.js';
 import { LED_W, LED_H, MODULE_MAP, transformP1toP2, makeCalibrationFrame } from './ledmap.js';
 
 export const p2On = () => !!P.p2Export;
+// 导出倍数:1×=硬件原生 128×320;N× = 原生按 128N×320N 渲染,模组网格同步放大(仍零重采样)。
+export const p2Scale = () => Math.max(1, Math.round(P.p2Scale || 1));
+export const p2Size = () => [LED_W * p2Scale(), LED_H * p2Scale()];
 // 由全局配置组出纯函数所需的 opts(逐模组覆盖 + 侧板方向)。
+// 注意:倍数【不从配置读】,而是由待变换画面的宽度反推 —— 预览是 128 宽(1×)、导出是 128N 宽(N×),
+// 同一个函数两处都对,不会出现"配置说 8× 但画布只有 128 宽"导致全黑的错配。
 export const p2Opts = () => ({ rotations: P.p2Rot || [], side: P.p2Side || 'cw' });
 
 export function makeCanvas(w=LED_W, h=LED_H){
@@ -17,7 +22,8 @@ export function transformCanvasP1toP2(src, out){
   const sctx=src.getContext('2d', {willReadFrequently:true});
   sctx.imageSmoothingEnabled=false;
   const img=sctx.getImageData(0,0,src.width,src.height);
-  const res=transformP1toP2({width:img.width,height:img.height,data:img.data}, p2Opts());
+  const scale=Math.max(1, Math.round(src.width / LED_W));   // 由画面宽度反推倍数
+  const res=transformP1toP2({width:img.width,height:img.height,data:img.data}, {...p2Opts(), scale});
   const dst=out||makeCanvas(res.width,res.height);
   if(dst.width!==res.width||dst.height!==res.height){ dst.width=res.width; dst.height=res.height; }
   const dctx=dst.getContext('2d', {willReadFrequently:true});

@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LED_W, LED_H, MODULE_MAP, transformP1toP2, makeCalibrationFrame,
-         mapPixel, destSize, effectiveRot } from '../src/ledmap.js';
+         mapPixel, destSize, effectiveRot, scaleMap } from '../src/ledmap.js';
 
 const blank=(W=LED_W,H=LED_H,fill=[0,0,0,255])=>{
   const d=new Uint8ClampedArray(W*H*4);
@@ -88,6 +88,50 @@ test('ccw 模式下像素同样守恒(不丢不重)', () => {
   let n=0; for(let i=0;i<out.data.length;i+=4) if(out.data[i]||out.data[i+1]||out.data[i+2]) n++;
   let m=0; for(let i=0;i<src.data.length;i+=4) if(src.data[i]||src.data[i+1]||src.data[i+2]) m++;
   assert.equal(n,m);
+});
+
+test('高清倍数:N× 下形状/像素守恒/旋转见证全部成立(真高清,非拉伸)', () => {
+  for(const n of [2,4,8]){
+    const W=LED_W*n, H=LED_H*n;
+    const src=blank(W,H);
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++)
+      setPx(src,x,y,[(x+1)&255,(y+1)&255,(((x>>4)<<4)|(y>>4))&255,255]);
+    const out=transformP1toP2(src,{scale:n});
+    assert.equal(out.width,W); assert.equal(out.height,H);
+    // 像素守恒(多重集一致)
+    const tally=m=>{ const h=new Map();
+      for(let i=0;i<m.data.length;i+=4){
+        if(!m.data[i]&&!m.data[i+1]&&!m.data[i+2]) continue;
+        const k=m.data[i]+','+m.data[i+1]+','+m.data[i+2];
+        h.set(k,(h.get(k)||0)+1); } return h; };
+    const a=tally(src), b=tally(out);
+    assert.equal(b.size,a.size,`${n}× 非黑像素种类数应一致`);
+    for(const [k,v] of a) assert.equal(b.get(k),v,`${n}× 像素 ${k} 次数应一致`);
+  }
+});
+
+test('高清倍数:模组2 白块在 N× 下依旧落在旋转块右上角', () => {
+  const n=4, W=LED_W*n, H=LED_H*n;
+  const cal=makeCalibrationFrame(scaleMap(MODULE_MAP,n), W, H);
+  const out=transformP1toP2(cal,{scale:n});
+  const isWhite=p=>p[0]>240&&p[1]>240&&p[2]>240;
+  let tl=0,tr=0,bl=0,br=0;
+  for(let y=64*n;y<192*n;y++) for(let x=0;x<64*n;x++){
+    if(!isWhite(px(out,x,y))) continue;
+    const top=y<128*n, left=x<32*n;
+    if(top&&left)tl++; else if(top&&!left)tr++; else if(!top&&left)bl++; else br++;
+  }
+  assert.ok(tr>0,'右上应有白块'); assert.equal(tl,0); assert.equal(bl,0); assert.equal(br,0);
+});
+
+test('scaleMap:整表等比放大,1× 原样返回', () => {
+  assert.equal(scaleMap(MODULE_MAP,1), MODULE_MAP);
+  const s=scaleMap(MODULE_MAP,8);
+  assert.deepEqual(s[1].src, [0, 512, 1024, 512]);   // 模组2:[0,64,128,64]×8
+  assert.deepEqual(s[2].dst, [512, 512]);            // 模组3:[64,64]×8
+  // 放大后各模组仍恰好铺满 128N×320N,互不重叠
+  let area=0; for(const m of s) area+=m.src[2]*m.src[3];
+  assert.equal(area, (LED_W*8)*(LED_H*8));
 });
 
 test('校准帧:5 个模组各有 N 条竖条(N=序号),颜色互不相同', () => {

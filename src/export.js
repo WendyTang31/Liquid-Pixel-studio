@@ -13,11 +13,11 @@ import { rebuildSequence } from './sequence.js';
 import { resampleAll } from './pipeline.js';
 import { setMode } from './ui/stage.js';
 import { LED_W, LED_H } from './ledmap.js';
-import { p2On, makeCanvas, transformCanvasP1toP2 } from './ledcanvas.js';
+import { p2On, p2Size, p2Scale, makeCanvas, transformCanvasP1toP2 } from './ledcanvas.js';
 
-// 🔩 物理布局导出:开启时导出尺寸强制为控制器画布 128×320(永不缩放,见 ledmap.js)。
+// 🔩 物理布局导出:开启时尺寸锁成 128×320 的整数倍(1×=硬件原生;N×=原生高清渲染,模组网格同步放大)。
 // 关闭时原样返回用户设置 → 与既有构建逐字节一致。
-function expSize(){ return p2On() ? [LED_W, LED_H] : getExpSize(); }
+function expSize(){ return p2On() ? p2Size() : getExpSize(); }
 
 // 离线渲染器:建好复用画布,drawFrame(f) 把第 f 帧(含 2×超采样 + 辉光)画进 ec。
 // PNG 与 MP4 共用 —— 两条导出路径的画面逐像素一致。
@@ -162,7 +162,8 @@ export function toggleRecord(){
 function recordP2(){
   resampleAll(); rebuildSequence();
   const frames=frameCount(); if(!frames) return;
-  const { out, drawFrame }=makeOfflineRenderer(LED_W, LED_H);
+  const [RW,RH]=p2Size();
+  const { out, drawFrame }=makeOfflineRenderer(RW, RH);
   drawFrame(0);
   let raf=0, f=-1;
   const t0=performance.now();
@@ -176,9 +177,9 @@ function recordP2(){
   store.recorder.ondataavailable=e=>{ if(e.data.size) store.chunks.push(e.data); };
   store.recorder.onstop=()=>{
     cancelAnimationFrame(raf);
-    downloadBlob(new Blob(store.chunks,{type:'video/webm'}),`morph_seq_${LED_W}x${LED_H}_P2.webm`);
+    downloadBlob(new Blob(store.chunks,{type:'video/webm'}),`morph_seq_${RW}x${RH}_P2.webm`);
     store.recorder=null;
-    $('recBtn').textContent='⏺ 录 WebM'; setHint(`✓ WebM 已保存(${LED_W}×${LED_H} · 🔩P2 实装布局)`); };
+    $('recBtn').textContent='⏺ 录 WebM'; setHint(`✓ WebM 已保存(${RW}×${RH} · 🔩P2 实装布局)`); };
   store.recorder.start(); tick();
-  $('recBtn').textContent='⏹ 停止保存'; setHint(`● 录制中(P2 ${LED_W}×${LED_H})… 满一圈 ${(frames/P.fps).toFixed(1)}s 即可停`);
+  $('recBtn').textContent='⏹ 停止保存'; setHint(`● 录制中(P2 ${RW}×${RH})… 满一圈 ${(frames/P.fps).toFixed(1)}s 即可停`);
 }

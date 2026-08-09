@@ -49,12 +49,24 @@ export function effectiveRot(entry, override, side){
   return ((entry.rotate % 360) + 360) % 360;
 }
 
-// 纯变换:读一张 128×320 的 P1 帧,返回【新的】128×320 P2 帧。不修改入参。
-// opts: { map, rotations:[per-module override|null], side:'cw'|'ccw' }
+// 映射表整体放大 n 倍 —— 高分辨率导出用。
+// 关键:这【不是】把 128×320 的结果拉大(那会糊/马赛克),而是【原生按 128n×320n 渲染】后,
+// 用同样放大 n 倍的模组网格去裁切/旋转/平移。于是仍然是一个源像素 → 一个目标像素,
+// 全程零重采样、零插值,只是网格更细 —— 画面是真高清,不是放大的低清。
+export function scaleMap(map, n){
+  if(n === 1) return map;
+  return map.map(m => ({ ...m,
+    src: [m.src[0]*n, m.src[1]*n, m.src[2]*n, m.src[3]*n],
+    dst: [m.dst[0]*n, m.dst[1]*n] }));
+}
+
+// 纯变换:读一张 128n×320n 的 P1 帧,返回【新的】同尺寸 P2 帧。不修改入参。
+// opts: { map, rotations:[per-module override|null], side:'cw'|'ccw', scale:n }
 // 未被任何模组覆盖到的像素 = 不透明黑(LED 灭灯的语义;默认表铺满全画面,通常用不到)。
 export function transformP1toP2(src, opts = {}){
   const W = src.width, H = src.height;
-  const map = opts.map || MODULE_MAP;
+  const n = Math.max(1, Math.round(opts.scale || 1));
+  const map = opts.map || scaleMap(MODULE_MAP, n);
   const rots = opts.rotations || [];
   const side = opts.side || SIDE_PANEL_ROTATION;
   const s = src.data;

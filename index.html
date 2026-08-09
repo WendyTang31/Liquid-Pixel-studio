@@ -514,6 +514,17 @@
         <div style="text-align:center"><div class="small" style="opacity:.7">P2 实装</div><div id="p2PrevB"></div></div>
       </div>
       <div class="small" style="opacity:.55;text-align:center">预览随时间轴实时更新</div>
+      <div class="row"><label title="导出分辨率倍数。1× = 硬件原生 128×320(送控制器的那一份);更高倍数 = 【原生按该分辨率渲染】+ 模组网格同步放大,画面是真高清而非把低清拉大,依旧零重采样。做汇报/演示片用 8× 或 16×。">导出倍数</label>
+        <select id="p2Scale" style="flex:1">
+          <option value="1">1× · 128×320(硬件原生)</option>
+          <option value="2">2× · 256×640</option>
+          <option value="4">4× · 512×1280</option>
+          <option value="8" selected>8× · 1024×2560(演示推荐)</option>
+          <option value="12">12× · 1536×3840</option>
+          <option value="16">16× · 2048×5120(超 H.264 上限 → MP4 自动转 PNG 序列)</option>
+        </select></div>
+      <div class="small" style="opacity:.55;line-height:1.5">倍数越高越慢(8× 会额外开 2× 超采样,最慢也最细腻)。
+        <b>送硬件请用 1×</b>;汇报演示片用 8× 即可。</div>
       <div class="row"><label title="逐模组旋转覆盖:实装方向与预期不符时在这里现场校正,不必改代码">模组旋转</label></div>
       <div id="p2Mods"></div>
       <div class="row"><label title="侧板(模组 2/3)整体方向。实装若整体镜像了,这里一处切换即可">侧板方向</label>

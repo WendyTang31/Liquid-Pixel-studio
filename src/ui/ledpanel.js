@@ -87,6 +87,13 @@ export function initLedPanel(){
   side.value=P.p2Side||'cw';
   side.onchange=()=>{ P.p2Side=side.value; refreshP2Preview(); };
 
+  // 导出倍数(预览恒按 1× 画,省算力;倍数只影响导出尺寸 —— 布局本身与倍数无关)
+  const sc=$('p2Scale');
+  if(sc){ sc.value=String(P.p2Scale||8);
+    sc.onchange=()=>{ P.p2Scale=parseInt(sc.value,10)||1;
+      setHint(`🔩 导出将按 ${LED_W*P.p2Scale}×${LED_H*P.p2Scale} 原生渲染`
+        +(P.p2Scale===1?'(硬件原生,送控制器用这份)':'(高清演示片;送硬件请切回 1×)')); }; }
+
   // 校准帧:预览切成校准图案;可直接存 P1/P2 两张 PNG 拿去打屏比对
   $('p2Calib').onclick=()=>{
     calibMode=!calibMode;
