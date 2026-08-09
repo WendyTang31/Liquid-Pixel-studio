@@ -12,9 +12,16 @@ import { renderToImageData } from './render.js';
 import { rebuildSequence } from './sequence.js';
 import { resampleAll } from './pipeline.js';
 import { setMode } from './ui/stage.js';
+import { LED_W, LED_H } from './ledmap.js';
+import { p2On, makeCanvas, transformCanvasP1toP2 } from './ledcanvas.js';
+
+// 🔩 物理布局导出:开启时导出尺寸强制为控制器画布 128×320(永不缩放,见 ledmap.js)。
+// 关闭时原样返回用户设置 → 与既有构建逐字节一致。
+function expSize(){ return p2On() ? [LED_W, LED_H] : getExpSize(); }
 
 // 离线渲染器:建好复用画布,drawFrame(f) 把第 f 帧(含 2×超采样 + 辉光)画进 ec。
 // PNG 与 MP4 共用 —— 两条导出路径的画面逐像素一致。
+// 返回的 out 才是【应当被编码/存盘的画布】:P2 模式下 = 变换后的画布,否则就是 ec 本身。
 function makeOfflineRenderer(EW, EH){
   const ec=document.createElement('canvas'); ec.width=EW; ec.height=EH;
   const ectx=ec.getContext('2d');
@@ -40,7 +47,10 @@ function makeOfflineRenderer(EW, EH){
       ectx.restore();
     }
   }
-  return { ec, drawFrame };
+  // P2:每帧渲染完成后(辉光之后)做最后一步布局变换 —— 最近邻、逐像素、零缩放。
+  const p2 = p2On() ? makeCanvas(EW, EH) : null;
+  function drawOut(f){ drawFrame(f); if(p2) transformCanvasP1toP2(ec, p2); }
+  return { ec, out: p2 || ec, drawFrame: drawOut };
 }
 
 // 帧数护栏:PNG/MP4 共用。
@@ -54,20 +64,21 @@ function frameCount(){
 export async function exportPNG(){
   if(store.exporting) return;
   resampleAll(); rebuildSequence();
-  const [EW,EH]=getExpSize();
+  const [EW,EH]=expSize();
   const frames=frameCount(); if(!frames) return;
   store.exporting=true; $('pngBtn').textContent='… 渲染中';
-  const { ec, drawFrame }=makeOfflineRenderer(EW,EH);
+  const { out, drawFrame }=makeOfflineRenderer(EW,EH);
   const zip=new JSZip();
   for(let f=0;f<frames;f++){
     drawFrame(f);
-    zip.file(`frame_${String(f).padStart(4,'0')}.png`, await toBlobP(ec));
+    // 文件名与帧序不变,只有像素内容随 P2 变换而变
+    zip.file(`frame_${String(f).padStart(4,'0')}.png`, await toBlobP(out));
     if(f%5===0){ setHint(`导出中 ${f+1}/${frames}…`); await nextFrame(); }
   }
   setHint('打包 zip…');
   downloadBlob(await zip.generateAsync({type:'blob'}),
-    `morph_seq_${EW}x${EH}_${P.fps}fps_${frames}f.zip`);
-  setHint(`✓ 已导出整条序列 ${frames} 帧 (${EW}×${EH}, ${store.SEQ.T.toFixed(1)}s)`);
+    `morph_seq_${EW}x${EH}${p2On()?'_P2':''}_${P.fps}fps_${frames}f.zip`);
+  setHint(`✓ 已导出整条序列 ${frames} 帧 (${EW}×${EH}${p2On()?' · 🔩P2 实装布局':''}, ${store.SEQ.T.toFixed(1)}s)`);
   $('pngBtn').textContent='🎞 PNG 序列'; store.exporting=false;
 }
 
@@ -88,8 +99,8 @@ export async function exportMP4(){
     return exportPNG();
   }
   resampleAll(); rebuildSequence();
-  let [EW,EH]=getExpSize();
-  EW-=EW%2; EH-=EH%2;                       // H.264(yuv420)要求偶数边长
+  let [EW,EH]=expSize();
+  EW-=EW%2; EH-=EH%2;                       // H.264(yuv420)要求偶数边长(128×320 本就是偶数,P2 不受影响)
   const frames=frameCount(); if(!frames) return;
   const fps=P.fps;
   const bitrate=Math.round(Math.min(40e6, Math.max(2e6, EW*EH*fps*0.15)));
@@ -105,12 +116,12 @@ export async function exportMP4(){
       output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),
       error:e=>{ encErr=e; } });
     encoder.configure({ codec, width:EW, height:EH, bitrate, framerate:fps });
-    const { ec, drawFrame }=makeOfflineRenderer(EW,EH);
+    const { out, drawFrame }=makeOfflineRenderer(EW,EH);
     const usPerFrame=1e6/fps;
     for(let f=0;f<frames;f++){
       if(encErr) throw encErr;
       drawFrame(f);
-      const vf=new VideoFrame(ec, { timestamp:Math.round(f*usPerFrame), duration:Math.round(usPerFrame) });
+      const vf=new VideoFrame(out, { timestamp:Math.round(f*usPerFrame), duration:Math.round(usPerFrame) });
       encoder.encode(vf, { keyFrame: f%Math.max(1,Math.round(fps))===0 }); // 每秒一个关键帧
       vf.close();
       // 背压:编码队列过长时让出,避免一次性堆满内存
@@ -121,8 +132,8 @@ export async function exportMP4(){
     if(encErr) throw encErr;
     muxer.finalize();
     downloadBlob(new Blob([muxer.target.buffer],{type:'video/mp4'}),
-      `morph_${EW}x${EH}_${fps}fps_${frames}f.mp4`);
-    setHint(`✓ 已导出 MP4 ${frames} 帧 (${EW}×${EH}, ${store.SEQ.T.toFixed(1)}s, H.264)`);
+      `morph_${EW}x${EH}${p2On()?'_P2':''}_${fps}fps_${frames}f.mp4`);
+    setHint(`✓ 已导出 MP4 ${frames} 帧 (${EW}×${EH}${p2On()?' · 🔩P2 实装布局':''}, ${store.SEQ.T.toFixed(1)}s, H.264)`);
   }catch(err){
     setHint('⚠ MP4 编码失败:'+(err?.message||err)+' —— 可改用 🎞 PNG 序列');
   }
@@ -131,6 +142,9 @@ export async function exportMP4(){
 
 export function toggleRecord(){
   if(store.recorder){ store.recorder.stop(); return; }
+  // 🔩 P2 模式:实时录制也必须是【原生 128×320】—— 若去缩放预览画布就等于重采样(规格明令禁止)。
+  // 故这里用与 PNG/MP4 同一条离线渲染管线,按墙钟推进帧号画进 P2 画布,再抓这张画布的流。
+  if(p2On()) return recordP2();
   const cv=$('cv');
   setMode('play'); store.g=0; store.playing=true; $('playBtn').textContent='⏸ 暂停';
   store.hideOverlays=true; store.forceCpu=true; store.chunks=[]; // captureStream 抓 2D 画布,录制期强制 CPU 渲染
@@ -142,4 +156,29 @@ export function toggleRecord(){
     $('recBtn').textContent='⏺ 录 WebM'; setHint('✓ WebM 已保存'); };
   store.recorder.start();
   $('recBtn').textContent='⏹ 停止保存'; setHint('● 录制中…');
+}
+
+// P2 实时录制:离线渲染 → 布局变换 → 抓 128×320 画布流。帧序与 PNG/MP4 一致,只是按真实时间循环播放。
+function recordP2(){
+  resampleAll(); rebuildSequence();
+  const frames=frameCount(); if(!frames) return;
+  const { out, drawFrame }=makeOfflineRenderer(LED_W, LED_H);
+  drawFrame(0);
+  let raf=0, f=-1;
+  const t0=performance.now();
+  const tick=()=>{
+    const nf=Math.floor((performance.now()-t0)/1000*P.fps)%frames;
+    if(nf!==f){ f=nf; drawFrame(f); }
+    raf=requestAnimationFrame(tick);
+  };
+  store.chunks=[];
+  store.recorder=new MediaRecorder(out.captureStream(P.fps),{mimeType:'video/webm'});
+  store.recorder.ondataavailable=e=>{ if(e.data.size) store.chunks.push(e.data); };
+  store.recorder.onstop=()=>{
+    cancelAnimationFrame(raf);
+    downloadBlob(new Blob(store.chunks,{type:'video/webm'}),`morph_seq_${LED_W}x${LED_H}_P2.webm`);
+    store.recorder=null;
+    $('recBtn').textContent='⏺ 录 WebM'; setHint(`✓ WebM 已保存(${LED_W}×${LED_H} · 🔩P2 实装布局)`); };
+  store.recorder.start(); tick();
+  $('recBtn').textContent='⏹ 停止保存'; setHint(`● 录制中(P2 ${LED_W}×${LED_H})… 满一圈 ${(frames/P.fps).toFixed(1)}s 即可停`);
 }

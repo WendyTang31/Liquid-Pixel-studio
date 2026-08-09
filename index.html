@@ -500,6 +500,32 @@
     </div>
     <div class="small">导出整条序列(勾"无缝"含尾→首过渡,循环播放天衣无缝)。
       PNG → <span style="color:var(--mint)">ffmpeg -framerate 30 -i frame_%04d.png -pix_fmt yuv420p out.mp4</span></div>
+
+    <div class="divider"></div>
+    <div class="row">
+      <label class="ck" title="把画面从 P1(创作布局:5 个模组竖直堆叠)重排成 P2(实装布局:模组 2/3 旋转 90° 并排),再导出。只做裁切/旋转/平移,最近邻零插值、永不缩放。开启后导出强制 128×320(控制器画布);关闭则与原来完全一致。">
+        <input type="checkbox" id="p2On"> 🔩 按实装布局导出(P2)</label>
+    </div>
+    <div id="p2Panel" style="display:none">
+      <div class="small" style="opacity:.6;line-height:1.5">动画在 <b>P1</b>(5 模组竖排)里创作,实车上模组 2/3 是<b>旋转 90° 并排</b>装的(<b>P2</b>)。
+        导出时逐模组裁切→旋转→平移 —— 一个像素 = 一颗灯珠,<b>零插值零缩放</b>。开启后导出固定 128×320。</div>
+      <div class="row" style="align-items:flex-start;gap:10px;justify-content:center;margin-top:4px">
+        <div style="text-align:center"><div class="small" style="opacity:.7">P1 创作</div><div id="p2PrevA"></div></div>
+        <div style="text-align:center"><div class="small" style="opacity:.7">P2 实装</div><div id="p2PrevB"></div></div>
+      </div>
+      <div class="small" style="opacity:.55;text-align:center">预览随时间轴实时更新</div>
+      <div class="row"><label title="逐模组旋转覆盖:实装方向与预期不符时在这里现场校正,不必改代码">模组旋转</label></div>
+      <div id="p2Mods"></div>
+      <div class="row"><label title="侧板(模组 2/3)整体方向。实装若整体镜像了,这里一处切换即可">侧板方向</label>
+        <select id="p2Side" style="flex:1">
+          <option value="cw">顺时针 CW(默认)</option>
+          <option value="ccw">逆时针 CCW(实装镜像时)</option>
+        </select></div>
+      <div class="row">
+        <button id="p2Calib" style="flex:1" title="生成校准帧:每块模组不同底色 + N 条竖条(N=模组号)+ 左上角白方块(旋转见证)+ 2px 描边。打到硬件上即可读出模组顺序与旋转方向对不对">🎯 生成校准帧</button>
+        <button id="p2Save" style="flex:1" title="把校准帧的 P1 与 P2 两张 PNG 存下来">💾 存 PNG</button>
+      </div>
+    </div>
   </div>
 </div>
 

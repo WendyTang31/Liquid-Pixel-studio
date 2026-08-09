@@ -19,6 +19,7 @@ import { initArrange } from './ui/arrange.js';
 import { initI18n } from './i18n.js';
 import { serializeCharacters, loadCharacters } from './characters.js';
 import { renderCharacters } from './ui/charpanel.js';
+import { initLedPanel } from './ui/ledpanel.js';
 
 // ── 顶栏:组操作 + 工程 ──
 function initTopbar(){
@@ -161,6 +162,7 @@ initClipPanel();
 initKeyframeKeys();
 initStage();
 initTopbar();
+initLedPanel();   // 🔩 物理布局导出(P1→P2)
 initSkinRef();
 initTimeline();
 initArrange();
