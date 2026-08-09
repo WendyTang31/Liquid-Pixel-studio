@@ -527,6 +527,12 @@
         <b>送硬件请用 1×</b>;汇报演示片用 8× 即可。</div>
       <div class="row"><label title="逐模组旋转覆盖:实装方向与预期不符时在这里现场校正,不必改代码">模组旋转</label></div>
       <div id="p2Mods"></div>
+      <div class="row"><label title="『P1→P2』= 在竖排 P1 里画,导出重排到实装位置(默认)。
+『P2→P1(反向)』= 你【照着车上想看到的样子】画,导出把它翻回控制器需要的顺序 —— 想让线条在车上完全连续就用这个,因为你画的就是车上的样子。">变换方向</label>
+        <select id="p2Dir" style="flex:1">
+          <option value="fwd">P1 → P2(在竖排里画)</option>
+          <option value="inv">P2 → P1(反向 · 照车上的样子画)</option>
+        </select></div>
       <div class="row"><label title="侧板(模组 2/3)整体方向。实装若整体镜像了,这里一处切换即可">侧板方向</label>
         <select id="p2Side" style="flex:1">
           <option value="cw">顺时针 CW(默认)</option>

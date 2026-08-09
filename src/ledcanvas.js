@@ -1,7 +1,7 @@
 // ledmap.js(纯函数)与画布之间的薄适配层。所有 DOM 相关的东西都在这里,ledmap 保持零依赖可单测。
 // 铁律:任何一次绘制前都关掉平滑 —— 一个像素 = 一颗灯珠,插值会糊掉边缘。
 import { P } from './config.js';
-import { LED_W, LED_H, MODULE_MAP, transformP1toP2, makeCalibrationFrame } from './ledmap.js';
+import { LED_W, LED_H, MODULE_MAP, transformP1toP2, transformP2toP1, makeCalibrationFrame } from './ledmap.js';
 
 export const p2On = () => !!P.p2Export;
 // 导出倍数:1×=硬件原生 128×320;N× = 原生按 128N×320N 渲染,模组网格同步放大(仍零重采样)。
@@ -23,7 +23,9 @@ export function transformCanvasP1toP2(src, out){
   sctx.imageSmoothingEnabled=false;
   const img=sctx.getImageData(0,0,src.width,src.height);
   const scale=Math.max(1, Math.round(src.width / LED_W));   // 由画面宽度反推倍数
-  const res=transformP1toP2({width:img.width,height:img.height,data:img.data}, {...p2Opts(), scale});
+  // 方向:正向=在 P1 竖排里画;反向=照着车上的样子画,导出翻回控制器顺序。
+  const fn = (P.p2Dir==='inv') ? transformP2toP1 : transformP1toP2;
+  const res=fn({width:img.width,height:img.height,data:img.data}, {...p2Opts(), scale});
   const dst=out||makeCanvas(res.width,res.height);
   if(dst.width!==res.width||dst.height!==res.height){ dst.width=res.width; dst.height=res.height; }
   const dctx=dst.getContext('2d', {willReadFrequently:true});

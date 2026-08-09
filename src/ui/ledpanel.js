@@ -80,8 +80,13 @@ export function initLedPanel(){
     lab.textContent=`${i+1} ${m.name}`; lab.style.cssText='flex:1;opacity:.85';
     const sel=document.createElement('select');
     sel.style.cssText='background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:1px 3px';
-    [['','按表 ('+m.rotate+'°)'],['0','0°'],['90','90°'],['180','180°'],['270','270°']].forEach(([v,t])=>{
-      const o=document.createElement('option'); o.value=v; o.textContent=t; sel.appendChild(o); });
+    // 只提供与【槽位尺寸相容】的角度:横向槽(128×64)=0/180;旋转槽(64×128)=90/270。
+    // 给横向槽设 90° 会让它变成 64×128 塞不进去 → 像素被裁掉,所以直接不给选。
+    const rotatedSlot = (m.rotate===90 || m.rotate===270);
+    const opts = rotatedSlot ? [['','按表 ('+m.rotate+'°)'],['90','90°'],['270','270°']]
+                             : [['','按表 ('+m.rotate+'°)'],['0','0°'],['180','180°']];
+    sel.title = rotatedSlot ? '这块是竖装槽位(64×128),只能 90°/270°' : '这块是横装槽位(128×64),只能 0°/180°';
+    opts.forEach(([v,t])=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; sel.appendChild(o); });
     sel.value = P.p2Rot[i]==null ? '' : String(P.p2Rot[i]);
     sel.onchange=()=>{ P.p2Rot[i] = sel.value==='' ? null : parseInt(sel.value,10); refreshP2Preview(); };
     row.append(lab, sel); host.appendChild(row);
@@ -91,6 +96,14 @@ export function initLedPanel(){
   const side=$('p2Side');
   side.value=P.p2Side||'cw';
   side.onchange=()=>{ P.p2Side=side.value; refreshP2Preview(); };
+
+  // 变换方向:正向 / 反向(照车上的样子画)
+  const dir=$('p2Dir');
+  if(dir){ dir.value=P.p2Dir||'fwd';
+    dir.onchange=()=>{ P.p2Dir=dir.value; refreshP2Preview();
+      setHint(dir.value==='inv'
+        ? '↩ 反向:左边画的就是【车上看到的样子】,右边是控制器实际收到的顺序 —— 想让线条在车上连续,用这个'
+        : '➡ 正向:左边是 P1 竖排创作,右边是重排到实装位置后的样子'); }; }
 
   // 导出倍数(预览恒按 1× 画,省算力;倍数只影响导出尺寸 —— 布局本身与倍数无关)
   const sc=$('p2Scale');

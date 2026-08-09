@@ -94,6 +94,27 @@ export function transformP1toP2(src, opts = {}){
   return { width: W, height: H, data: d };
 }
 
+// 反向映射表:把「P1→P2」的表翻成「P2→P1」。
+// 做法:源变成原来的目标矩形(尺寸按旋转后的算),目标变成原来的源原点,旋转角取反。
+export function invertMap(map = MODULE_MAP, rots = [], side = SIDE_PANEL_ROTATION, n = 1){
+  const base = scaleMap(map, n);
+  return base.map((m, i) => {
+    const rot = effectiveRot(map[i], rots[i], side);          // 用【原表】判定角度,再取反
+    const [dw, dh] = destSize(m.src[2], m.src[3], rot);
+    return { name: m.name, src: [m.dst[0], m.dst[1], dw, dh], dst: [m.src[0], m.src[1]],
+             rotate: (360 - rot) % 360 };
+  });
+}
+// 反向变换:读一张【实装外观(P2)】的帧,产出控制器所需的 P1 顺序帧。
+// 用途:想让车上看到的图案连续,就直接照着车的样子画 —— 这个函数负责翻回去。
+// 与 transformP1toP2 互为逆运算(往返 = 原图,见单测)。
+export function transformP2toP1(src, opts = {}){
+  const n = Math.max(1, Math.round(opts.scale || 1));
+  const inv = invertMap(opts.map || MODULE_MAP, opts.rotations || [], opts.side || SIDE_PANEL_ROTATION, n);
+  // 角度已烘进表里 → 用 rotations 显式传入,避免再被 side 翻一次
+  return transformP1toP2(src, { map: inv, rotations: inv.map(m => m.rotate), scale: n });
+}
+
 // ── 校准帧(P1 布局)──
 // 每个模组:各自底色 + N 条竖条(N=模组序号 1..5)+ 左上角白色小方块(旋转见证)+ 2px 描边。
 // 经 P2 变换后打到硬件上,一眼就能读出"模组顺序 / 旋转方向"对不对:

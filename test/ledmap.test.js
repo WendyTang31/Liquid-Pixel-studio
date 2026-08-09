@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LED_W, LED_H, MODULE_MAP, transformP1toP2, makeCalibrationFrame,
-         mapPixel, destSize, effectiveRot, scaleMap } from '../src/ledmap.js';
+         mapPixel, destSize, effectiveRot, scaleMap, transformP2toP1, invertMap } from '../src/ledmap.js';
 
 const blank=(W=LED_W,H=LED_H,fill=[0,0,0,255])=>{
   const d=new Uint8ClampedArray(W*H*4);
@@ -122,6 +122,55 @@ test('高清倍数:模组2 白块在 N× 下依旧落在旋转块右上角', () 
     if(top&&left)tl++; else if(top&&!left)tr++; else if(!top&&left)bl++; else br++;
   }
   assert.ok(tr>0,'右上应有白块'); assert.equal(tl,0); assert.equal(bl,0); assert.equal(br,0);
+});
+
+test('反向变换:P1→P2→P1 往返 = 原图(逐像素完全一致)', () => {
+  const src=blank();
+  for(let y=0;y<LED_H;y++) for(let x=0;x<LED_W;x++)
+    setPx(src,x,y,[(x*7+1)&255,(y*5+3)&255,((x^y)&255),255]);
+  for(const side of ['cw','ccw']){
+    const p2=transformP1toP2(src,{side});
+    const back=transformP2toP1(p2,{side});
+    assert.deepEqual(Array.from(back.data), Array.from(src.data), `${side}: 往返应完全还原`);
+  }
+});
+
+// 逐像素比对但【快速失败】—— 对 16 万个元素做 deepEqual 失败时会生成巨大 diff,拖慢几十秒。
+const sameData=(a,b)=>{ if(a.length!==b.length) return `长度 ${a.length}≠${b.length}`;
+  for(let i=0;i<a.length;i++) if(a[i]!==b[i]) return `第 ${i} 个字节 ${a[i]}≠${b[i]}`;
+  return null; };
+
+test('反向变换:逐模组覆盖角度下往返依旧还原(角度须与槽位相容)', () => {
+  const src=blank();
+  for(let y=0;y<LED_H;y++) for(let x=0;x<LED_W;x++)
+    setPx(src,x,y,[(x+2)&255,(y+9)&255,((x*3+y)&255),255]);
+  // 横向槽位(128×64)只能 0/180;旋转槽位(64×128)只能 90/270 —— 否则尺寸不匹配会被裁掉
+  const rotations=[180,270,270,180,0];
+  const p2=transformP1toP2(src,{rotations});
+  const back=transformP2toP1(p2,{rotations});
+  assert.equal(sameData(back.data, src.data), null);
+});
+
+test('护栏:给横向模组设 90° 会超出其 128×64 槽位 → 像素被裁掉(UI 因此只提供相容角度)', () => {
+  const src=blank();
+  for(let y=0;y<LED_H;y++) for(let x=0;x<LED_W;x++) setPx(src,x,y,[200,200,200,255]);
+  const bad=transformP1toP2(src,{rotations:[0,90,90,0,90]});   // 模组5(横向)被设成 90°
+  let lit=0; for(let i=0;i<bad.data.length;i+=4) if(bad.data[i]>0) lit++;
+  assert.ok(lit < LED_W*LED_H, '不相容角度确实会丢像素 —— 所以要在 UI 层挡住');
+});
+
+test('接缝验算:270°(CCW) 让模组2↔模组3 在 P2 里左右相接的两条边,在 P1 里正好相邻', () => {
+  const w=128,h=64;
+  // P2 中 模组2 块的右缘 dx=63 ← 来自 P1 的哪条边?
+  const edgeOf=(rot,targetDx)=>{ const ys=[];
+    for(let sy=0;sy<h;sy++) if(mapPixel(0,sy,w,h,rot)[0]===targetDx) ys.push(sy);
+    return ys; };
+  // 270°:dx=sy → dx=63 ⟺ sy=63(模组2 的【下】边)
+  assert.deepEqual(edgeOf(270,63), [63], '270°: 模组2 右缘来自其 P1 下边');
+  // 模组3 块的左缘 dx=0 ⟺ sy=0(模组3 的【上】边)→ P1 里 模组2下边 与 模组3上边 相邻 ✅
+  assert.deepEqual(edgeOf(270,0), [0], '270°: 模组3 左缘来自其 P1 上边');
+  // 90° CW:dx=63-sy → dx=63 ⟺ sy=0(模组2 的【上】边),与模组3 的下边相接 → P1 里不相邻 ❌
+  assert.deepEqual(edgeOf(90,63), [0], '90°: 模组2 右缘来自其 P1 上边(接缝会断)');
 });
 
 test('scaleMap:整表等比放大,1× 原样返回', () => {

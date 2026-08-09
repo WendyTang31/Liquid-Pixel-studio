@@ -30,5 +30,6 @@ export const P = {
   // p2Rot:逐模组旋转覆盖(现场校正),null=按映射表;p2Side:侧板方向 'cw'|'ccw'(实装镜像时整体翻转)。
   // p2Scale:导出倍数。1×=硬件原生 128×320(送控制器的那份);N× = 原生按 128N×320N 渲染、
   // 模组网格同步放大 → 真高清演示片,依旧零重采样(不是把低清拉大)。
-  p2Export:false, p2Rot:[null,null,null,null,null], p2Side:'cw', p2Scale:8
+  // p2Dir:'fwd'=在 P1 竖排里画→导出重排;'inv'=照着车上的样子画→导出翻回控制器顺序(想要线条在车上连续用这个)
+  p2Export:false, p2Rot:[null,null,null,null,null], p2Side:'cw', p2Scale:8, p2Dir:'fwd'
 };
