@@ -12,7 +12,9 @@ import { makeCanvas, transformCanvasP1toP2, calibrationCanvas } from '../ledcanv
 let p1Cv=null, p2Cv=null, raf=0, lastSig='';
 let calibMode=false, calibCv=null, warned=false;
 
-// 当前时间轴位置的一帧,按控制器原生 128×320 渲染(与导出同尺寸 → 预览即导出)。
+// 当前时间轴位置的一帧。与【导出完全同一条路径】:先按正方形渲染(方画布零变形),
+// 再纯裁切出中间 2:5 的 LED 取景窗 —— 所以预览所见即导出所得,不会一个变形一个不变形。
+let sq=null;
 function renderP1(){
   const ctx=p1Cv.getContext('2d',{willReadFrequently:true});
   ctx.imageSmoothingEnabled=false;
@@ -20,7 +22,10 @@ function renderP1(){
   const g=store.mode==='play' ? store.g : (store.active>0 ? seekOfState() : 0);
   const fr=sampleFrame(store.SEQ, store.states, g, g, P);
   const solids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P)));
-  renderToImageData(ctx, LED_W, LED_H, fr.balls, fr.col, P, solids, fr.cam);
+  if(!sq) sq=makeCanvas(LED_H, LED_H);                       // 方形暂存(与创作画布同比例)
+  const sctx=sq.getContext('2d',{willReadFrequently:true});
+  renderToImageData(sctx, LED_H, LED_H, fr.balls, fr.col, P, solids, fr.cam);
+  ctx.drawImage(sq, (LED_H-LED_W)>>1, 0, LED_W, LED_H, 0, 0, LED_W, LED_H);
 }
 // 编辑模式下把播放头对到当前状态的停留段起点,便于逐帧校对。
 function seekOfState(){

@@ -23,33 +23,46 @@ function expSize(){ return p2On() ? p2Size() : getExpSize(); }
 // PNG 与 MP4 共用 —— 两条导出路径的画面逐像素一致。
 // 返回的 out 才是【应当被编码/存盘的画布】:P2 模式下 = 变换后的画布,否则就是 ec 本身。
 function makeOfflineRenderer(EW, EH){
-  const ec=document.createElement('canvas'); ec.width=EW; ec.height=EH;
+  const p2on=p2On();
+  // 🔩 P2:创作画布是【正方形】,而 LED 是 2:5 长条。直接把方画布塞进 128×320 必然变形
+  // (拉伸=压扁,等比=上下大黑边、内容全挤进旋转板)。故先按【正方形】渲染 —— 与画布同比例、
+  // 零变形 —— 再纯裁切出中间那条 2:5 的「LED 取景窗」(1:1 拷贝,零重采样),最后才做模组变换。
+  const RW = p2on ? EH : EW, RH = EH;
+  const ec=document.createElement('canvas'); ec.width=RW; ec.height=RH;
   const ectx=ec.getContext('2d');
   // 抗锯齿超采样:2× 内部渲染再缩回。但输出已很大时(≥3000px)关掉 —— 6000px+ 的内部画布内存/耗时太大,
   // 且此分辨率下 SDF 软边本身已提供干净抗锯齿。既保证"无噪边",又不至于超大导出时爆内存。
-  const ss=(P.ss2x && Math.max(EW,EH)*2<=6000)?2:1;
-  const big=document.createElement('canvas'); big.width=EW*ss; big.height=EH*ss;
+  const ss=(P.ss2x && Math.max(RW,RH)*2<=6000)?2:1;
+  const big=document.createElement('canvas'); big.width=RW*ss; big.height=RH*ss;
   const bctx=big.getContext('2d');
-  const glowCv=document.createElement('canvas'); glowCv.width=EW; glowCv.height=EH;
+  const glowCv=document.createElement('canvas'); glowCv.width=RW; glowCv.height=RH;
   const glowCtx=glowCv.getContext('2d');
   function drawFrame(f){
     const g=f/P.fps;
     const fr=sampleFrame(store.SEQ, store.states, g, g, P); // g 同时作墙钟 → 导出确定
     const solids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P)));
-    if(ss===2){ renderToImageData(bctx,EW*2,EH*2,fr.balls,fr.col,P,solids,fr.cam); ectx.drawImage(big,0,0,EW,EH); }
-    else renderToImageData(ectx,EW,EH,fr.balls,fr.col,P,solids,fr.cam);
+    if(ss===2){ renderToImageData(bctx,RW*2,RH*2,fr.balls,fr.col,P,solids,fr.cam); ectx.drawImage(big,0,0,RW,RH); }
+    else renderToImageData(ectx,RW,RH,fr.balls,fr.col,P,solids,fr.cam);
     if(P.glow>0){
-      glowCtx.clearRect(0,0,EW,EH); glowCtx.drawImage(ec,0,0);
+      glowCtx.clearRect(0,0,RW,RH); glowCtx.drawImage(ec,0,0);
       ectx.save();
-      ectx.filter=`blur(${Math.max(2,Math.round(EW/160))}px)`;
+      ectx.filter=`blur(${Math.max(2,Math.round(RW/160))}px)`;
       ectx.globalCompositeOperation='lighter'; ectx.globalAlpha=P.glow;
       ectx.drawImage(glowCv,0,0);
       ectx.restore();
     }
   }
-  // P2:每帧渲染完成后(辉光之后)做最后一步布局变换 —— 最近邻、逐像素、零缩放。
-  const p2 = p2On() ? makeCanvas(EW, EH) : null;
-  function drawOut(f){ drawFrame(f); if(p2) transformCanvasP1toP2(ec, p2); }
+  // P2:方形渲染 →【纯裁切】出中间 2:5 的 LED 取景窗(1:1 拷贝,零重采样)→ 模组布局变换。
+  const crop = p2on ? makeCanvas(EW, EH) : null;
+  const p2   = p2on ? makeCanvas(EW, EH) : null;
+  const cropX = p2on ? ((RW - EW) >> 1) : 0;
+  function drawOut(f){
+    drawFrame(f);
+    if(!p2on) return;
+    const cx=crop.getContext('2d',{willReadFrequently:true}); cx.imageSmoothingEnabled=false;
+    cx.drawImage(ec, cropX, 0, EW, EH, 0, 0, EW, EH);   // 同尺寸裁切 = 逐像素原样搬运
+    transformCanvasP1toP2(crop, p2);
+  }
   return { ec, out: p2 || ec, drawFrame: drawOut };
 }
 

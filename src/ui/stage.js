@@ -21,6 +21,8 @@ import { drawSkinRef, skinWindowAt, skinHandleAt, skinCursorAt, getSelSkin, sele
 import { tlTick } from './timeline.js';
 import { computeVectorPolys, rasterizeVectorSolids } from '../vector.js';
 import { charactersSolids } from '../characters.js';
+import { p2On } from '../ledcanvas.js';
+import { LED_W, LED_H } from '../ledmap.js';
 import { rigMatrices, rigApply, poseShapes, rigIdent } from '../rig.js';
 
 // 🦴 选中 rig 形状时:算它摆好姿势后的世界点 + 当前关节世界位置(供叠加层显示与摆动交互)。
@@ -187,6 +189,25 @@ function overlayTraj(curBalls,seg,cam){
     if(curBalls&&curBalls[i]){ ctx.fillStyle='rgba(255,255,255,0.5)';
       ctx.beginPath(); ctx.arc(curBalls[i].x*W,curBalls[i].y*H,1.2,0,7); ctx.fill(); }
   }
+}
+// 🔩 LED 取景窗:创作画布是正方形,LED 是 2:5 长条。导出(P2)只取【画布正中这一条】,
+// 且是先按方形渲染再纯裁切 → 零变形。窗外的东西不会上屏,所以画的时候要盯着这条框。
+function overlayLedWindow(){
+  if(store.hideOverlays || !p2On()) return;
+  const r=LED_W/LED_H, w=W*r, x=(W-w)/2;      // 与导出的裁切口径完全一致(居中、满高)
+  ctx.save();
+  ctx.fillStyle='rgba(0,0,0,0.42)';           // 窗外压暗 = 不会上屏的区域
+  ctx.fillRect(0,0,x,H); ctx.fillRect(x+w,0,W-x-w,H);
+  ctx.strokeStyle='rgba(44,196,245,0.95)'; ctx.lineWidth=1.5;
+  ctx.setLineDash([7,5]); ctx.strokeRect(x,0,w,H); ctx.setLineDash([]);
+  // 模组分界:5 段(2/3 是并排的旋转板,占中间那 1/2 高度)
+  ctx.strokeStyle='rgba(44,196,245,0.35)'; ctx.lineWidth=1;
+  for(const f of [64/320, 192/320, 256/320]){ const y=H*f;
+    ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+w,y); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(x+w/2, H*(64/320)); ctx.lineTo(x+w/2, H*(192/320)); ctx.stroke(); // 2|3 并排缝
+  ctx.fillStyle='rgba(44,196,245,0.9)'; ctx.font='10px system-ui';
+  ctx.fillText('LED 取景窗 128×320', x+4, 12);
+  ctx.restore();
 }
 function overlayFrameGuide(){
   if(store.hideOverlays||!$('showFrame').checked) return;
@@ -365,6 +386,7 @@ function tick(now){
       ctx.fillStyle='rgba(120,230,255,0.8)'; ctx.font='9px system-ui';
       if(g.a==='v') ctx.fillText(Math.round(g.p), g.p+3, 10); else ctx.fillText(Math.round(g.p), 3, g.p-3);
     }
+    overlayLedWindow();  // 🔩 LED 取景窗(开了 P2 导出时):只有窗内的画面会上屏
     overlaySelection(); overlaySnapGuides(); overlayFrameGuide(); overlayCamFrame(); overlayWaveAnchor(); overlayDims();
   }
   tlTick(); // AE 式时间轴:签名变化时重建段条,播放头逐帧跟随
