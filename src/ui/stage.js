@@ -5,7 +5,7 @@ import { store, cur } from '../store.js';
 import { $, hex2rgb, setHint, getExpSize } from '../utils.js';
 import { createSizedRenderer } from '../render.js';
 import { createGLRenderer } from '../render-gl.js';
-import { sampleFrame, drift, camPt, camIdentity } from '../engine.js';
+import { sampleFrame, drift, camPt, camIdentity, vectorSolids } from '../engine.js';
 import { rebuildSequence } from '../sequence.js';
 import { resampleAll, resample, updateThumb, shapesChanged, measureText } from '../pipeline.js';
 import { pushUndo, undo, redo } from '../state.js';
@@ -347,7 +347,10 @@ function tick(now){
     $('tVal').textContent=store.g.toFixed(1)+'s';
     const fr=sampleFrame(store.SEQ, store.states, store.g, store.clock, P);
     // 矢量图层(AE 关联图层):独立于点阵,轮廓直接插值 → SDF solid,并入实心渲染
-    const solids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(store.states, store.SEQ, store.g, store.clock, P)))
+    // vectorSolids:矢量变形轮廓 + 挂上形变修饰器的 warp → 过渡期尖刺/锯齿等不再丢失
+    const solids=(fr.solids||[]).concat(
+        vectorSolids(computeVectorPolys(store.states, store.SEQ, store.g, store.clock, P),
+                     fr.seg, store.states, store.g, store.clock))
       .concat(charactersSolids(store.clock)); // 🚶 并行角色轨:各自循环 + 位移,同屏合成
     // 实心场是 CPU 采样(SDF 纹理未进 GL 着色器);有实心或已缩放时走 CPU 视口渲染
     if(gpuOn() && !solids.length && !zoomed){ glCv.style.display='block'; glRender(fr.balls, fr.col, P); ctx.clearRect(0,0,W,H); }

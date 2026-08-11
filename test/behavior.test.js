@@ -2,7 +2,7 @@
 // 停留↔过渡边界连续。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hasFx, behaviorDisp, buildSequence, sampleFrame, fxPhaseAt } from '../src/engine.js';
+import { hasFx, behaviorDisp, buildSequence, sampleFrame, fxPhaseAt, vectorFxWarp } from '../src/engine.js';
 
 const P0={ ease:'linear', stag:0, amp:0, freq:.4, match:'sortXY', flow:0, stretch:0 };
 const D=(x,y)=>({x,y,r:.02});
@@ -108,4 +108,40 @@ test('sampleFrame:无 fx 的状态行为不变(回归)', () => {
   const SEQ=buildSequence([A,B], false, P0);
   const f=sampleFrame(SEQ,[A,B],0.5,0,P0);
   assert.ok(Math.abs(f.balls[0].x-0.2)<1e-9 && Math.abs(f.balls[0].r-0.02)<1e-9);
+});
+
+test('矢量变形过渡:形变修饰器(尖刺等)不再丢失 —— warp 全程非零', () => {
+  // 两端都开「愤怒尖刺」。修复前:过渡期矢量轮廓没有 warp → 退回原始圆形。
+  const fx={anger:0.8, angerN:12};
+  const A={hold:1, dur:2, color:'#fff', fx, dots:[D(.4,.4),D(.6,.6)]};
+  const B={hold:1, dur:2, color:'#fff', fx, dots:[D(.5,.3),D(.5,.7)]};
+  const states=[A,B];
+  const SEQ=buildSequence(states, true, P0);
+  const cn={x:.5,y:.5};
+  const amp=g=>{ const seg=SEQ.segs.find(s=>g>=s.t0&&g<s.t0+s.dur)||SEQ.segs[0];
+    const w=vectorFxWarp(seg, states, g, g, cn);
+    if(!w) return null;
+    // 取形体边缘一点(离质心有距离,尖刺才有幅度)
+    const d=w(0.5+0.22, 0.5);
+    return Math.hypot(d.dx, d.dy);
+  };
+  // 停留段、过渡段各处都应拿到 warp 且位移非零
+  for(const g of [0.5, 1.2, 2.0, 2.8, 3.5]){
+    const a=amp(g);
+    assert.ok(a!==null, `g=${g} 应有 warp(修复前过渡期为 null)`);
+    assert.ok(a>1e-4, `g=${g} 位移应非零(实=${a}) —— 否则就是退回了原始形状`);
+  }
+});
+
+test('矢量变形过渡:两端 fx 不同时按缓动混合(端点各自精确)', () => {
+  const A={hold:1, dur:2, color:'#fff', fx:{anger:1.0, angerN:10}, dots:[D(.4,.5)]};
+  const B={hold:1, dur:2, color:'#fff', fx:{}, dots:[D(.6,.5)]};   // B 无效果
+  const states=[A,B];
+  const SEQ=buildSequence(states, false, P0);
+  const trans=SEQ.segs.find(s=>s.type==='trans');
+  const cn={x:.5,y:.5}, probe=(g)=>{ const w=vectorFxWarp(trans, states, g, g, cn);
+    const d=w(0.5+0.22,0.5); return Math.hypot(d.dx,d.dy); };
+  const atStart=probe(trans.t0+1e-6), atEnd=probe(trans.t0+trans.dur-1e-6);
+  assert.ok(atStart>1e-4, '过渡起点应保有 A 的尖刺');
+  assert.ok(atEnd<atStart*0.15, `过渡终点应基本淡出到 B(无效果):起=${atStart} 终=${atEnd}`);
 });

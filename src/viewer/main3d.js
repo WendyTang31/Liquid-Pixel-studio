@@ -14,7 +14,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { W, H, P as P_DEFAULT } from '../config.js';
-import { buildSequence, sampleFrame } from '../engine.js';
+import { buildSequence, sampleFrame, vectorSolids } from '../engine.js';
 import { createSizedRenderer } from '../render.js';
 import { stateDots, shapesSdf } from '../pipeline.js';
 import { computeVectorPolys, rasterizeVectorSolids } from '../vector.js';
@@ -1233,7 +1233,10 @@ function frame(now){
     if(!gr.SEQ) continue;
     const fr=sampleFrame(gr.SEQ, gr.states, g%gr.SEQ.T, clock, gr.P);
     // 矢量图层轮廓变形并入 solids —— 修复"3D 上过渡时小人突然消失"(2D 一直渲,3D 之前漏了)
-    const vsolids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(gr.states, gr.SEQ, g%gr.SEQ.T, clock, gr.P)));
+    const gt=g%gr.SEQ.T;
+    // vectorSolids:过渡期的矢量轮廓同样带上形变修饰器,3D 上与 2D 预览一致
+    const vsolids=(fr.solids||[]).concat(
+      vectorSolids(computeVectorPolys(gr.states, gr.SEQ, gt, clock, gr.P), fr.seg, gr.states, gt, clock));
     if(gr===groups[0] && viewerChars.length) vsolids.push(...charSolidsFrom(viewerChars, clock)); // 🚶 并行角色轨合成
     gr.renderTex(fr.balls, fr.col, gr.P, vsolids, fr.cam);
     gr.screenTex.needsUpdate=true; gr.screenTexUV.needsUpdate=true;

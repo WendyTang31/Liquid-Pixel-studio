@@ -52,6 +52,37 @@ function tick(){
   refreshP2Preview();
 }
 
+// 模组映射表编辑:每块模组【从画面哪块区域取像素】(src x/y/宽/高)+【放到实装画布哪里】(dst x/y)。
+// 实装尺寸与默认不符时在这里改成真实值即可 —— 这正是「用数据表而非写死逻辑」的意义。
+function currentMap(){
+  if(!P.p2Map) P.p2Map=MODULE_MAP.map(m=>({name:m.name, src:[...m.src], dst:[...m.dst], rotate:m.rotate}));
+  return P.p2Map;
+}
+function renderMapRows(){
+  const host=$('p2MapRows'); if(!host) return;
+  const map=currentMap();
+  host.innerHTML='';
+  map.forEach((m,i)=>{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:2px;font:10px system-ui;color:#9fb;margin:1px 0';
+    const lab=document.createElement('span');
+    lab.textContent=`${i+1}`; lab.title=m.name;
+    lab.style.cssText='width:10px;opacity:.7;flex:0 0 auto';
+    row.appendChild(lab);
+    const num=(get,set,tip)=>{ const inp=document.createElement('input');
+      inp.type='number'; inp.value=get(); inp.title=tip;
+      inp.style.cssText='width:34px;background:#0d1210;border:1px solid #2a3330;border-radius:3px;color:#dfe;font:10px system-ui;padding:1px 2px';
+      inp.onclick=e=>e.stopPropagation();
+      inp.oninput=()=>{ const v=parseInt(inp.value,10); if(isFinite(v)){ set(v); refreshP2Preview(); } };
+      return inp; };
+    [0,1,2,3].forEach(k=>row.appendChild(num(()=>m.src[k], v=>m.src[k]=v,
+      ['源 x','源 y','源 宽','源 高'][k])));
+    const arrow=document.createElement('span'); arrow.textContent='→'; arrow.style.opacity='.5'; row.appendChild(arrow);
+    [0,1].forEach(k=>row.appendChild(num(()=>m.dst[k], v=>m.dst[k]=v, ['目标 x','目标 y'][k])));
+    host.appendChild(row);
+  });
+}
+
 export function initLedPanel(){
   const host=$('p2Mods'); if(!host) return;
   p1Cv=makeCanvas(LED_W,LED_H); p2Cv=makeCanvas(LED_W,LED_H);
@@ -111,6 +142,11 @@ export function initLedPanel(){
     sc.onchange=()=>{ P.p2Scale=parseInt(sc.value,10)||1;
       setHint(`🔩 导出将按 ${LED_W*P.p2Scale}×${LED_H*P.p2Scale} 原生渲染`
         +(P.p2Scale===1?'(硬件原生,送控制器用这份)':'(高清演示片;送硬件请切回 1×)')); }; }
+
+  renderMapRows();
+  const rst=$('p2MapReset');
+  if(rst) rst.onclick=()=>{ P.p2Map=null; renderMapRows(); refreshP2Preview();
+    setHint('↺ 模组映射已恢复默认(128×320,模组 2/3 旋转 90° 并排)'); };
 
   // 校准帧:预览切成校准图案;可直接存 P1/P2 两张 PNG 拿去打屏比对
   $('p2Calib').onclick=()=>{

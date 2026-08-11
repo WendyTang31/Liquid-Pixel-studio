@@ -66,7 +66,9 @@ export function scaleMap(map, n){
 export function transformP1toP2(src, opts = {}){
   const W = src.width, H = src.height;
   const n = Math.max(1, Math.round(opts.scale || 1));
-  const map = opts.map || scaleMap(MODULE_MAP, n);
+  // opts.map 若已按倍数放大过(反向变换会这么做),用 mapPreScaled 告知,避免重复放大
+  const map = opts.map ? (opts.mapPreScaled ? opts.map : scaleMap(opts.map, n))
+                       : scaleMap(MODULE_MAP, n);
   const rots = opts.rotations || [];
   const side = opts.side || SIDE_PANEL_ROTATION;
   const s = src.data;
@@ -112,7 +114,7 @@ export function transformP2toP1(src, opts = {}){
   const n = Math.max(1, Math.round(opts.scale || 1));
   const inv = invertMap(opts.map || MODULE_MAP, opts.rotations || [], opts.side || SIDE_PANEL_ROTATION, n);
   // 角度已烘进表里 → 用 rotations 显式传入,避免再被 side 翻一次
-  return transformP1toP2(src, { map: inv, rotations: inv.map(m => m.rotate), scale: n });
+  return transformP1toP2(src, { map: inv, mapPreScaled: true, rotations: inv.map(m => m.rotate), scale: n });
 }
 
 // ── 校准帧(P1 布局)──

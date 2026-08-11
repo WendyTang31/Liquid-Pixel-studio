@@ -10,7 +10,8 @@ export const p2Size = () => [LED_W * p2Scale(), LED_H * p2Scale()];
 // 由全局配置组出纯函数所需的 opts(逐模组覆盖 + 侧板方向)。
 // 注意:倍数【不从配置读】,而是由待变换画面的宽度反推 —— 预览是 128 宽(1×)、导出是 128N 宽(N×),
 // 同一个函数两处都对,不会出现"配置说 8× 但画布只有 128 宽"导致全黑的错配。
-export const p2Opts = () => ({ rotations: P.p2Rot || [], side: P.p2Side || 'cw' });
+export const p2Opts = () => ({ rotations: P.p2Rot || [], side: P.p2Side || 'cw',
+  ...(P.p2Map ? {map:P.p2Map} : {}) });   // 自定义映射表(界面可改尺寸/位置);未设则用默认表
 
 export function makeCanvas(w=LED_W, h=LED_H){
   const c=document.createElement('canvas'); c.width=w; c.height=h;

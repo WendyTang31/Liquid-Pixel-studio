@@ -31,5 +31,7 @@ export const P = {
   // p2Scale:导出倍数。1×=硬件原生 128×320(送控制器的那份);N× = 原生按 128N×320N 渲染、
   // 模组网格同步放大 → 真高清演示片,依旧零重采样(不是把低清拉大)。
   // p2Dir:'fwd'=在 P1 竖排里画→导出重排;'inv'=照着车上的样子画→导出翻回控制器顺序(想要线条在车上连续用这个)
-  p2Export:false, p2Rot:[null,null,null,null,null], p2Side:'cw', p2Scale:8, p2Dir:'fwd'
+  // p2Map:自定义模组映射表(null=用 ledmap.js 的默认表)。每项 {src:[x,y,w,h], dst:[x,y], rotate}
+  // —— 实装尺寸/位置与默认不符时直接在界面上改,不必动代码。
+  p2Export:false, p2Rot:[null,null,null,null,null], p2Side:'cw', p2Scale:8, p2Dir:'fwd', p2Map:null
 };

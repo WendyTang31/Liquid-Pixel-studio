@@ -6,7 +6,7 @@ import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { P } from './config.js';
 import { store } from './store.js';
 import { $, getExpSize, setHint, downloadBlob, toBlobP, nextFrame } from './utils.js';
-import { sampleFrame } from './engine.js';
+import { sampleFrame, vectorSolids } from './engine.js';
 import { computeVectorPolys, rasterizeVectorSolids } from './vector.js';
 import { renderToImageData } from './render.js';
 import { rebuildSequence } from './sequence.js';
@@ -40,7 +40,9 @@ function makeOfflineRenderer(EW, EH){
   function drawFrame(f){
     const g=f/P.fps;
     const fr=sampleFrame(store.SEQ, store.states, g, g, P); // g 同时作墙钟 → 导出确定
-    const solids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P)));
+    // vectorSolids:过渡期的矢量轮廓也带上形变修饰器(尖刺/锯齿等),与预览一致
+    const solids=(fr.solids||[]).concat(
+      vectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P), fr.seg, store.states, g, g));
     if(ss===2){ renderToImageData(bctx,RW*2,RH*2,fr.balls,fr.col,P,solids,fr.cam); ectx.drawImage(big,0,0,RW,RH); }
     else renderToImageData(ectx,RW,RH,fr.balls,fr.col,P,solids,fr.cam);
     if(P.glow>0){

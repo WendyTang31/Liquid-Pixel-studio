@@ -462,6 +462,40 @@ const attachFxWarp=(solids, states, time, fadeOf, w)=>solids.map(s=>{
     return {dx:d.dx*fade, dy:d.dy*fade, rf:1+(d.rf-1)*fade}; }}; // 幅度按 fade 缩放,rf 向 1(无微光)靠拢
 });
 
+// 🌟 矢量变形(木偶)过渡期的形变修饰器 —— 修复"过渡时尖刺/锯齿等修改器丢失、退回原始圆形"。
+// 原因:停留期的实心走 attachFxWarp 带着 warp 位移场;而过渡期的轮廓由 computeVectorPolys 现算、
+// 经 rasterizeVectorSolids 变成实心时【没有 warp】,于是 anger/slosh/ripple 等按位移场实现的
+// 修改器全部消失。这里把两端状态的 fx 按同一个缓动 e 混合成一个 warp 挂回去,
+// 于是"停留有尖刺 → 过渡也有尖刺 → 下一停留仍有尖刺",全程连续。
+// cn = 轮廓质心(归一化);随变形移动,径向类效果(尖刺/波纹/弹簧)才会跟着形体走。
+export function vectorFxWarp(seg, states, g, time, cn){
+  if(!seg) return null;
+  const w=segPhase(seg,g);
+  if(seg.type==='hold'){
+    const st=states[seg.si]; if(!hasFx(st?.fx)) return null;
+    const fs=dotsStat(st.dots);
+    return (u,v)=>behaviorDisp(u,v,cn.x,cn.y,time,st.fx,fs,w);
+  }
+  const fxA=states[seg.a]?.fx, fxB=states[seg.b]?.fx;
+  if(!hasFx(fxA)&&!hasFx(fxB)) return null;
+  const e=EASE.smoothstep(Math.max(0,Math.min(1,(g-seg.t0)/seg.dur)));
+  const sA=dotsStat(states[seg.a].dots), sB=dotsStat(states[seg.b].dots);
+  return (u,v)=>{
+    const dA=hasFx(fxA)?behaviorDisp(u,v,cn.x,cn.y,time,fxA,sA,w):FX0;
+    const dB=hasFx(fxB)?behaviorDisp(u,v,cn.x,cn.y,time,fxB,sB,w):FX0;
+    return { dx:dA.dx+(dB.dx-dA.dx)*e, dy:dA.dy+(dB.dy-dA.dy)*e, rf:dA.rf+(dB.rf-dA.rf)*e };
+  };
+}
+// 矢量轮廓 → 实心,并挂上上面那个 warp。预览/导出/3D 三处共用,避免三边写法漂移。
+export function vectorSolids(polys, seg, states, g, time){
+  const solids=rasterizeVectorSolids(polys);
+  if(!solids.length || !polys.length) return solids;
+  const c=polysCentroid(polys);
+  const warp=vectorFxWarp(seg, states, g, time, {x:c.x/W, y:c.y/H});
+  if(warp) for(const s of solids) s.warp=warp;
+  return solids;
+}
+
 // 实心形状的点抑制:实心场权重为 w 时,其蒙版内的点半径乘 √(1−w)(场值 ∝ r² → 场强恰乘 1−w)。
 // 停留(w=1)点完全消失 → 边缘 = 纯矢量 SDF,不会被靠边的大点"鼓包";过渡窗口内
 // 实心场降、点平滑长出,停留↔过渡边界零跳变(根治"点突然出现"的卡顿)。
