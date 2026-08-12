@@ -23,6 +23,8 @@ import { hasRig, poseShapes } from '../rig.js';
 import { decodeImageShape } from '../image.js';
 import { downloadBlob } from '../utils.js';
 import { initI18n } from '../i18n.js';
+import JSZip from 'jszip';
+import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 
 const $=id=>document.getElementById(id);
 const hint=msg=>{ $('hint').textContent=msg; };
@@ -779,6 +781,7 @@ function matchSeams(gi){
 function syncPanel(){
   syncSliders();
   if($('transBgCk')) $('transBgCk').checked=!!groups[activeGroup]?.P?.transBg; // 背景透明状态回填
+  try{ renderLedPanel(); }catch(_){}   // 📺 LED 拼版的来源下拉跟着投影面列表刷新
   const list=$('decList'); list.innerHTML='';
   groups.forEach((gr,gi)=>{
     const head=document.createElement('div');
@@ -1144,6 +1147,216 @@ function bakePatchSnapshot(d){
   c.getContext('2d').putImageData(id,0,0);
   return c.toDataURL('image/jpeg',0.7);
 }
+/* ══════════════ 📺 实体 LED 灯板导出 ══════════════
+   实体模型上有若干块【平的】LED 板,分别代表车的前/后/左/右等面。它们只能播平面视频,
+   没法自己产生"贴合曲面"的效果。所以这里把每个投影面【正对着】离屏渲染一遍 ——
+   得到的就是"在 3D 里看到的那一面的样子"被展平成的平面图(含贴合曲面后的透视/拉伸),
+   再把各面拼进一张大画布,由控制器切给各块板。
+   与 bakePatchSnapshot 同一套正交相机,只是分辨率可调、且只渲投影面(纯黑底,车身白模不入画)。 */
+function bakeFaceCanvas(d, tw, th, onlyDecal=true){
+  const out=document.createElement('canvas'); out.width=tw; out.height=th;
+  const octx=out.getContext('2d');
+  if(!d || !d.obj || !d.localPoint){ octx.fillStyle='#000'; octx.fillRect(0,0,tw,th); return out; }
+  const {point,n,bit}=decalFrame(d);
+  const w=d.sz, h=d.sz*(TEXH*d.ch)/(TEXW*d.cw);
+  const cam=new THREE.OrthographicCamera(-w/2,w/2,h/2,-h/2,0.01,20);
+  cam.position.copy(point.clone().add(n.clone().multiplyScalar(3)));
+  cam.up.copy(bit.clone().applyAxisAngle(n, d.rot*Math.PI/180));
+  cam.lookAt(point);
+  cam.updateMatrixWorld(true); cam.updateProjectionMatrix();
+  // LED 板要的是【纯黑底上的动画】,车身白模不该出现在灯板上
+  const hidden=[];
+  if(onlyDecal) carGroup.traverse(o=>{ if(o.isMesh && !o.userData.isDecal && o.visible){ o.visible=false; hidden.push(o); } });
+  const prevBg=scene.background, prevEnv=scene.environment;
+  scene.background=new THREE.Color(0x000000); scene.environment=null;
+  const rt=new THREE.WebGLRenderTarget(tw,th);
+  renderer.setRenderTarget(rt); renderer.clear(); renderer.render(scene,cam);
+  const buf=new Uint8Array(tw*th*4);
+  renderer.readRenderTargetPixels(rt,0,0,tw,th,buf);
+  renderer.setRenderTarget(null); rt.dispose();
+  scene.background=prevBg; scene.environment=prevEnv;
+  for(const o of hidden) o.visible=true;
+  const id=octx.createImageData(tw,th);
+  for(let y=0;y<th;y++) id.data.set(buf.subarray((th-1-y)*tw*4,(th-y)*tw*4), y*tw*4); // GL 行序上下翻转
+  octx.putImageData(id,0,0);
+  return out;
+}
+// 逐块的实装参数:来源投影面 + 旋转(有的板是竖着装的)+ 该块的像素尺寸。
+// 旋转 90/270 时这块在拼版里的占位自动变成 h×w —— 竖装板不必手工换算宽高。
+export function ledTileFootprint(t, tw, th){
+  const w=t.w||tw, h=t.h||th;
+  return (t.rot===90||t.rot===270) ? [h,w] : [w,h];
+}
+// 按行排布算出每块的位置(逐行左→右,满 cols 换行;行高取该行最高的一块)。
+export function ledLayout(tiles, tw, th, cols){
+  const place=[]; let x=0,y=0,rowH=0,inRow=0,maxW=0;
+  for(const t of tiles){
+    const [fw,fh]=ledTileFootprint(t, tw, th);
+    if(inRow>=cols){ y+=rowH; x=0; rowH=0; inRow=0; }
+    place.push({x,y,w:fw,h:fh});
+    x+=fw; inRow++; rowH=Math.max(rowH,fh); maxW=Math.max(maxW,x);
+  }
+  return { place, sheetW:Math.max(2,maxW), sheetH:Math.max(2,y+rowH) };
+}
+// 把各面烘出来的图块按上面的布局拼成【一张】大画布(控制器再切给各块板),逐块可旋转。
+function composeLedSheet(faces, tiles, tw, th, cols, out){
+  const { place, sheetW, sheetH }=ledLayout(tiles, tw, th, cols);
+  if(out.width!==sheetW||out.height!==sheetH){ out.width=sheetW; out.height=sheetH; }
+  const g=out.getContext('2d');
+  g.imageSmoothingEnabled=true; g.imageSmoothingQuality='high';
+  g.fillStyle='#000'; g.fillRect(0,0,sheetW,sheetH);
+  faces.forEach((cv,i)=>{
+    if(!cv) return;
+    const p=place[i], rot=((tiles[i].rot%360)+360)%360;
+    g.save();
+    g.translate(p.x + p.w/2, p.y + p.h/2);      // 以本块中心为轴旋转
+    g.rotate(rot*Math.PI/180);
+    // 旋转后画面的宽高:90/270 时与占位互换
+    const dw=(rot===90||rot===270)?p.h:p.w, dh=(rot===90||rot===270)?p.w:p.h;
+    g.drawImage(cv, -dw/2, -dh/2, dw, dh);
+    g.restore();
+  });
+  return out;
+}
+// 把所有动画组的贴图推进到指定时间(导出逐帧用,替代实时 frame() 的推进)
+function renderGroupsAt(gt, clock){
+  for(const gr of groups){
+    if(!gr.SEQ) continue;
+    const t=gt%gr.SEQ.T;
+    const fr=sampleFrame(gr.SEQ, gr.states, t, clock, gr.P);
+    const vs=(fr.solids||[]).concat(
+      vectorSolids(computeVectorPolys(gr.states, gr.SEQ, t, clock, gr.P), fr.seg, gr.states, t, clock));
+    if(gr===groups[0] && viewerChars.length) vs.push(...charSolidsFrom(viewerChars, clock, t));
+    gr.renderTex(fr.balls, fr.col, gr.P, vs, fr.cam);
+    gr.screenTex.needsUpdate=true; gr.screenTexUV.needsUpdate=true;
+  }
+}
+
+// 实装配置:6 块板各自的来源投影面 / 旋转 / 尺寸。存 localStorage,随时可调。
+const LED_CFG_KEY='morph-ledsheet';
+function ledCfg(){
+  let c=null; try{ c=JSON.parse(localStorage.getItem(LED_CFG_KEY)||'null'); }catch(_){}
+  if(!c||!Array.isArray(c.tiles)) c={ tileW:512, tileH:512, cols:3, fps:30, res:0,
+    tiles:Array.from({length:6},(_,i)=>({decal:i, rot:0})) };
+  return c;
+}
+function saveLedCfg(c){ try{ localStorage.setItem(LED_CFG_KEY, JSON.stringify(c)); }catch(_){} }
+
+// 逐帧:推进动画 → 逐面正对烘焙 → 拼版。返回拼好的画布。
+function ledFrameAt(cfg, gt, sheet){
+  renderGroupsAt(gt, gt);                       // 用 gt 同时作墙钟 → 导出确定、可复现
+  const faces=cfg.tiles.map(t=>{
+    const d=decals[t.decal];
+    const [fw,fh]=ledTileFootprint(t, cfg.tileW, cfg.tileH);
+    // 烘焙分辨率按【旋转前】的朝向:旋转在拼版时施加
+    const bw=(t.rot===90||t.rot===270)?fh:fw, bh=(t.rot===90||t.rot===270)?fw:fh;
+    return (d&&d.obj) ? bakeFaceCanvas(d, Math.max(2,bw), Math.max(2,bh), true) : null;
+  });
+  return composeLedSheet(faces, cfg.tiles, cfg.tileW, cfg.tileH, cfg.cols, sheet);
+}
+
+async function exportLedSheet(asMp4){
+  const gr=groups[0];
+  if(!gr?.SEQ){ hint('⚠ 还没载入工程'); return; }
+  if(!decals.some(d=>d.obj)){ hint('⚠ 先放置投影面'); return; }
+  const cfg=ledCfg(), fps=cfg.fps||30;
+  const frames=Math.max(2, Math.min(1200, Math.round(gr.SEQ.T*fps)));
+  const sheet=document.createElement('canvas');
+  ledFrameAt(cfg, 0, sheet);                    // 先出一帧定尺寸
+  const W2=sheet.width, H2=sheet.height;
+  const wasPaused=paused; setPaused(true);
+  hint(`📺 LED 拼版导出中… ${W2}×${H2} · ${frames} 帧`);
+  try{
+    if(asMp4){
+      let EW=W2-(W2%2), EH=H2-(H2%2);
+      const br=Math.round(Math.min(40e6, Math.max(2e6, EW*EH*fps*0.15)));
+      let codec=null;
+      for(const c of ['avc1.640034','avc1.640028','avc1.4d0034','avc1.42E034']){
+        try{ const s=await VideoEncoder.isConfigSupported({codec:c,width:EW,height:EH,bitrate:br,framerate:fps});
+          if(s?.supported){ codec=c; break; } }catch(_){}
+      }
+      if(!codec){ hint(`⚠ ${EW}×${EH} 超出本机 H.264 上限 —— 改用 PNG 序列`); return exportLedSheet(false); }
+      const muxer=new Muxer({ target:new ArrayBufferTarget(),
+        video:{codec:'avc', width:EW, height:EH, frameRate:fps}, fastStart:'in-memory' });
+      let err=null;
+      const enc=new VideoEncoder({ output:(c,m)=>muxer.addVideoChunk(c,m), error:e=>{err=e;} });
+      enc.configure({codec, width:EW, height:EH, bitrate:br, framerate:fps});
+      const us=1e6/fps;
+      for(let f=0;f<frames;f++){
+        if(err) throw err;
+        ledFrameAt(cfg, f/fps, sheet);
+        const vf=new VideoFrame(sheet,{timestamp:Math.round(f*us), duration:Math.round(us)});
+        enc.encode(vf,{keyFrame:f%fps===0}); vf.close();
+        while(enc.encodeQueueSize>8){ await new Promise(r=>setTimeout(r,4)); if(err) throw err; }
+        if(f%5===0){ hint(`📺 LED 编码中 ${f+1}/${frames}…`); await new Promise(r=>requestAnimationFrame(r)); }
+      }
+      await enc.flush(); if(err) throw err; muxer.finalize();
+      dl(new Blob([muxer.target.buffer],{type:'video/mp4'}), `led_sheet_${EW}x${EH}_${fps}fps.mp4`);
+      hint(`✓ LED 拼版 MP4 已导出(${EW}×${EH} · ${frames} 帧)`);
+    } else {
+      const zip=new JSZip();
+      for(let f=0;f<frames;f++){
+        ledFrameAt(cfg, f/fps, sheet);
+        const blob=await new Promise(r=>sheet.toBlob(r,'image/png'));
+        zip.file(`led_${String(f).padStart(4,'0')}.png`, blob);
+        if(f%5===0){ hint(`📺 LED 渲染中 ${f+1}/${frames}…`); await new Promise(r=>requestAnimationFrame(r)); }
+      }
+      hint('打包 zip…');
+      dl(await zip.generateAsync({type:'blob'}), `led_sheet_${W2}x${H2}_${fps}fps_${frames}f.zip`);
+      hint(`✓ LED 拼版 PNG 序列已导出(${W2}×${H2} · ${frames} 帧)`);
+    }
+  }catch(e){ hint('⚠ LED 导出失败:'+(e?.message||e)); }
+  setPaused(wasPaused);
+}
+function dl(blob,name){ const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),5000); }
+
+// 📺 LED 拼版面板:6 块 × (来源投影面 + 旋转),尺寸/列数;实时显示拼出来多大。
+function renderLedPanel(){
+  const host=$('ledTiles'); if(!host) return;
+  const cfg=ledCfg();
+  $('ledTW').value=cfg.tileW; $('ledTH').value=cfg.tileH; $('ledCols').value=cfg.cols;
+  host.innerHTML='';
+  cfg.tiles.forEach((t,i)=>{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:4px;font:11px system-ui;color:#9fb;margin:1px 0';
+    const lab=document.createElement('span'); lab.textContent=`${i+1}`;
+    lab.style.cssText='width:12px;opacity:.7';
+    const src=document.createElement('select');
+    src.style.cssText='flex:1;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:1px 3px';
+    src.title='这块板显示哪个投影面';
+    decals.forEach((d,di)=>{ const o=document.createElement('option'); o.value=di;
+      o.textContent=`${di+1} ${d.kind==='uv'?'UV':d.kind==='wrap'?'环绕':'投影面'}${d.obj?'':'(未放置)'}`;
+      src.appendChild(o); });
+    src.value=String(Math.min(t.decal, Math.max(0,decals.length-1)));
+    // ⚠ 每次都【重新读取】配置再改再存 —— 若沿用渲染时捕获的 cfg 快照,
+    // 改旋转会把之前改的尺寸/列数一并覆盖回旧值(两份陈旧副本互相打架)。
+    src.onchange=()=>{ const c=ledCfg(); c.tiles[i].decal=parseInt(src.value,10)||0; saveLedCfg(c); updLedInfo(); };
+    const rot=document.createElement('select');
+    rot.style.cssText='background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:1px 3px';
+    rot.title='这块板的安装朝向 —— 竖装选 90°/270°';
+    [0,90,180,270].forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v+'°'; rot.appendChild(o); });
+    rot.value=String(t.rot||0);
+    rot.onchange=()=>{ const c=ledCfg(); c.tiles[i].rot=parseInt(rot.value,10)||0; saveLedCfg(c); updLedInfo(); };
+    row.append(lab,src,rot); host.appendChild(row);
+  });
+  updLedInfo();
+}
+function updLedInfo(){
+  const cfg=ledCfg(), el=$('ledInfo'); if(!el) return;
+  const { sheetW, sheetH }=ledLayout(cfg.tiles, cfg.tileW, cfg.tileH, cfg.cols);
+  const vert=cfg.tiles.filter(t=>t.rot===90||t.rot===270).length;
+  el.innerHTML=`拼版输出 <b>${sheetW}×${sheetH}</b>(${cfg.tiles.length} 块,其中 <b>${vert}</b> 块竖装)`
+    + (sheetW>3072||sheetH>3072 ? ' <b style="color:#ffd479">超 MP4 上限 → 用 PNG</b>' : '');
+}
+for(const [id,key] of [['ledTW','tileW'],['ledTH','tileH'],['ledCols','cols']])
+  if($(id)) $(id).addEventListener('input',()=>{ const cfg=ledCfg();
+    cfg[key]=Math.max(key==='cols'?1:8, parseInt($(id).value,10)||(key==='cols'?3:512));
+    saveLedCfg(cfg); updLedInfo(); });
+if($('ledMp4')) $('ledMp4').onclick=()=>exportLedSheet(true);
+if($('ledPng')) $('ledPng').onclick=()=>exportLedSheet(false);
+
 $('bakeBtn').onclick=()=>{
   const placed=decals.filter(d=>d.obj);
   if(!placed.length){ hint('先放置至少一块投影面再同步'); return; }
