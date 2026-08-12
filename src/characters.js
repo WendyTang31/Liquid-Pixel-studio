@@ -14,6 +14,7 @@ export function makeCharacter(name, frames, cycleSec){
     states:frames, SEQ:null, seqDirty:true, cycleSec:cycleSec||1,
     x0:0, y0:0, x1:0, y1:0,      // 位移:循环内从 (x0,y0) 线性走到 (x1,y1)(px,画布坐标偏移)
     scale:1, rot:0, speed:1, visible:true,   // rot=整体旋转(度)
+    mirX:false, mirY:false,                  // 整体镜像(水平/垂直):跑向左 ⇄ 跑向右
   };
 }
 // 把导入动画(anim.frames/durations/holds)转成角色的 state 帧(computeVectorPolys/buildSequence 所需字段)。
@@ -30,36 +31,47 @@ function ensureSEQ(ch){ if(ch.seqDirty || !ch.SEQ){ ch.SEQ=buildSequence(ch.stat
 export function charLoopSec(ch){ return ensureSEQ(ch).T / (ch.speed||1); }
 export function setCharLoopSec(ch, sec){ const T=ensureSEQ(ch).T; ch.speed = T / Math.max(0.05, sec||1); }
 
-// 角色在墙钟 clock 时刻的循环时间 t 与位移进度 prog(0..1)。speed 缩放循环快慢。
-export function charTime(ch, clock){
+// 角色的循环时间 t、位移进度 prog(0..1)、是否已出场 started。
+// sync='free'(默认):走墙钟 clock,延迟 delay 秒后出场,之后一直独立循环(适合一次性入场)。
+// sync='timeline':跟随主时间轴 gMain —— 每个主循环内从 delay 处开始 → 与箭头等主动画【严格同步】,
+//   两个角色都设 sync='timeline'、delay=0 即"一起开始";一个 delay=0、一个 delay=1 即"箭头后 1s 小人才跑"。
+export function charTime(ch, clock, gMain){
   const SEQ=ensureSEQ(ch), T=Math.max(1e-3, SEQ.T);
-  const t=((clock*(ch.speed||1))%T+T)%T;
-  return { SEQ, T, t, prog:t/T };
+  const speed=ch.speed||1, delay=ch.delay||0;
+  const useTL = ch.sync==='timeline' && gMain!=null;
+  const base = (useTL ? gMain : clock) - delay;      // 有效起算时间
+  const started = base >= -1e-6;                      // delay 未到 → 尚未出场
+  const t=((base*speed)%T+T)%T;
+  return { SEQ, T, t, prog:t/T, started };
 }
 // 角色当前帧的位移形变后轮廓 polys(逻辑画布坐标)。绕画布中心缩放,再按位移进度平移。
-export function charPolys(ch, clock){
+export function charPolys(ch, clock, gMain){
   if(!ch.visible || !ch.states?.length) return [];
-  const { SEQ, t, prog }=charTime(ch, clock);
+  const { SEQ, t, prog, started }=charTime(ch, clock, gMain);
+  if(!started) return [];                             // 还没到出场时间
   const dx=(ch.x0||0)+((ch.x1||0)-(ch.x0||0))*prog, dy=(ch.y0||0)+((ch.y1||0)-(ch.y0||0))*prog;
   const sc=ch.scale||1, cx=W/2, cy=H/2;
   const ang=(ch.rot||0)*Math.PI/180, ca=Math.cos(ang), sa=Math.sin(ang); // 整体旋转(绕画面中心)
-  const polys=computeVectorPolys(ch.states, SEQ, t, clock*(ch.speed||1), P, true); // includeHold:停留帧也画,不闪烁
+  const mx=ch.mirX?-1:1, my=ch.mirY?-1:1;                                 // 整体镜像(在旋转之前,故是"角色自身"翻面)
+  const polys=computeVectorPolys(ch.states, SEQ, t, t, P, true); // includeHold:停留帧也画,不闪烁(相位用循环时间 t → 确定)
   return polys.map(o=>({ ...o,
-    poly:o.poly.map(p=>{ const rx=(p.x-cx)*sc, ry=(p.y-cy)*sc;   // 相对中心 → 缩放 → 旋转 → 位移
+    // 相对中心 → 镜像 → 缩放 → 旋转 → 位移(镜像在最内层 = 原地翻面,不影响走位)
+    poly:o.poly.map(p=>{ const rx=(p.x-cx)*mx*sc, ry=(p.y-cy)*my*sc;
       return { x:cx + (rx*ca - ry*sa) + dx, y:cy + (rx*sa + ry*ca) + dy }; }),
     strokeW:(o.strokeW||0)*sc }));
 }
 // 给定角色数组 → 合成实心(每个角色一块 SDF solid)。store 无关 → 编辑器与 3D 预览器共用。
-export function charSolidsFrom(chars, clock){
+// gMain=主时间轴当前循环位置(秒),供 sync='timeline' 的角色与主动画同步;不传则所有角色按自由时钟。
+export function charSolidsFrom(chars, clock, gMain){
   const out=[];
-  for(const ch of chars||[]){ const polys=charPolys(ch, clock);
+  for(const ch of chars||[]){ const polys=charPolys(ch, clock, gMain);
     if(polys.length) out.push(...rasterizeVectorSolids(polys)); }
   return out;
 }
 // 编辑器:合成 store 里的所有角色。并入主渲染的 solids 数组即可同屏并行播放。
 // 正在「编辑帧」的角色跳过 —— 它此刻就是主时间轴,已由主渲染画出,避免重影。
-export function charactersSolids(clock){
-  return charSolidsFrom(store.characters.filter(c=>c!==store.editingChar), clock);
+export function charactersSolids(clock, gMain){
+  return charSolidsFrom(store.characters.filter(c=>c!==store.editingChar), clock, gMain);
 }
 
 // ── 序列化(随工程存/取)。SEQ 是派生的,不存;打开时重建。──
@@ -67,6 +79,7 @@ export function serializeCharacters(){
   return store.characters.map(ch=>({
     id:ch.id, name:ch.name, cycleSec:ch.cycleSec,
     x0:ch.x0, y0:ch.y0, x1:ch.x1, y1:ch.y1, scale:ch.scale, rot:ch.rot||0, speed:ch.speed, visible:ch.visible,
+    mirX:!!ch.mirX, mirY:!!ch.mirY, sync:ch.sync||'free', delay:ch.delay||0,
     states:ch.states.map(s=>({ name:s.name, color:s.color, hold:s.hold, dur:s.dur,
       shapes:JSON.parse(JSON.stringify(s.shapes)) })),
   }));
@@ -79,7 +92,7 @@ export function hydrateCharacters(arr){
       hold:s.hold||0, dur:s.dur||0.1 }));
     return { id:d.id, name:d.name, states:frames, SEQ:null, seqDirty:true, cycleSec:d.cycleSec||1,
       x0:d.x0||0, y0:d.y0||0, x1:d.x1||0, y1:d.y1||0, scale:d.scale??1, rot:d.rot||0, speed:d.speed??1,
-      visible:d.visible!==false };
+      visible:d.visible!==false, mirX:!!d.mirX, mirY:!!d.mirY, sync:d.sync||'free', delay:d.delay||0 };
   });
 }
 export function loadCharacters(arr){

@@ -81,6 +81,32 @@ export function renderCharacters(){
     cross.style.cssText='font:11px system-ui;background:#223;border:1px solid #2a3330;border-radius:4px;color:#8ef;cursor:pointer;padding:2px 6px';
     cross.onclick=e=>{ e.stopPropagation(); ch.x0=-W*0.62; ch.x1=W*0.62; ch.y0=ch.y1=0; renderCharacters(); };
     r3.append(mkLabel('缩放'),scaleI,mkLabel('旋转'),rotI,mkLabel('时长'),durI,cross); card.appendChild(r3);
+
+    // r4:镜像 + 出场同步
+    const r4=document.createElement('div'); r4.style.cssText='display:flex;align-items:center;gap:8px;font:11px system-ui;color:#9fb;flex-wrap:wrap';
+    const chk=(label,get,set,tip)=>{ const w=document.createElement('label');
+      w.style.cssText='display:flex;align-items:center;gap:3px;cursor:pointer'; w.title=tip;
+      const c=document.createElement('input'); c.type='checkbox'; c.checked=get();
+      c.onclick=e=>e.stopPropagation(); c.onchange=()=>set(c.checked);
+      const t=document.createElement('span'); t.textContent=label;
+      w.append(c,t); return w; };
+    r4.append(
+      chk('⇋镜像', ()=>!!ch.mirX, v=>ch.mirX=v, '整体水平镜像:跑向左 ⇄ 跑向右'),
+      chk('⇅翻转', ()=>!!ch.mirY, v=>ch.mirY=v, '整体垂直镜像(上下翻)'));
+    // 同步方式
+    const syncSel=document.createElement('select');
+    syncSel.style.cssText='background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:1px 3px';
+    syncSel.title='自由:独立循环,与主时间轴无关。跟随主时间轴:与箭头等主动画严格同步,每个主循环从「延迟」处开始出场';
+    [['free','⏱自由'],['timeline','🔗跟主轴']].forEach(([v,t])=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; syncSel.appendChild(o); });
+    syncSel.value=ch.sync||'free'; syncSel.onclick=e=>e.stopPropagation();
+    syncSel.onchange=()=>{ ch.sync=syncSel.value; renderCharacters(); };
+    // 延迟出场
+    const delayI=document.createElement('input'); delayI.type='number'; delayI.step='0.1'; delayI.min='0'; delayI.value=ch.delay||0;
+    delayI.title='延迟出场(秒):自由模式=开场 N 秒后出现;跟主轴模式=每个主循环第 N 秒才出现(如箭头先走、小人后跑)';
+    delayI.style.cssText='width:42px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
+    delayI.onclick=e=>e.stopPropagation(); delayI.oninput=()=>{ ch.delay=Math.max(0,parseFloat(delayI.value)||0); };
+    r4.append(syncSel, mkLabel('延迟'), delayI, mkLabel('s'));
+    card.appendChild(r4);
     box.appendChild(card);
   });
 }

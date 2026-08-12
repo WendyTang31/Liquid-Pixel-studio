@@ -351,7 +351,7 @@ function tick(now){
     const solids=(fr.solids||[]).concat(
         vectorSolids(computeVectorPolys(store.states, store.SEQ, store.g, store.clock, P),
                      fr.seg, store.states, store.g, store.clock))
-      .concat(charactersSolids(store.clock)); // 🚶 并行角色轨:各自循环 + 位移,同屏合成
+      .concat(charactersSolids(store.clock, store.g)); // 🚶 并行角色轨:各自循环 + 位移;传主时间轴 g 供同步
     // 实心场是 CPU 采样(SDF 纹理未进 GL 着色器);有实心或已缩放时走 CPU 视口渲染
     if(gpuOn() && !solids.length && !zoomed){ glCv.style.display='block'; glRender(fr.balls, fr.col, P); ctx.clearRect(0,0,W,H); }
     else { if(glCv) glCv.style.display='none'; previewRender(fr.balls, fr.col, P, solids.length?solids:null, fr.cam, store.view); }

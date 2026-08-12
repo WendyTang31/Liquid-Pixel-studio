@@ -1237,7 +1237,7 @@ function frame(now){
     // vectorSolids:过渡期的矢量轮廓同样带上形变修饰器,3D 上与 2D 预览一致
     const vsolids=(fr.solids||[]).concat(
       vectorSolids(computeVectorPolys(gr.states, gr.SEQ, gt, clock, gr.P), fr.seg, gr.states, gt, clock));
-    if(gr===groups[0] && viewerChars.length) vsolids.push(...charSolidsFrom(viewerChars, clock)); // 🚶 并行角色轨合成
+    if(gr===groups[0] && viewerChars.length) vsolids.push(...charSolidsFrom(viewerChars, clock, gt)); // 🚶 并行角色轨合成(gt=主时间轴位置,供同步)
     gr.renderTex(fr.balls, fr.col, gr.P, vsolids, fr.cam);
     gr.screenTex.needsUpdate=true; gr.screenTexUV.needsUpdate=true;
   }
