@@ -33,5 +33,7 @@ export const P = {
   // p2Dir:'fwd'=在 P1 竖排里画→导出重排;'inv'=照着车上的样子画→导出翻回控制器顺序(想要线条在车上连续用这个)
   // p2Map:自定义模组映射表(null=用 ledmap.js 的默认表)。每项 {src:[x,y,w,h], dst:[x,y], rotate}
   // —— 实装尺寸/位置与默认不符时直接在界面上改,不必动代码。
-  p2Export:false, p2Rot:[null,null,null,null,null], p2Side:'cw', p2Scale:8, p2Dir:'fwd', p2Map:null
+  p2Export:false, p2Rot:[null,null,null,null,null], p2Side:'cw', p2Scale:8, p2Dir:'fwd', p2Map:null,
+  // 🧩 按取景框导出(Blender):只输出 3D 取景框内的画面(+镜像补全),框外丢弃。见 uvcrop.js
+  uvCrop:{ on:false, patch:'', mirror:'h', res:4096 }
 };

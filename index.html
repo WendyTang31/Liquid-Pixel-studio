@@ -503,8 +503,34 @@
 
     <div class="divider"></div>
     <div class="row">
+      <label class="ck" title="只导出 3D 预览器里【取景框(绿框)】内的画面 —— 框外那些根本投不到模型上的部分一律丢弃,不再白占分辨率。可再按需镜像补全(模型左右共用同一块 UV 时,导出=框内+它的镜像)。给 Blender 用这个。">
+        <input type="checkbox" id="uvCropOn"> 🧩 按取景框导出(Blender)</label>
+    </div>
+    <div id="uvCropPanel" style="display:none">
+      <div class="row"><label title="选哪块投影面/UV 层的取景框。列表来自 3D 预览器(需先在那边放置过投影面)">取景框</label>
+        <select id="uvCropPatch" style="flex:1"></select></div>
+      <div class="row"><label title="模型左右对称、共用同一块 UV 时,取景框只覆盖一半 —— 这里把它镜像补成完整图案">镜像补全</label>
+        <select id="uvCropMirror" style="flex:1">
+          <option value="none">关闭(只要框内)</option>
+          <option value="h" selected>水平:本身 + 右侧镜像</option>
+          <option value="hl">水平:左侧镜像 + 本身</option>
+          <option value="v">垂直:本身 + 下方镜像</option>
+          <option value="vt">垂直:上方镜像 + 本身</option>
+          <option value="quad">四向对称</option>
+        </select></div>
+      <div class="row"><label title="输出最长边的像素数。PNG 序列可以到 4096;MP4(H.264)本机实测上限约 3072²,超了会自动回退 PNG 序列">分辨率</label>
+        <select id="uvCropRes" style="flex:1">
+          <option value="2048">2048</option>
+          <option value="3072">3072(MP4 上限)</option>
+          <option value="4096" selected>4096 · 4K(建议走 PNG 序列)</option>
+        </select></div>
+      <div class="small" id="uvCropInfo" style="opacity:.6;line-height:1.5"></div>
+      <div class="small" style="opacity:.5;line-height:1.5">💡 渲染交付建议用 <b>PNG 序列</b>:H.264 是 4:2:0 色度抽样(硬边会渗色)且<b>没有 alpha</b> —— 勾上「背景透明」后只有 PNG 能保住透明底,在 Blender 里直接叠到车漆上。</div>
+    </div>
+
+    <div class="row">
       <label class="ck" title="把画面从 P1(创作布局:5 个模组竖直堆叠)重排成 P2(实装布局:模组 2/3 旋转 90° 并排),再导出。只做裁切/旋转/平移,最近邻零插值、永不缩放。开启后导出强制 128×320(控制器画布);关闭则与原来完全一致。">
-        <input type="checkbox" id="p2On"> 🔩 按实装布局导出(P2)</label>
+        <input type="checkbox" id="p2On"> 🔩 按实装布局导出(P2 · LED 硬件)</label>
     </div>
     <div id="p2Panel" style="display:none">
       <div class="small" style="opacity:.6;line-height:1.5">动画在 <b>P1</b>(5 模组竖排)里创作,实车上模组 2/3 是<b>旋转 90° 并排</b>装的(<b>P2</b>)。

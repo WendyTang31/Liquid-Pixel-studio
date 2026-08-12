@@ -14,15 +14,48 @@ import { resampleAll } from './pipeline.js';
 import { setMode } from './ui/stage.js';
 import { LED_W, LED_H } from './ledmap.js';
 import { p2On, p2Size, p2Scale, makeCanvas, transformCanvasP1toP2 } from './ledcanvas.js';
+import { uvCropOn, uvCropCfg, activePatch, planSize, composeCrop } from './uvcrop.js';
 
 // 🔩 物理布局导出:开启时尺寸锁成 128×320 的整数倍(1×=硬件原生;N×=原生高清渲染,模组网格同步放大)。
 // 关闭时原样返回用户设置 → 与既有构建逐字节一致。
-function expSize(){ return p2On() ? p2Size() : getExpSize(); }
+function expSize(){
+  const uv=uvCropOn()&&activePatch();
+  if(uv){ const {mirror,res}=uvCropCfg(); const pl=planSize(uv, mirror, res); return [pl.outW, pl.outH]; }
+  return p2On() ? p2Size() : getExpSize();
+}
 
 // 离线渲染器:建好复用画布,drawFrame(f) 把第 f 帧(含 2×超采样 + 辉光)画进 ec。
 // PNG 与 MP4 共用 —— 两条导出路径的画面逐像素一致。
 // 返回的 out 才是【应当被编码/存盘的画布】:P2 模式下 = 变换后的画布,否则就是 ec 本身。
+// 🧩 取景框导出:输出尺寸/渲染尺寸由取景框与镜像模式推出(与用户设的导出尺寸无关)。
+function uvPlan(){
+  if(!uvCropOn()) return null;
+  const p=activePatch(); if(!p) return null;
+  const { mirror, res }=uvCropCfg();
+  return { patch:p, mirror, plan:planSize(p, mirror, res) };
+}
+
 function makeOfflineRenderer(EW, EH){
+  const uv=uvPlan();
+  if(uv){
+    // 取景框模式:按【方形】渲染(与创作画布同比例 → 零变形),再裁到框内 + 镜像补全。
+    // 框外的画面从不进入输出 —— 那部分本来就投不到模型上。
+    const R=uv.plan.R;
+    const ec=makeCanvas(R,R), ectx=ec.getContext('2d');
+    const ss=(P.ss2x && R*2<=6000)?2:1;
+    const big=makeCanvas(R*ss,R*ss), bctx=big.getContext('2d');
+    const out=makeCanvas(uv.plan.outW, uv.plan.outH);
+    function drawFrame(f){
+      const g=f/P.fps;
+      const fr=sampleFrame(store.SEQ, store.states, g, g, P);
+      const solids=(fr.solids||[]).concat(
+        vectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P), fr.seg, store.states, g, g));
+      if(ss===2){ renderToImageData(bctx,R*2,R*2,fr.balls,fr.col,P,solids,fr.cam); ectx.drawImage(big,0,0,R,R); }
+      else renderToImageData(ectx,R,R,fr.balls,fr.col,P,solids,fr.cam);
+      composeCrop(ec, uv.patch, uv.mirror, uv.plan, out);
+    }
+    return { ec, out, drawFrame, uv };
+  }
   const p2on=p2On();
   // 🔩 P2:创作画布是【正方形】,而 LED 是 2:5 长条。直接把方画布塞进 128×320 必然变形
   // (拉伸=压扁,等比=上下大黑边、内容全挤进旋转板)。故先按【正方形】渲染 —— 与画布同比例、

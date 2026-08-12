@@ -8,6 +8,7 @@ import { computeVectorPolys, rasterizeVectorSolids } from '../vector.js';
 import { renderToImageData } from '../render.js';
 import { LED_W, LED_H, MODULE_MAP } from '../ledmap.js';
 import { makeCanvas, transformCanvasP1toP2, calibrationCanvas } from '../ledcanvas.js';
+import { uvPatches, activePatch, planSize, mirrorScale } from '../uvcrop.js';
 
 let p1Cv=null, p2Cv=null, raf=0, lastSig='';
 let calibMode=false, calibCv=null, warned=false;
@@ -81,6 +82,44 @@ function renderMapRows(){
     [0,1].forEach(k=>row.appendChild(num(()=>m.dst[k], v=>m.dst[k]=v, ['目标 x','目标 y'][k])));
     host.appendChild(row);
   });
+}
+
+// 🧩 取景框导出面板:选哪块取景框 + 镜像补全 + 分辨率,并实时显示算出来的输出尺寸。
+export function initUvCropPanel(){
+  const on=$('uvCropOn'); if(!on) return;
+  if(!P.uvCrop) P.uvCrop={ on:false, patch:'', mirror:'h', res:4096 };
+  const sel=$('uvCropPatch'), mir=$('uvCropMirror'), res=$('uvCropRes'), info=$('uvCropInfo');
+  const fillPatches=()=>{
+    const list=uvPatches();
+    sel.innerHTML='';
+    if(!list.length){ const o=document.createElement('option');
+      o.textContent='(无 —— 请先在 3D 预览器放置投影面/UV 层)'; o.value=''; sel.appendChild(o); return; }
+    for(const p of list){ const o=document.createElement('option'); o.value=p.name; o.textContent=p.name; sel.appendChild(o); }
+    if(P.uvCrop.patch && list.some(p=>p.name===P.uvCrop.patch)) sel.value=P.uvCrop.patch;
+    else { sel.value=list[0].name; P.uvCrop.patch=list[0].name; }
+  };
+  const refresh=()=>{
+    const p=activePatch();
+    if(!p){ info.textContent='未找到取景框 —— 先到 3D 预览器放一块投影面或 UV 直贴层。'; return; }
+    const pl=planSize(p, P.uvCrop.mirror, P.uvCrop.res);
+    const [mw,mh]=mirrorScale(P.uvCrop.mirror);
+    info.innerHTML=`取景框占画布 <b>${(p.cw*100).toFixed(0)}% × ${(p.ch*100).toFixed(0)}%</b>`
+      + ` → 输出 <b>${pl.outW}×${pl.outH}</b>`
+      + (mw*mh>1?`(${mw}×${mh} 镜像拼接)`:'(仅框内)')
+      + `<br>内部按 ${pl.R}² 方形渲染后裁切,零变形。`
+      + (pl.outW>3072||pl.outH>3072 ? ' <b style="color:#ffd479">超过 MP4 上限 → 请用 PNG 序列</b>' : '');
+  };
+  const sync=()=>{ $('uvCropPanel').style.display = on.checked ? '' : 'none';
+    if(on.checked){ fillPatches(); refresh(); } };
+  on.checked=!!P.uvCrop.on;
+  on.addEventListener('change', e=>{ P.uvCrop.on=e.target.checked; sync();
+    setHint(e.target.checked ? '🧩 已开启按取景框导出:只输出绿框内的画面(+镜像),框外一律丢弃'
+                             : '已关闭 —— 导出恢复整张画布'); });
+  sel.addEventListener('change', ()=>{ P.uvCrop.patch=sel.value; refresh(); });
+  mir.value=P.uvCrop.mirror; mir.addEventListener('change', ()=>{ P.uvCrop.mirror=mir.value; refresh(); });
+  res.value=String(P.uvCrop.res); res.addEventListener('change', ()=>{ P.uvCrop.res=parseInt(res.value,10)||4096; refresh(); });
+  addEventListener('storage', e=>{ if(e.key==='morph-uvlayout' && on.checked){ fillPatches(); refresh(); } });
+  sync();
 }
 
 export function initLedPanel(){
