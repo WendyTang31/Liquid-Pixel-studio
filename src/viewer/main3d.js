@@ -354,8 +354,15 @@ function applyUvLayer(d){
   const pct=(arr,p)=>arr[Math.max(0,Math.min(arr.length-1, Math.round(p*(arr.length-1))))];
   const uMin=pct(us_arr,0.015), uMax=pct(us_arr,0.985), vMin=pct(vs_arr,0.015), vMax=pct(vs_arr,0.985);
   const us=(uMax-uMin)||1, vs=(vMax-vMin)||1;
-  for(let i=0;i<uv.count;i++)
-    uv.setXY(i, d.cx + ((o[i*2]-uMin)/us)*d.cw, d.cy + ((o[i*2+1]-vMin)/vs)*d.ch);
+  // 🪞 镜像:UV 直贴层此前【没有实现】mirX/mirY —— 界面上那两个勾选框对本层是死的,
+  // 于是模型自带的镜像 UV(对称建模常见:左右两侧展开到同一块岛)无从纠正,看上去"怎么调都是镜像的"。
+  // 在归一化之后、映射到取景框之前翻转,与 projectDecal 的口径一致(翻图案不翻位置)。
+  for(let i=0;i<uv.count;i++){
+    let uu=(o[i*2]-uMin)/us, vv=(o[i*2+1]-vMin)/vs;
+    if(d.mirX) uu=1-uu;
+    if(d.mirY) vv=1-vv;
+    uv.setXY(i, d.cx + uu*d.cw, d.cy + vv*d.ch);
+  }
   uv.needsUpdate=true;
   // 编辑器底图条目跟着窗口走(防抖:切割器拖动中 90ms 一次 projectDecal,别每次都写大 dataURL)
   clearTimeout(uvSyncTimer);
