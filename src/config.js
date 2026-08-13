@@ -26,6 +26,9 @@ export const P = {
   tool:'rect', bool:'add', font:120,
   fps:30, gamma:1.0, fit:'fit', colBg:'#0a0a0a',
   ss2x:true, glow:0,
+  // 📐 宽画幅导出:把世界横向拉长成 wideW 个 480 基准方 → 小人从左跑到右【跑完不消失】,且不缩小分辨率
+  //(不是拉伸方形,而是真正加宽世界、原始密度逐像素渲染)。基准方居中,角色跨世界。见 widexport.js。
+  wideExport:false, wideW:5,
   // 🔩 物理布局导出(P1 创作 → P2 实装,见 ledmap.js)。默认关 → 导出行为与既有构建逐字节一致。
   // 开启时导出强制为 128×320(控制器画布),逐模组裁切/旋转/平移,永不缩放。
   // p2Rot:逐模组旋转覆盖(现场校正),null=按映射表;p2Side:侧板方向 'cw'|'ccw'(实装镜像时整体翻转)。

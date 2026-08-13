@@ -15,12 +15,24 @@ import { setMode } from './ui/stage.js';
 import { LED_W, LED_H } from './ledmap.js';
 import { p2On, p2Size, p2Scale, makeCanvas, transformCanvasP1toP2 } from './ledcanvas.js';
 import { uvCropOn, uvCropCfg, activePatch, planSize, composeCrop } from './uvcrop.js';
+import { charactersSolids, charPolys } from './characters.js';
+import { renderWideFrame, wideEW } from './widexport.js';
+
+// 导出时的角色时间:用导出帧时间 g 同时作墙钟 + 主时间轴位置 → 确定、可复现。
+const charSolidsForExport = g => charactersSolids(g, g % Math.max(1e-3, store.SEQ.T));
+function charPolysForExport(g){
+  const out=[], gm=g % Math.max(1e-3, store.SEQ.T);
+  for(const c of store.characters||[]){ if(c===store.editingChar) continue; out.push(...charPolys(c, g, gm)); }
+  return out;
+}
+export const wideOn = () => !!P.wideExport;
 
 // 🔩 物理布局导出:开启时尺寸锁成 128×320 的整数倍(1×=硬件原生;N×=原生高清渲染,模组网格同步放大)。
 // 关闭时原样返回用户设置 → 与既有构建逐字节一致。
 function expSize(){
   const uv=uvCropOn()&&activePatch();
   if(uv){ const {mirror,res}=uvCropCfg(); const pl=planSize(uv, mirror, res); return [pl.outW, pl.outH]; }
+  if(P.wideExport){ const [,EH]=getExpSize(); return [wideEW(EH, Math.max(1,P.wideW||5)), EH]; } // 📐 宽画幅:EW=worldW·EH
   return p2On() ? p2Size() : getExpSize();
 }
 
@@ -36,6 +48,18 @@ function uvPlan(){
 }
 
 function makeOfflineRenderer(EW, EH){
+  if(P.wideExport){
+    // 📐 宽画幅:世界拉长成 worldW 个基准方,主内容居中,角色跨世界奔跑,不消失、不缩小。
+    const worldW=Math.max(1, P.wideW||5);
+    const out=makeCanvas(EW, EH), octx=out.getContext('2d');
+    function drawFrame(f){
+      const g=f/P.fps;
+      const fr=sampleFrame(store.SEQ, store.states, g, g, P);
+      const polys=computeVectorPolys(store.states, store.SEQ, g, g, P).concat(charPolysForExport(g));
+      renderWideFrame(octx, EW, EH, worldW, fr.balls, fr.col, polys, fr.inkW);
+    }
+    return { ec:out, out, drawFrame };
+  }
   const uv=uvPlan();
   if(uv){
     // 取景框模式:按【方形】渲染(与创作画布同比例 → 零变形),再裁到框内 + 镜像补全。
@@ -49,7 +73,8 @@ function makeOfflineRenderer(EW, EH){
       const g=f/P.fps;
       const fr=sampleFrame(store.SEQ, store.states, g, g, P);
       const solids=(fr.solids||[]).concat(
-        vectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P), fr.seg, store.states, g, g));
+        vectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P), fr.seg, store.states, g, g))
+        .concat(charSolidsForExport(g));   // 🚶 并行角色也进导出(此前只有预览有,导出漏了)
       if(ss===2){ renderToImageData(bctx,R*2,R*2,fr.balls,fr.col,P,solids,fr.cam,fr.inkW); ectx.drawImage(big,0,0,R,R); }
       else renderToImageData(ectx,R,R,fr.balls,fr.col,P,solids,fr.cam,fr.inkW);
       composeCrop(ec, uv.patch, uv.mirror, uv.plan, out);
@@ -75,7 +100,8 @@ function makeOfflineRenderer(EW, EH){
     const fr=sampleFrame(store.SEQ, store.states, g, g, P); // g 同时作墙钟 → 导出确定
     // vectorSolids:过渡期的矢量轮廓也带上形变修饰器(尖刺/锯齿等),与预览一致
     const solids=(fr.solids||[]).concat(
-      vectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P), fr.seg, store.states, g, g));
+      vectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P), fr.seg, store.states, g, g))
+      .concat(charSolidsForExport(g));   // 🚶 并行角色也进导出(此前只有预览有,导出漏了)
     if(ss===2){ renderToImageData(bctx,RW*2,RH*2,fr.balls,fr.col,P,solids,fr.cam,fr.inkW); ectx.drawImage(big,0,0,RW,RH); }
     else renderToImageData(ectx,RW,RH,fr.balls,fr.col,P,solids,fr.cam,fr.inkW);
     if(P.glow>0){

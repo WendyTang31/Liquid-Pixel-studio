@@ -486,6 +486,15 @@
         <option value="stretch">拉伸填满(LED屏)</option>
       </select>
     </div>
+    <div class="row">
+      <label class="ck" title="把导出画幅横向拉长成 N 个方形宽 —— 小人可从左跑到右【跑完全程不消失】,且不缩小分辨率、不拉伸变形(是真正加宽世界、原始密度逐像素渲染)。主内容居中,角色跨画幅奔跑。宽度 = 高度 × 倍数。"><input type="checkbox" id="wideOn"> 📐 宽画幅导出(小人跑完全程)</label>
+    </div>
+    <div id="widePanel" style="display:none">
+      <div class="row"><label title="世界宽度 = 几个方形宽。5 = 又长又扁的跑道(高度不变,宽度 ×5)。小人的「左右」走位设成跨这么宽即可全程可见。">画幅倍数 ×</label>
+        <input type="text" id="wideW" value="5" style="width:44px">
+        <span class="small" id="wideInfo" style="opacity:.6"></span></div>
+      <div class="small" style="opacity:.55;line-height:1.5">💡 在「🚶 角色」面板把小人的<b>左右</b>设成一段很宽的行程(如 -1000→1000),再开这个导出 —— 它就会横穿整条跑道全程可见。分辨率不变(每一格都是原始像素密度)。</div>
+    </div>
     <div class="row"><label>帧率</label><input type="range" id="pFps" min="10" max="60" step="1" value="30"><div class="val" id="vFps">30</div></div>
     <div class="row">
       <label class="ck" title="抗锯齿:内部按 2 倍分辨率渲染再缩回,边缘更细腻无锯齿(PNG 与 MP4 均生效;输出≥3000px 时自动关闭,分辨率本身已足够)"><input type="checkbox" id="pSs2x" checked> 2×超采样(抗锯齿)</label>

@@ -449,6 +449,19 @@ export function initInspector(){
     const [w,h]=e.target.value.split(',');
     $('expW').value=w; $('expH').value=h; };
   ['expW','expH'].forEach(id=>$(id).addEventListener('input',()=>{$('expPreset').value='custom';}));
+  // 📐 宽画幅导出:开关 + 画幅倍数,实时显示算出来的输出宽高。
+  if($('wideOn')){
+    const wp=$('widePanel'), info=$('wideInfo');
+    const refresh=()=>{ const eh=parseInt($('expH').value,10)||1024, n=Math.max(1,parseFloat($('wideW').value)||5);
+      if(info) info.textContent=`→ 输出 ${Math.round(eh*n)}×${eh}`; };
+    const sync=()=>{ wp.style.display=$('wideOn').checked?'':'none'; if($('wideOn').checked) refresh(); };
+    $('wideOn').checked=!!P.wideExport;
+    $('wideOn').addEventListener('change',e=>{ P.wideExport=e.target.checked; sync();
+      setHint(e.target.checked?'📐 宽画幅导出已开:小人可跑完全程不消失(在「🚶 角色」里把左右行程设宽)':'已关闭宽画幅导出'); });
+    if($('wideW')) $('wideW').addEventListener('input',()=>{ P.wideW=Math.max(1,parseFloat($('wideW').value)||5); refresh(); });
+    $('expH').addEventListener('input',refresh);
+    sync();
+  }
   $('pngBtn').onclick=exportPNG;
   $('mp4Btn').onclick=exportMP4;
   $('recBtn').onclick=toggleRecord;
