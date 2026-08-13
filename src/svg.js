@@ -216,11 +216,23 @@ export function importSvgAnimation(svgText, W, H, allocLid, nextId, opts={}){
   if(typeof opts==='number') opts={frameCount:opts};   // 向后兼容旧签名(第6参=帧数)
   if(!svgHasAnimation(svgText)) return null;
   const svg=parseSvgDoc(svgText);
-  // 周期:取首个 animateTransform 的 dur(如 "1.1s"),没有则默认 1s
-  let cycleSec=1;
-  const durEl=svg.querySelector('[dur]');
-  if(durEl){ const m=/([\d.]+)\s*(ms|s)?/.exec(durEl.getAttribute('dur')||'');
-    if(m) cycleSec=parseFloat(m[1])*(m[2]==='ms'?0.001:1) || 1; }
+  const parseDur=el=>{ const m=/([\d.]+)\s*(ms|s)?/.exec(el?.getAttribute('dur')||''); return m?parseFloat(m[1])*(m[2]==='ms'?0.001:1):0; };
+  const timedEls=[...svg.querySelectorAll('animate,animateTransform,animateMotion')];
+  // 周期:优先取【带 keyTimes 的动画】的 dur —— 那才是真正的循环(如走路 0.75s)。
+  // ⚠ 不能笼统取"首个 dur":有的 SVG 外层还套了一个把人从左搬到右的 locomotion(如 12s,from/to 无 keyTimes),
+  // 它排在最前,若拿它当周期,就会把 0.75s 的走路按 12s 采样 → 相位乱跳、逐帧姿态不连续 = 人物变形。
+  const keyed=timedEls.filter(a=>a.getAttribute('keyTimes'));
+  let cycleSec = keyed.length ? Math.min(...keyed.map(parseDur).filter(d=>d>0)) : 0;
+  if(!cycleSec) cycleSec = parseDur(svg.querySelector('[dur]')) || 1;
+  cycleSec = cycleSec || 1;
+  // 🚶 剥掉【搬运整体位移的载体动画】(locomotion):dur 远长于走路循环、且是整体 translate/motion。
+  // 它把人物沿 X 轴平移一大段 —— 采样时被烘进坐标,人物会被缩得极小且滑动,而这段位移并不属于走路循环本身。
+  // 剥掉后人物【原地跑】;想让它横穿画面,用编辑器「角色(并行走动)」的 x0→x1 / 🔁跑不停,更可控。
+  let stripped=0;
+  for(const a of timedEls){
+    const t=(a.getAttribute('type')||'').toLowerCase(), tag=a.tagName.toLowerCase();
+    if(parseDur(a) > cycleSec*1.5 && (t==='translate' || tag==='animatemotion')){ a.remove(); stripped++; }
+  }
   const MAXF=Math.max(8, opts.maxFrames||48);
   // 采样时刻:优先用 SMIL 自带 keyTimes(真正的关键帧);没有则均匀密采样兜底。去掉 τ=1 收尾(与 τ=0 同姿)。
   let times=collectKeyTimes(svg).map(k=>k*cycleSec);
