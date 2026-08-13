@@ -17,6 +17,9 @@ import { p2On, p2Size, p2Scale, makeCanvas, transformCanvasP1toP2 } from './ledc
 import { uvCropOn, uvCropCfg, activePatch, planSize, composeCrop } from './uvcrop.js';
 import { charactersSolids, charPolys } from './characters.js';
 import { renderWideFrame, wideEW } from './widexport.js';
+import { applyOutputTransform } from './outtx.js';
+
+export const outTxOn = () => !!(P.outTx && P.outTx.on);
 
 // 导出时的角色时间:用导出帧时间 g 同时作墙钟 + 主时间轴位置 → 确定、可复现。
 const charSolidsForExport = g => charactersSolids(g, g % Math.max(1e-3, store.SEQ.T));
@@ -29,11 +32,17 @@ export const wideOn = () => !!P.wideExport;
 
 // 🔩 物理布局导出:开启时尺寸锁成 128×320 的整数倍(1×=硬件原生;N×=原生高清渲染,模组网格同步放大)。
 // 关闭时原样返回用户设置 → 与既有构建逐字节一致。
-function expSize(){
+// 基础渲染尺寸(方形/宽画幅/P2/取景框/自定义)。
+function baseExpSize(){
   const uv=uvCropOn()&&activePatch();
   if(uv){ const {mirror,res}=uvCropCfg(); const pl=planSize(uv, mirror, res); return [pl.outW, pl.outH]; }
   if(P.wideExport){ const [,EH]=getExpSize(); return [wideEW(EH, Math.max(1,P.wideW||5)), EH]; } // 📐 宽画幅:EW=worldW·EH
   return p2On() ? p2Size() : getExpSize();
+}
+// 最终编码尺寸:开了 🖥 输出变换 → 目标画幅(如 36:15);否则 = 基础尺寸。
+function expSize(){
+  if(outTxOn()) return [Math.max(2,P.outTx.w|0), Math.max(2,P.outTx.h|0)];
+  return baseExpSize();
 }
 
 // 离线渲染器:建好复用画布,drawFrame(f) 把第 f 帧(含 2×超采样 + 辉光)画进 ec。
@@ -127,6 +136,18 @@ function makeOfflineRenderer(EW, EH){
   return { ec, out: p2 || ec, drawFrame: drawOut };
 }
 
+// 导出渲染器:基础渲染 → (可选)🖥 输出变换(适配画幅 + 镜像/旋转/warp)。PNG/MP4 共用。
+function makeExportRenderer(){
+  const [BW,BH]=baseExpSize();
+  const base=makeOfflineRenderer(BW,BH);
+  if(!outTxOn()) return base;
+  const [FW,FH]=expSize();
+  const final=makeCanvas(FW,FH);
+  const opts=()=>({ w:FW, h:FH, fit:P.outTx.fit, mirX:!!P.outTx.mirX, mirY:!!P.outTx.mirY,
+    rot:P.outTx.rot||0, warp:!!P.outTx.warp, corners:P.outTx.corners });
+  return { out:final, drawFrame(f){ base.drawFrame(f); applyOutputTransform(base.out, opts(), final); } };
+}
+
 // 帧数护栏:PNG/MP4 共用。
 function frameCount(){
   const frames=Math.round(store.SEQ.T*P.fps);
@@ -141,7 +162,7 @@ export async function exportPNG(){
   const [EW,EH]=expSize();
   const frames=frameCount(); if(!frames) return;
   store.exporting=true; $('pngBtn').textContent='… 渲染中';
-  const { out, drawFrame }=makeOfflineRenderer(EW,EH);
+  const { out, drawFrame }=makeExportRenderer();
   const zip=new JSZip();
   for(let f=0;f<frames;f++){
     drawFrame(f);
@@ -190,7 +211,7 @@ export async function exportMP4(){
       output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),
       error:e=>{ encErr=e; } });
     encoder.configure({ codec, width:EW, height:EH, bitrate, framerate:fps });
-    const { out, drawFrame }=makeOfflineRenderer(EW,EH);
+    const { out, drawFrame }=makeExportRenderer();
     const usPerFrame=1e6/fps;
     for(let f=0;f<frames;f++){
       if(encErr) throw encErr;

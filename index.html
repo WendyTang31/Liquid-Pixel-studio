@@ -495,6 +495,28 @@
         <span class="small" id="wideInfo" style="opacity:.6"></span></div>
       <div class="small" style="opacity:.55;line-height:1.5">💡 在「🚶 角色」面板把小人的<b>左右</b>设成一段很宽的行程(如 -1000→1000),再开这个导出 —— 它就会横穿整条跑道全程可见。分辨率不变(每一格都是原始像素密度)。</div>
     </div>
+
+    <div class="row">
+      <label class="ck" title="导出末端的整体变换:把方形动画适配进任意目标画幅(如 36:15 的屏幕),并可整体镜像/旋转/四角透视 warp —— 右侧实时预览『动画会怎么显示』,调好再导。"><input type="checkbox" id="outTxOn"> 🖥 输出变换(画幅 · 镜像 · 旋转 · warp)</label>
+    </div>
+    <div id="outTxPanel" style="display:none">
+      <div class="row"><label title="目标画幅像素尺寸。点『36:15』按长边套用该比例。">画幅</label>
+        <input type="text" id="outTxW" value="1440" style="width:52px"> ×
+        <input type="text" id="outTxH" value="600" style="width:52px">
+        <button id="outTx3615" title="按长边套用 36:15 比例">36:15</button></div>
+      <div class="row"><label title="动画方块塞进画幅的方式:等比留边 / 等比裁满 / 拉伸填满">适配</label>
+        <select id="outTxFit" style="flex:1">
+          <option value="fit">等比留边</option><option value="fill">等比裁满</option><option value="stretch">拉伸填满</option></select></div>
+      <div class="row"><label title="整体旋转(度)">旋转</label>
+        <select id="outTxRot" style="flex:1"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select>
+        <label class="ck" style="margin-left:6px"><input type="checkbox" id="outTxMirX"> ⇋水平</label>
+        <label class="ck"><input type="checkbox" id="outTxMirY"> ⇅垂直</label></div>
+      <div class="row"><label class="ck" title="四角透视 warp:拖预览里的四个角把整段动画拧成任意四边形(贴合斜面/异形屏)。"><input type="checkbox" id="outTxWarp"> 四角 warp(拖角)</label>
+        <button id="outTxWarpReset" style="margin-left:6px">↺ 复位</button></div>
+      <canvas id="outTxPrev" width="300" height="200" style="width:100%;background:#0a0a0a;border:1px solid #2a3330;border-radius:4px;touch-action:none;cursor:crosshair"></canvas>
+      <div class="small" style="opacity:.55;line-height:1.5">▶ 实时预览动画在目标画幅里的样子。勾『四角 warp』后拖动四个蓝角做透视贴合。导出的 MP4/PNG 与此预览一致。</div>
+    </div>
+
     <div class="row"><label>帧率</label><input type="range" id="pFps" min="10" max="60" step="1" value="30"><div class="val" id="vFps">30</div></div>
     <div class="row">
       <label class="ck" title="抗锯齿:内部按 2 倍分辨率渲染再缩回,边缘更细腻无锯齿(PNG 与 MP4 均生效;输出≥3000px 时自动关闭,分辨率本身已足够)"><input type="checkbox" id="pSs2x" checked> 2×超采样(抗锯齿)</label>

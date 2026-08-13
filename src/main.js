@@ -20,6 +20,7 @@ import { initI18n } from './i18n.js';
 import { serializeCharacters, loadCharacters } from './characters.js';
 import { renderCharacters } from './ui/charpanel.js';
 import { initLedPanel, initUvCropPanel } from './ui/ledpanel.js';
+import { initOutTxPanel } from './ui/outtxpanel.js';
 
 // ── 顶栏:组操作 + 工程 ──
 function initTopbar(){
@@ -164,6 +165,7 @@ initStage();
 initTopbar();
 initLedPanel();   // 🔩 物理布局导出(P1→P2)
 initUvCropPanel(); // 🧩 按取景框导出(Blender)
+initOutTxPanel(); // 🖥 输出变换(画幅/镜像/旋转/warp)
 initSkinRef();
 initTimeline();
 initArrange();
