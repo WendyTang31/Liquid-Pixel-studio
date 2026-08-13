@@ -121,6 +121,8 @@ export const LAB_FX = [
     title: '飞鸟:快下压、慢回收的不对称振翅(对称正弦只会像呼吸,不像飞),越靠外侧翅幅越大,身体反向轻微起伏。表达自由、启程、轻盈。' },
   { g: '🖼 意象', key: 'floaty', label: '悬浮漂游', min: 0, max: 1, step: .05, def: 0, dp: 2,
     title: '悬浮:整体缓慢上浮并左右游移,伴随极轻微的胀缩 —— 水里的气泡群。表达失重、梦境、放空。' },
+  { g: '🖼 意象', key: 'firefly', label: '萤火虫盘旋', min: 0, max: 1, step: .05, def: 0, dp: 2,
+    title: '萤火虫:每颗球各自绕着一个小圈盘旋(半径/转速/相位逐点不同),盘旋中心还在极缓地游移,并伴随呼吸式明灭。逐点异相 → 是一群各飞各的萤火虫,而不是整体同步摆动。表达夏夜、静谧、生命感。' },
   { g: '🖼 意象', key: 'shimmer', label: '波光', min: 0, max: 1, step: .05, def: 0, dp: 2,
     title: '波光:三组交叉行波形成焦散(水面反光的网格),既位移也调亮度。表达粼粼、灵动、水边。' },
   { g: '🖼 意象', key: 'rainbow', label: '彩虹', min: 0, max: 1, step: .05, def: 0, dp: 2,
@@ -315,6 +317,20 @@ export function labDisp(x, y, cx, cy, t, fx, st, wIn) {
     dy -= a * (0.5 + 0.5 * Math.sin(w * 0.5 + ph * TAU));
     dx += a * 0.6 * Math.sin(w * 0.37 + ph * TAU * 1.4);
     rf *= 1 + fx.floaty * 0.12 * Math.sin(w * 0.7 + ph * TAU);
+  }
+  if (fx.firefly) { // 🪰 萤火虫:每颗各绕一个小圈盘旋 + 盘旋中心极缓游移 + 呼吸式明灭
+    const ph = dotPh(x, y, fx);                          // 逐点异相(coherence=1 时才会整体同步)
+    const a = fx.firefly * FXB * 1.6;
+    // 每只自己的半径与转速 —— 由坐标哈希定,故恒定不抖,且各飞各的
+    const rad  = 0.45 + 0.55 * hash1(ph * 61.7 + 5);
+    const spin = w * (0.7 + 0.6 * hash1(ph * 37.1 + 2)) + ph * TAU;
+    dx += a * rad * Math.cos(spin);                       // 同频 x/y 正交 = 真圆周盘旋
+    dy += a * rad * Math.sin(spin);
+    // 更慢的一层游移:让"盘旋中心"也在飘,于是整群像在空中缓缓弥散,而不是钉在原地转圈
+    dx += a * 0.6 * Math.sin(w * 0.21 + ph * 4.1);
+    dy += a * 0.6 * Math.cos(w * 0.17 + ph * 5.3);
+    // 明灭:只改半径(rf)不改位置。逐点异相 → 聚合亮度平滑,不构成频闪;频率同样在 ≤2.5Hz 之内
+    rf *= 1 + fx.firefly * 0.4 * Math.sin(w * 0.8 + ph * TAU);
   }
   if (fx.shimmer) { // 三组交叉行波 = 焦散网格(水面反光);既推点也调亮度,亮度部分让它"闪"
     const a = fx.shimmer * FXB * 1.2;
