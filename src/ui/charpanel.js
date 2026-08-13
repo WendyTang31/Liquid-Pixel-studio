@@ -69,18 +69,23 @@ export function renderCharacters(){
     const scaleI=document.createElement('input'); scaleI.type='number'; scaleI.step='0.05'; scaleI.min='0.05'; scaleI.value=ch.scale;
     scaleI.title='缩放'; scaleI.style.cssText='width:48px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
     scaleI.onclick=e=>e.stopPropagation(); scaleI.oninput=()=>{ ch.scale=Math.max(0.05,parseFloat(scaleI.value)||1); };
-    const durI=document.createElement('input'); durI.type='number'; durI.step='0.1'; durI.min='0.1';
+    const durI=document.createElement('input'); durI.type='number'; durI.step='0.1'; durI.min='0.05';
     try{ durI.value=+charLoopSec(ch).toFixed(2); }catch(_){ durI.value=ch.cycleSec||1; }
-    durI.title='整体循环时长(秒):走完一整圈用多久 —— 改它即调整体快慢(即之前片段的「总时长」)';
+    durI.title='整体循环时长(秒):走完一整圈用多久。数值越小 = 步频越快';
     durI.style.cssText='width:48px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
-    durI.onclick=e=>e.stopPropagation(); durI.oninput=()=>{ const v=parseFloat(durI.value); if(v>0) setCharLoopSec(ch,v); };
+    // 步频/速度倍率:直接调 ch.speed,越大步子迈得越快(1=原速,2=快一倍)。与「时长」互为倒数,双向实时联动。
+    const spdI=document.createElement('input'); spdI.type='number'; spdI.step='0.25'; spdI.min='0.1'; spdI.value=+(ch.speed||1).toFixed(2);
+    spdI.title='步频/速度倍率:1=按 SVG 原速,2=快一倍,0.5=慢一半。嫌"慢动作"就往上调。';
+    spdI.style.cssText='width:44px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
+    durI.onclick=e=>e.stopPropagation(); durI.oninput=()=>{ const v=parseFloat(durI.value); if(v>0){ setCharLoopSec(ch,v); spdI.value=+(ch.speed||1).toFixed(2); } };
+    spdI.onclick=e=>e.stopPropagation(); spdI.oninput=()=>{ const v=parseFloat(spdI.value); if(v>0){ ch.speed=v; try{ durI.value=+charLoopSec(ch).toFixed(2); }catch(_){} } };
     const rotI=document.createElement('input'); rotI.type='number'; rotI.step='5'; rotI.value=Math.round(ch.rot||0);
     rotI.title='整体旋转(度)'; rotI.style.cssText='width:44px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
     rotI.onclick=e=>e.stopPropagation(); rotI.oninput=()=>{ ch.rot=parseFloat(rotI.value)||0; };
     const cross=document.createElement('button'); cross.textContent='整屏走过'; cross.title='一键设为从画面左外走到右外';
     cross.style.cssText='font:11px system-ui;background:#223;border:1px solid #2a3330;border-radius:4px;color:#8ef;cursor:pointer;padding:2px 6px';
     cross.onclick=e=>{ e.stopPropagation(); ch.x0=-W*0.62; ch.x1=W*0.62; ch.y0=ch.y1=0; renderCharacters(); };
-    r3.append(mkLabel('缩放'),scaleI,mkLabel('旋转'),rotI,mkLabel('时长'),durI,cross); card.appendChild(r3);
+    r3.append(mkLabel('缩放'),scaleI,mkLabel('旋转'),rotI,mkLabel('步频×'),spdI,mkLabel('时长'),durI,cross); card.appendChild(r3);
 
     // r4:镜像 + 出场同步
     const r4=document.createElement('div'); r4.style.cssText='display:flex;align-items:center;gap:8px;font:11px system-ui;color:#9fb;flex-wrap:wrap';
