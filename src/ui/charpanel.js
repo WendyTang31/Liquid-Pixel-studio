@@ -113,26 +113,18 @@ export function renderCharacters(){
     r4.append(syncSel, mkLabel('延迟'), delayI, mkLabel('s'));
     card.appendChild(r4);
 
-    // r5:圈数(一趟位移跑几圈步子)+ 跑更远预设
+    // r5:地面速度(与距离/步频解耦)+ 跑不停
     const r5=document.createElement('div'); r5.style.cssText='display:flex;align-items:center;gap:6px;font:11px system-ui;color:#9fb;flex-wrap:wrap';
-    const lapI=document.createElement('input'); lapI.type='number'; lapI.step='1'; lapI.min='1'; lapI.value=ch.laps||1;
-    lapI.title='一趟位移要跑几圈步子。1=跑一圈就走完全程(到头弹回);2=迈两轮步子、位置一路向前推进,中途不回原位 —— 想一次跑更远就调大它。步频不变,只是走得更远。';
-    lapI.style.cssText='width:42px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
-    lapI.onclick=e=>e.stopPropagation();
-    lapI.oninput=()=>{ ch.laps=Math.max(1, Math.round(parseFloat(lapI.value)||1)); };
-    // ⚠ 曾经这里是「跑更远 ×2」:把行程无限拉长。那是错的 —— 画布只有 W 宽,行程越长,
-    // 人在画外的时间越久(实测 ±1500 时只有 18% 时间可见),看起来就是"跑到边上变一条线、又凭空
-    // 出现在中间"。想跑更久请加【圈数】(步子更多、横穿更慢),想永远向前请勾【🔁跑不停】。
-    const far=document.createElement('button'); far.textContent='慢一点(圈数+1)';
-    far.title='多迈一轮步子横穿同一段距离 —— 跑得更久、步频不变,且全程可见(不会跑到画外看不见)';
-    far.style.cssText='font:11px system-ui;background:#223;border:1px solid #2a3330;border-radius:4px;color:#8ef;cursor:pointer;padding:2px 6px';
-    far.onclick=e=>{ e.stopPropagation();
-      if(!(ch.x1-ch.x0)){ ch.x0=-W*0.62; ch.x1=W*0.62; }  // 还没设行程 → 先给个整屏横穿
-      ch.laps=Math.max(1,(ch.laps||1))+1;
-      renderCharacters(); };
+    // 🚶 地面速度(px/s):决定小人【横穿地面】的快慢。距离越远,自动走越久 —— 速度恒定,不会"距离一大就加速"。
+    // 与「步频×」(迈腿快慢)、「时长」(一个走路循环多久)彻底分离:这三者互不影响。
+    const gsI=document.createElement('input'); gsI.type='number'; gsI.step='20'; gsI.min='10'; gsI.value=Math.round(ch.groundSpeed||300);
+    gsI.title='地面速度(像素/秒):小人横穿地面的快慢。距离越远,自动走越久,速度恒定 —— 绝不"距离一大就加速"。\n和「步频×」(迈腿快慢)、「时长」(一个走路循环多久)完全分离。嫌快就把它调小。';
+    gsI.style.cssText='width:52px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
+    gsI.onclick=e=>e.stopPropagation();
+    gsI.oninput=()=>{ ch.groundSpeed=Math.max(10, parseFloat(gsI.value)||300); };
     const wrapCk=chk('🔁跑不停', ()=>!!ch.wrap, v=>{ ch.wrap=v; renderCharacters(); },
       '环绕平移:跑出右边画外就立刻从左边画外接着进来,永远向前跑,接缝在画外看不见。\n想"一直往前跑"请用这个 —— 把行程拉到几千像素是没用的,画布只有这么宽,人跑出去就看不见了。');
-    r5.append(mkLabel('圈数'), lapI, far, wrapCk);
+    r5.append(mkLabel('地面速度'), gsI, mkLabel('px/s'), wrapCk);
     card.appendChild(r5);
     box.appendChild(card);
   });

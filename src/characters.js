@@ -14,7 +14,8 @@ export function makeCharacter(name, frames, cycleSec){
     states:frames, SEQ:null, seqDirty:true, cycleSec:cycleSec||1,
     x0:0, y0:0, x1:0, y1:0,      // 位移:循环内从 (x0,y0) 线性走到 (x1,y1)(px,画布坐标偏移)
     scale:1, rot:0, speed:1, visible:true,   // rot=整体旋转(度)
-    laps:1, wrap:false,                      // laps=跑几圈才走完一趟位移;wrap=环绕(出右回左,永远向前)
+    groundSpeed:DEFAULT_GROUND_SPEED,        // 地面速度(px/s):距离越远自动走越久,速度恒定(与步频/时长解耦)
+    wrap:false,                              // wrap=环绕(出右回左,永远向前)
     mirX:false, mirY:false,                  // 整体镜像(水平/垂直):跑向左 ⇄ 跑向右
   };
 }
@@ -36,18 +37,24 @@ export function setCharLoopSec(ch, sec){ const T=ensureSEQ(ch).T; ch.speed = T /
 // sync='free'(默认):走墙钟 clock,延迟 delay 秒后出场,之后一直独立循环(适合一次性入场)。
 // sync='timeline':跟随主时间轴 gMain —— 每个主循环内从 delay 处开始 → 与箭头等主动画【严格同步】,
 //   两个角色都设 sync='timeline'、delay=0 即"一起开始";一个 delay=0、一个 delay=1 即"箭头后 1s 小人才跑"。
+export const DEFAULT_GROUND_SPEED = 300;               // 地面速度默认值(px/s):距离与它一起决定"走多久"
 export function charTime(ch, clock, gMain){
   const SEQ=ensureSEQ(ch), T=Math.max(1e-3, SEQ.T);
   const speed=ch.speed||1, delay=ch.delay||0;
-  const laps=Math.max(1, ch.laps||1);                 // 跑几圈步子才走完一趟位移
   // 🔁 跑不停(wrap)= 永远向前的连续里程,天生与「跟随主时间轴」(每个主循环归零)矛盾 ——
   // 若两者并用,主循环一归零里程就回退 → 画面里小人瞬间退回去。故 wrap 时【强制走单调墙钟】,永不退回。
   const useTL = ch.sync==='timeline' && gMain!=null && !ch.wrap;
   const base = (useTL ? gMain : clock) - delay;      // 有效起算时间
   const started = base >= -1e-6;                      // delay 未到 → 尚未出场
   const total = base*speed;
-  // 【步频循环】与【位移行程】解耦:动画每 T 秒循环一次(步频不变),但位移要跑满 laps 圈才走完
-  // x0→x1 一趟。laps=1 就是原来的行为;laps=2 = 迈两轮步子、位置一路向前推进,而不是第二圈弹回原点。
+  // 🚶【位移距离】与【步频/循环时长/速度】彻底解耦:走路循环每 T 秒一圈(步频),位移按【地面速度】推进。
+  // 圈数不再手填,而是 = 距离 ÷ (地面速度 × 每圈秒数) 四舍五入成整数圈 —— 距离越远,自动多迈几圈、
+  // 耗时更长,地面速度恒定,绝不"距离一大就加速"。整数圈 → 走路循环在一趟位移里跑整数次,无缝。
+  const cycSec = T/speed;                              // 一个走路循环的实际秒数
+  const gs = Math.max(1, ch.groundSpeed || DEFAULT_GROUND_SPEED);
+  const travDist = ch.wrap ? (Math.abs((ch.x1||0)-(ch.x0||0)) || W)
+                           : Math.hypot((ch.x1||0)-(ch.x0||0), (ch.y1||0)-(ch.y0||0));
+  const laps = travDist>1 ? Math.max(1, Math.round(travDist/(gs*cycSec))) : 1;
   const t=((total%T)+T)%T;
   const progC=total/(T*laps);           // 连续里程(可 >1,永不回头)—— 环绕平移用
   const prog=((progC%1)+1)%1;           // 循环内进度 0..1 —— 线性往返用
@@ -104,7 +111,7 @@ export function serializeCharacters(){
   return store.characters.map(ch=>({
     id:ch.id, name:ch.name, cycleSec:ch.cycleSec,
     x0:ch.x0, y0:ch.y0, x1:ch.x1, y1:ch.y1, scale:ch.scale, rot:ch.rot||0, speed:ch.speed, visible:ch.visible,
-    mirX:!!ch.mirX, mirY:!!ch.mirY, sync:ch.sync||'free', delay:ch.delay||0, laps:ch.laps||1, wrap:!!ch.wrap,
+    mirX:!!ch.mirX, mirY:!!ch.mirY, sync:ch.sync||'free', delay:ch.delay||0, groundSpeed:ch.groundSpeed||DEFAULT_GROUND_SPEED, wrap:!!ch.wrap,
     states:ch.states.map(s=>({ name:s.name, color:s.color, hold:s.hold, dur:s.dur,
       shapes:JSON.parse(JSON.stringify(s.shapes)) })),
   }));
@@ -117,7 +124,7 @@ export function hydrateCharacters(arr){
       hold:s.hold||0, dur:s.dur||0.1 }));
     return { id:d.id, name:d.name, states:frames, SEQ:null, seqDirty:true, cycleSec:d.cycleSec||1,
       x0:d.x0||0, y0:d.y0||0, x1:d.x1||0, y1:d.y1||0, scale:d.scale??1, rot:d.rot||0, speed:d.speed??1,
-      visible:d.visible!==false, mirX:!!d.mirX, mirY:!!d.mirY, sync:d.sync||'free', delay:d.delay||0, laps:d.laps||1, wrap:!!d.wrap };
+      visible:d.visible!==false, mirX:!!d.mirX, mirY:!!d.mirY, sync:d.sync||'free', delay:d.delay||0, groundSpeed:d.groundSpeed||DEFAULT_GROUND_SPEED, wrap:!!d.wrap };
   });
 }
 export function loadCharacters(arr){
