@@ -115,13 +115,15 @@ export function renderCharacters(){
     lapI.style.cssText='width:42px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
     lapI.onclick=e=>e.stopPropagation();
     lapI.oninput=()=>{ ch.laps=Math.max(1, Math.round(parseFloat(lapI.value)||1)); };
-    const far=document.createElement('button'); far.textContent='跑更远 ×2';
-    far.title='把左右行程再拉长一倍(可超出画布 —— 超出部分自然跑出画面外),圈数同时 +1,步频不变';
+    // ⚠ 曾经这里是「跑更远 ×2」:把行程无限拉长。那是错的 —— 画布只有 W 宽,行程越长,
+    // 人在画外的时间越久(实测 ±1500 时只有 18% 时间可见),看起来就是"跑到边上变一条线、又凭空
+    // 出现在中间"。想跑更久请加【圈数】(步子更多、横穿更慢),想永远向前请勾【🔁跑不停】。
+    const far=document.createElement('button'); far.textContent='慢一点(圈数+1)';
+    far.title='多迈一轮步子横穿同一段距离 —— 跑得更久、步频不变,且全程可见(不会跑到画外看不见)';
     far.style.cssText='font:11px system-ui;background:#223;border:1px solid #2a3330;border-radius:4px;color:#8ef;cursor:pointer;padding:2px 6px';
     far.onclick=e=>{ e.stopPropagation();
-      const mid=((ch.x0||0)+(ch.x1||0))/2, half=Math.max(W*0.62, Math.abs((ch.x1||0)-(ch.x0||0)))||W*0.62;
-      ch.x0=mid-half; ch.x1=mid+half;          // 行程翻倍,不受画布宽度限制
-      ch.laps=Math.max(1,(ch.laps||1))+1;      // 多迈一轮步子,免得步频被拉快
+      if(!(ch.x1-ch.x0)){ ch.x0=-W*0.62; ch.x1=W*0.62; }  // 还没设行程 → 先给个整屏横穿
+      ch.laps=Math.max(1,(ch.laps||1))+1;
       renderCharacters(); };
     const wrapCk=chk('🔁跑不停', ()=>!!ch.wrap, v=>{ ch.wrap=v; renderCharacters(); },
       '环绕平移:跑出右边画外就立刻从左边画外接着进来,永远向前跑,接缝在画外看不见。\n想"一直往前跑"请用这个 —— 把行程拉到几千像素是没用的,画布只有这么宽,人跑出去就看不见了。');
