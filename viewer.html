@@ -131,6 +131,10 @@
     <input type="text" id="ledTH" value="512" style="width:48px">
     <label style="min-width:auto" title="每行放几块">列</label>
     <input type="text" id="ledCols" value="3" style="width:32px"></div>
+  <div class="row">
+    <button id="ledAuto" style="flex:1" title="按顺序把【已放置】的投影面自动绑到各块 —— 新放了面或换了工程会自己跟上,不用逐个下拉去点">↻ 自动分配</button>
+    <button id="ledFromP2" style="flex:1" title="从 2D 编辑器里已经校准好的 P2 实装布局同步各块朝向(front/side_left/side_right/rear_upper/rear_lower)—— 同一批硬件不必录两遍">⚙ 用 P2 校准</button>
+  </div>
   <div id="ledTiles"></div>
   <div class="small" id="ledInfo" style="opacity:.6"></div>
   <div class="row">

@@ -19,6 +19,7 @@ import { createSizedRenderer } from '../render.js';
 import { stateDots, shapesSdf } from '../pipeline.js';
 import { computeVectorPolys, rasterizeVectorSolids } from '../vector.js';
 import { hydrateCharacters, charSolidsFrom } from '../characters.js';
+import { MODULE_MAP, effectiveRot } from '../ledmap.js';
 import { hasRig, poseShapes } from '../rig.js';
 import { decodeImageShape } from '../image.js';
 import { downloadBlob } from '../utils.js';
@@ -1236,9 +1237,38 @@ function renderGroupsAt(gt, clock){
 const LED_CFG_KEY='morph-ledsheet';
 function ledCfg(){
   let c=null; try{ c=JSON.parse(localStorage.getItem(LED_CFG_KEY)||'null'); }catch(_){}
-  if(!c||!Array.isArray(c.tiles)) c={ tileW:512, tileH:512, cols:3, fps:30, res:0,
+  if(!c||!Array.isArray(c.tiles)) c={ tileW:512, tileH:512, cols:3, fps:30, res:0, auto:true,
     tiles:Array.from({length:6},(_,i)=>({decal:i, rot:0})) };
+  if(c.auto!==false) autoAssign(c);       // 自动把各块绑到【已放置】的投影面,不用手选
   return c;
+}
+// 自动分配:按顺序把已放置的投影面依次绑给各块;面不够时后面的块留空(导出为黑)。
+// 这样新放一块投影面、或换了工程,拼版会自己跟上,不必逐个下拉去点。
+function autoAssign(c){
+  const placed=decals.map((d,i)=>({d,i})).filter(o=>o.d.obj).map(o=>o.i);
+  c.tiles.forEach((t,k)=>{ t.decal = k<placed.length ? placed[k] : -1; });
+  return c;
+}
+// 从已校准的 P2 实装布局同步各块朝向 —— P2 那边(2D 编辑器)已经把 5 个模组的旋转调好了,
+// 同一批硬件没道理再录一遍。取工程参数里的 p2Rot/p2Side,按 MODULE_MAP 逐模组算出实际角度。
+function syncRotFromP2(){
+  // 优先用已载入工程的参数;工程还没载入时直接读编辑器写的存档 —— 否则会静默拿到默认值,
+  // 看上去"同步了"其实同步的是出厂设置(实测踩过:预置 270° 却同步出 90°)。
+  let src=groups[0]?.P||{};
+  if(!Array.isArray(src.p2Rot)){
+    for(const k of ['morph3d-project','morph-autosave']){
+      try{ const d=JSON.parse(localStorage.getItem(k)||'null');
+        if(d?.params?.p2Rot){ src=d.params; break; } }catch(_){}
+    }
+  }
+  const rots=src.p2Rot||[], side=src.p2Side||'cw';
+  const c=ledCfg(); let n=0;
+  MODULE_MAP.forEach((m,i)=>{
+    if(i>=c.tiles.length) return;
+    c.tiles[i].rot=effectiveRot(m, rots[i], side); n++;
+  });
+  c.auto=c.auto!==false; saveLedCfg(c); renderLedPanel();
+  hint(`⚙ 已从 P2 校准同步 ${n} 块的朝向(${MODULE_MAP.map((m,i)=>m.name+':'+effectiveRot(m,rots[i],side)+'°').join(' · ')})`);
 }
 function saveLedCfg(c){ try{ localStorage.setItem(LED_CFG_KEY, JSON.stringify(c)); }catch(_){} }
 
@@ -1246,7 +1276,7 @@ function saveLedCfg(c){ try{ localStorage.setItem(LED_CFG_KEY, JSON.stringify(c)
 function ledFrameAt(cfg, gt, sheet){
   renderGroupsAt(gt, gt);                       // 用 gt 同时作墙钟 → 导出确定、可复现
   const faces=cfg.tiles.map(t=>{
-    const d=decals[t.decal];
+    const d=(t.decal>=0)?decals[t.decal]:null;   // -1 = 该块留空(黑屏)
     const [fw,fh]=ledTileFootprint(t, cfg.tileW, cfg.tileH);
     // 烘焙分辨率按【旋转前】的朝向:旋转在拼版时施加
     const bw=(t.rot===90||t.rot===270)?fh:fw, bh=(t.rot===90||t.rot===270)?fw:fh;
@@ -1325,14 +1355,17 @@ function renderLedPanel(){
     lab.style.cssText='width:12px;opacity:.7';
     const src=document.createElement('select');
     src.style.cssText='flex:1;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:1px 3px';
-    src.title='这块板显示哪个投影面';
+    src.title='这块板显示哪个投影面(默认自动分配已放置的面)';
+    const none=document.createElement('option'); none.value='-1'; none.textContent='(空 · 黑屏)'; src.appendChild(none);
     decals.forEach((d,di)=>{ const o=document.createElement('option'); o.value=di;
       o.textContent=`${di+1} ${d.kind==='uv'?'UV':d.kind==='wrap'?'环绕':'投影面'}${d.obj?'':'(未放置)'}`;
       src.appendChild(o); });
-    src.value=String(Math.min(t.decal, Math.max(0,decals.length-1)));
+    src.value=String(t.decal!=null?t.decal:-1);
     // ⚠ 每次都【重新读取】配置再改再存 —— 若沿用渲染时捕获的 cfg 快照,
     // 改旋转会把之前改的尺寸/列数一并覆盖回旧值(两份陈旧副本互相打架)。
-    src.onchange=()=>{ const c=ledCfg(); c.tiles[i].decal=parseInt(src.value,10)||0; saveLedCfg(c); updLedInfo(); };
+    // 手动选过就退出自动分配,免得下次渲染又把你的选择冲掉。
+    src.onchange=()=>{ const c=ledCfg(); c.auto=false;
+      c.tiles[i].decal=parseInt(src.value,10); saveLedCfg(c); renderLedPanel(); };
     const rot=document.createElement('select');
     rot.style.cssText='background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:1px 3px';
     rot.title='这块板的安装朝向 —— 竖装选 90°/270°';
@@ -1347,13 +1380,20 @@ function updLedInfo(){
   const cfg=ledCfg(), el=$('ledInfo'); if(!el) return;
   const { sheetW, sheetH }=ledLayout(cfg.tiles, cfg.tileW, cfg.tileH, cfg.cols);
   const vert=cfg.tiles.filter(t=>t.rot===90||t.rot===270).length;
-  el.innerHTML=`拼版输出 <b>${sheetW}×${sheetH}</b>(${cfg.tiles.length} 块,其中 <b>${vert}</b> 块竖装)`
+  const bound=cfg.tiles.filter(t=>t.decal>=0 && decals[t.decal]?.obj).length;
+  const placed=decals.filter(d=>d.obj).length;
+  el.innerHTML=`拼版输出 <b>${sheetW}×${sheetH}</b> · ${bound}/${cfg.tiles.length} 块有画面,其中 <b>${vert}</b> 块竖装`
+    + (cfg.auto!==false ? ' · <span style="color:#8ef">自动分配中</span>' : ' · 手动指定')
+    + (placed<cfg.tiles.length ? `<br><span style="color:#ffd479">只放置了 ${placed} 个投影面 —— 不足的块会是黑屏</span>` : '')
     + (sheetW>3072||sheetH>3072 ? ' <b style="color:#ffd479">超 MP4 上限 → 用 PNG</b>' : '');
 }
 for(const [id,key] of [['ledTW','tileW'],['ledTH','tileH'],['ledCols','cols']])
   if($(id)) $(id).addEventListener('input',()=>{ const cfg=ledCfg();
     cfg[key]=Math.max(key==='cols'?1:8, parseInt($(id).value,10)||(key==='cols'?3:512));
     saveLedCfg(cfg); updLedInfo(); });
+if($('ledAuto')) $('ledAuto').onclick=()=>{ const c=ledCfg(); c.auto=true; autoAssign(c); saveLedCfg(c);
+  renderLedPanel(); hint(`↻ 已自动分配:${decals.filter(d=>d.obj).length} 个已放置的投影面 → 各块`); };
+if($('ledFromP2')) $('ledFromP2').onclick=syncRotFromP2;
 if($('ledMp4')) $('ledMp4').onclick=()=>exportLedSheet(true);
 if($('ledPng')) $('ledPng').onclick=()=>exportLedSheet(false);
 
