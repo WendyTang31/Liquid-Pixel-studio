@@ -7,6 +7,7 @@ import { computeVectorPolys } from '../vector.js';
 import { renderToImageData } from '../render.js';
 import { charactersSolids } from '../characters.js';
 import { applyOutputTransform } from '../outtx.js';
+import { exclusiveExportMode } from './exportmode.js';
 
 const SRC=256;                       // 预览用的基础渲染尺寸(小、够看)
 let srcCv, outCv, prevCanvas, prevCtx, rafOn=false, drag=-1;
@@ -65,8 +66,8 @@ export function initOutTxPanel(){
   const sync=()=>{ $('outTxPanel').style.display = on.checked ? '' : 'none';
     if(on.checked && !rafOn){ rafOn=true; requestAnimationFrame(loop); } if(!on.checked) rafOn=false; };
   on.checked=!!t.on;
-  on.addEventListener('change',e=>{ t.on=e.target.checked; sync();
-    setHint(e.target.checked?'🖥 输出变换已开:可自定画幅 + 镜像/旋转/四角 warp,右侧实时预览':'已关闭输出变换'); });
+  on.addEventListener('change',e=>{ t.on=e.target.checked; if(e.target.checked) exclusiveExportMode('outTxOn'); sync();
+    setHint(e.target.checked?'🖥 输出变换已开(已自动关掉 P2/取景框/宽画幅,避免叠加冲突):可自定画幅 + 镜像/旋转/四角 warp,右侧实时预览':'已关闭输出变换'); });
   // 尺寸
   const bindNum=(id,key)=>{ const el=$(id); if(!el) return; el.value=t[key];
     el.addEventListener('input',()=>{ t[key]=Math.max(2, parseInt(el.value,10)||2); draw(); }); };

@@ -9,6 +9,7 @@ import { renderToImageData } from '../render.js';
 import { LED_W, LED_H, MODULE_MAP } from '../ledmap.js';
 import { makeCanvas, transformCanvasP1toP2, calibrationCanvas } from '../ledcanvas.js';
 import { uvPatches, activePatch, planSize, mirrorScale } from '../uvcrop.js';
+import { exclusiveExportMode } from './exportmode.js';
 
 let p1Cv=null, p2Cv=null, raf=0, lastSig='';
 let calibMode=false, calibCv=null, warned=false;
@@ -112,7 +113,7 @@ export function initUvCropPanel(){
   const sync=()=>{ $('uvCropPanel').style.display = on.checked ? '' : 'none';
     if(on.checked){ fillPatches(); refresh(); } };
   on.checked=!!P.uvCrop.on;
-  on.addEventListener('change', e=>{ P.uvCrop.on=e.target.checked; sync();
+  on.addEventListener('change', e=>{ P.uvCrop.on=e.target.checked; if(e.target.checked) exclusiveExportMode('uvCropOn'); sync();
     setHint(e.target.checked ? '🧩 已开启按取景框导出:只输出绿框内的画面(+镜像),框外一律丢弃'
                              : '已关闭 —— 导出恢复整张画布'); });
   sel.addEventListener('change', ()=>{ P.uvCrop.patch=sel.value; refresh(); });
@@ -134,7 +135,7 @@ export function initLedPanel(){
   on.checked=!!P.p2Export;
   const sync=()=>{ $('p2Panel').style.display = on.checked ? '' : 'none';
     if(on.checked) refreshP2Preview(); };
-  on.addEventListener('change', e=>{ P.p2Export=e.target.checked; sync();
+  on.addEventListener('change', e=>{ P.p2Export=e.target.checked; if(e.target.checked) exclusiveExportMode('p2On'); sync();
     setHint(e.target.checked
       ? `🔩 已开启物理布局导出:导出强制 ${LED_W}×${LED_H},按模组裁切/旋转/平移(最近邻·零缩放)`
       : '已关闭物理布局导出 —— 导出恢复为原始 P1 画面与你设置的尺寸'); });
