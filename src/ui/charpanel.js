@@ -107,6 +107,24 @@ export function renderCharacters(){
     delayI.onclick=e=>e.stopPropagation(); delayI.oninput=()=>{ ch.delay=Math.max(0,parseFloat(delayI.value)||0); };
     r4.append(syncSel, mkLabel('延迟'), delayI, mkLabel('s'));
     card.appendChild(r4);
+
+    // r5:圈数(一趟位移跑几圈步子)+ 跑更远预设
+    const r5=document.createElement('div'); r5.style.cssText='display:flex;align-items:center;gap:6px;font:11px system-ui;color:#9fb;flex-wrap:wrap';
+    const lapI=document.createElement('input'); lapI.type='number'; lapI.step='1'; lapI.min='1'; lapI.value=ch.laps||1;
+    lapI.title='一趟位移要跑几圈步子。1=跑一圈就走完全程(到头弹回);2=迈两轮步子、位置一路向前推进,中途不回原位 —— 想一次跑更远就调大它。步频不变,只是走得更远。';
+    lapI.style.cssText='width:42px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
+    lapI.onclick=e=>e.stopPropagation();
+    lapI.oninput=()=>{ ch.laps=Math.max(1, Math.round(parseFloat(lapI.value)||1)); };
+    const far=document.createElement('button'); far.textContent='跑更远 ×2';
+    far.title='把左右行程再拉长一倍(可超出画布 —— 超出部分自然跑出画面外),圈数同时 +1,步频不变';
+    far.style.cssText='font:11px system-ui;background:#223;border:1px solid #2a3330;border-radius:4px;color:#8ef;cursor:pointer;padding:2px 6px';
+    far.onclick=e=>{ e.stopPropagation();
+      const mid=((ch.x0||0)+(ch.x1||0))/2, half=Math.max(W*0.62, Math.abs((ch.x1||0)-(ch.x0||0)))||W*0.62;
+      ch.x0=mid-half; ch.x1=mid+half;          // 行程翻倍,不受画布宽度限制
+      ch.laps=Math.max(1,(ch.laps||1))+1;      // 多迈一轮步子,免得步频被拉快
+      renderCharacters(); };
+    r5.append(mkLabel('圈数'), lapI, far);
+    card.appendChild(r5);
     box.appendChild(card);
   });
 }
