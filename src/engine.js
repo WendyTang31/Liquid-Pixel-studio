@@ -2,9 +2,9 @@
 // 这是时间轴可拖、导出确定性、"预览 == 导出"一致性的根基。预览与导出共用 sampleFrame。
 import { hex2rgb } from './utils.js';
 import { W, H } from './config.js';
-import { pairVectorShapes, solidOutlinePolys, rasterizeVectorSolids } from './vector.js';
+import { pairVectorShapes, solidOutlinePolys, rasterizeVectorSolids, applyFireflyRigid } from './vector.js';
 import { segEdgeFx, displaceOutline, splatterDropletPolys, polysCentroid } from './edgefx.js';
-import { labDisp, labEmit, applyLabTint, hasLabFx, dotsStat } from './labfx.js';
+import { labDisp, labEmit, applyLabTint, hasLabFx, dotsStat, fireflyDisp, hasFirefly } from './labfx.js';
 
 // 缓动:端点连续、速度/加速度在端点收敛(smootherstep 最柔)。
 // 物理组(backOut/elasticOut/bounceOut)刻意在中途越过 1 再回落 —— 过冲/弹跳/回弹的"手感"
@@ -537,13 +537,19 @@ export function sampleFrame(SEQ, states, g, time, P){
     // 不受 warp 粗网格平滑限制。与流动类 fx(slosh/ripple…)叠加:后者仍由 attachFxWarp 加采样位移。
     let solids;
     const efx=segEdgeFx(P, seg, states); // 全局边缘几何(可选范围/是否含过渡)—— 停留段也按区间判定
-    if(efx){
+    // 🪰 萤火虫是【刚性】效果:必须整个图形一起平移,不能走逐像素 warp(那会撕碎形状)。
+    // 故停留段一旦开了它,也改走"逐图形轮廓 → 各自平移 → 重建 SDF"这条路(与边缘几何同一条)。
+    const ff=hasFirefly(st.fx);
+    if(efx || ff){
       const vps=solidOutlinePolys(st);
       if(vps.length){
         const c=polysCentroid(vps);
-        const dpolys=vps.map(({poly,col,strokeW})=>({poly:displaceOutline(poly,c.x,c.y,time,efx), col, strokeW}));
-        const drops=splatterDropletPolys(vps[0].poly, c.x, c.y, time, efx, hex2rgb(st.color));
-        const vsolid=rasterizeVectorSolids([...dpolys, ...drops]).map(s=>({...s, si:seg.si}));
+        const dpolys=efx
+          ? vps.map(({poly,col,strokeW})=>({poly:displaceOutline(poly,c.x,c.y,time,efx), col, strokeW}))
+          : vps;
+        const drops=efx ? splatterDropletPolys(vps[0].poly, c.x, c.y, time, efx, hex2rgb(st.color)) : [];
+        const posed=applyFireflyRigid([...dpolys, ...drops], time, st.fx, null, 0);
+        const vsolid=rasterizeVectorSolids(posed).map(s=>({...s, si:seg.si}));
         const base=st._sdfBase ? [{sdf:st._sdfBase, w:1, si:seg.si}] : []; // 非矢量实心(如图片)保留
         solids=attachFxWarp([...vsolid, ...base], states, time, null, w);
       } else solids=attachFxWarp(solidsOf(seg,states,0), states, time, null, w);
@@ -554,6 +560,8 @@ export function sampleFrame(SEQ, states, g, time, P){
     const balls=suppressSolidDots(st.dots.map(b=>{ const ph=dotPhase(b.x,b.y);
         let X=b.x+P.amp*drift(ph,time,P), Y=b.y+P.amp*drift(ph+3.1,time,P), R=b.r;
         if(fxOn){ const d=behaviorDisp(b.x,b.y,fs.cx,fs.cy,time,fx,fs,w); X+=d.dx; Y+=d.dy; R*=d.rf; }
+        // 🪰 点阵里【一个点就是一个单位】→ 用点自身坐标作身份键,每点一只萤火虫
+        if(ff){ const d=fireflyDisp(b.x,b.y,time,fx,w); X+=d.dx; Y+=d.dy; R*=d.rf; }
         return {x:X, y:Y, r:R, c:b.c, sfA:b.sf};
       }).concat(fxOn?labEmit(fx,time,fs,1):[]), seg, states, 0);
     applyLabTint(balls, fx, time, 1, col);        // 🌈 彩虹:逐球上色(含发射出来的球)

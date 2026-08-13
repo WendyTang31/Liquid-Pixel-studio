@@ -10,6 +10,7 @@ import { distanceField } from './samplers.js';
 import { hasRig, interpPosedShapes } from './rig.js';
 import { traceComponents } from './path.js';
 import { segEdgeFx, displaceOutline, splatterDropletPolys, polysCentroid } from './edgefx.js';
+import { fireflyDisp, hasFirefly } from './labfx.js';
 
 const OUTN = 120; // 每个轮廓的重采样点数(两端必须一致才能逐点插值)
 
@@ -245,7 +246,8 @@ export function computeVectorPolys(states, SEQ, g, time, Pr, includeHold=false){
   const {seg, lt}=segAt(SEQ, g);
   // 停留:主编辑器由状态实心 SDF 显示,故默认返回空(不重复画)。但【角色】只走本函数、无 SDF 兜底,
   // 必须 includeHold=true 才能在停留帧画出静态轮廓 —— 否则带 hold 的帧(如抬头停顿)会整段消失(闪烁)。
-  if(seg.type==='hold') return includeHold ? solidOutlinePolys(states[seg.si]) : [];
+  if(seg.type==='hold') return includeHold
+    ? applyFireflyRigid(solidOutlinePolys(states[seg.si]), time, states[seg.si]?.fx, null, 0) : [];
   const A=states[seg.a], B=states[seg.b], e=(seg.ease||smooth)(lt); // 与点阵同一速度曲线(可调起步/落位)
   const ca=hex2rgb(A.color), cb=hex2rgb(B.color), out=[];
   // 🌊 整体剪影变形:把两状态各自【所有矢量图层】并成一个剪影(多连通=多轮廓),整条轮廓逐点最短路
@@ -318,9 +320,30 @@ export function computeVectorPolys(states, SEQ, g, time, Pr, includeHold=false){
     const c=polysCentroid(out);
     const disp=out.map(o=>({...o, poly:displaceOutline(o.poly, c.x, c.y, time, efx)}));
     const drops=splatterDropletPolys(out[0].poly, c.x, c.y, time, efx, out[0].col);
-    return [...disp, ...drops];
+    return applyFireflyRigid([...disp, ...drops], time, A?.fx, B?.fx, e);
   }
-  return out;
+  return applyFireflyRigid(out, time, A?.fx, B?.fx, e);
+}
+
+// 🪰 萤火虫(刚性):把【每个图形整体】平移一个它自己的盘旋位移 —— 位移在图形内部处处相同,
+// 所以形状分毫不变,只是整块在空中打转。这与逐像素位移场是本质不同的施加方式:
+// 后者会把同一个图形的不同部位推向不同方向,把形状撕碎(正是"椭圆变成锯齿块"的成因)。
+// 身份键取该图形【自己的质心】→ 每个图形有自己的半径/转速/相位,各飞各的。
+// 两端 fx 都传入,按同一个缓动 e 混合位移 → 过渡期连续,端点精确落回各自状态。
+export function applyFireflyRigid(polys, time, fxA, fxB, e=0){
+  if(time==null || !polys?.length || (!hasFirefly(fxA) && !hasFirefly(fxB))) return polys;
+  const k=(e==null)?0:Math.max(0,Math.min(1,e));
+  return polys.map(o=>{
+    if(!o.poly?.length) return o;
+    const c=polyCentroid(o.poly);
+    const kx=c.x/W, ky=c.y/H;                                  // 归一化后作身份键与采样位置
+    const a=hasFirefly(fxA)?fireflyDisp(kx,ky,time,fxA):null;
+    const b=hasFirefly(fxB)?fireflyDisp(kx,ky,time,fxB):null;
+    const dx=((a?a.dx:0)*(1-k) + (b?b.dx:0)*k)*W;
+    const dy=((a?a.dy:0)*(1-k) + (b?b.dy:0)*k)*H;
+    if(!dx && !dy) return o;
+    return {...o, poly:o.poly.map(p=>({x:p.x+dx, y:p.y+dy}))};
+  });
 }
 
 // 轮廓多边形(全部并成一个蒙版)→ SDF solid,喂给既有实心渲染(软边/gamma/辉光/镜头一致)。

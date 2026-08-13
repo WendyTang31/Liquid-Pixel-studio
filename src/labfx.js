@@ -318,20 +318,9 @@ export function labDisp(x, y, cx, cy, t, fx, st, wIn) {
     dx += a * 0.6 * Math.sin(w * 0.37 + ph * TAU * 1.4);
     rf *= 1 + fx.floaty * 0.12 * Math.sin(w * 0.7 + ph * TAU);
   }
-  if (fx.firefly) { // 🪰 萤火虫:每颗各绕一个小圈盘旋 + 盘旋中心极缓游移 + 呼吸式明灭
-    const ph = dotPh(x, y, fx);                          // 逐点异相(coherence=1 时才会整体同步)
-    const a = fx.firefly * FXB * 1.6;
-    // 每只自己的半径与转速 —— 由坐标哈希定,故恒定不抖,且各飞各的
-    const rad  = 0.45 + 0.55 * hash1(ph * 61.7 + 5);
-    const spin = w * (0.7 + 0.6 * hash1(ph * 37.1 + 2)) + ph * TAU;
-    dx += a * rad * Math.cos(spin);                       // 同频 x/y 正交 = 真圆周盘旋
-    dy += a * rad * Math.sin(spin);
-    // 更慢的一层游移:让"盘旋中心"也在飘,于是整群像在空中缓缓弥散,而不是钉在原地转圈
-    dx += a * 0.6 * Math.sin(w * 0.21 + ph * 4.1);
-    dy += a * 0.6 * Math.cos(w * 0.17 + ph * 5.3);
-    // 明灭:只改半径(rf)不改位置。逐点异相 → 聚合亮度平滑,不构成频闪;频率同样在 ≤2.5Hz 之内
-    rf *= 1 + fx.firefly * 0.4 * Math.sin(w * 0.8 + ph * TAU);
-  }
+  // 🪰 萤火虫【不在这里施加】—— 它是【刚性】效果,必须整单位同向移动,不能逐像素算,
+  // 否则同一个图形的不同部位被推向不同方向,形状就被撕碎了。见 fireflyDisp,由调用方按"单位"施加:
+  // 点阵里一个点=一个单位;实心/矢量里【整个图形】=一个单位。
   if (fx.shimmer) { // 三组交叉行波 = 焦散网格(水面反光);既推点也调亮度,亮度部分让它"闪"
     const a = fx.shimmer * FXB * 1.2;
     const p = Math.sin(9.1 * x + w * 0.8) + Math.sin(7.7 * y - w * 0.63) + Math.sin(6.3 * (x + y) + w * 0.45);
@@ -359,6 +348,28 @@ export function labDisp(x, y, cx, cy, t, fx, st, wIn) {
   if (vis) { const damp = 1 - 0.55 * vis; dx *= damp; dy *= damp; }
   return { dx, dy, rf };
 }
+
+// 🪰 萤火虫(刚性位移):对一个【单位】整体施加同一个位移 —— 单位内部处处相同,故形状完全不变形。
+// kx,ky = 该单位的身份键:点阵里传点自身坐标(每点一只萤火虫);实心/矢量里传【图形质心】
+//         (整个图形作为一只萤火虫盘旋)。键决定它自己的半径/转速/相位,故各飞各的且恒定不抖。
+// 返回归一化画布单位的 {dx,dy,rf};关闭时精确返回零位移、单位半径。
+export function fireflyDisp(kx, ky, t, fx, wIn){
+  if(!fx || !fx.firefly) return { dx:0, dy:0, rf:1 };
+  const vis = Math.min(1, Math.max(0, fx.viscosity || 0));
+  const fbase = Math.min(2.5, fx.freq || 0.6);                 // 光敏红线:同样硬钳 ≤2.5Hz
+  const cyc = (wIn != null ? wIn / TAU : fbase * t) * (1 - 0.7 * vis);
+  const w = TAU * cyc;
+  const ph = dotPh(kx, ky, fx);                                // 逐单位异相(coherence=1 才整体同步)
+  const a = fx.firefly * FXB * 1.6;
+  const rad  = 0.45 + 0.55 * hash1(ph * 61.7 + 5);             // 每只自己的盘旋半径
+  const spin = w * (0.7 + 0.6 * hash1(ph * 37.1 + 2)) + ph * TAU; // 每只自己的转速与起始角
+  let dx = a * rad * Math.cos(spin);                            // 同频 x/y 正交 = 真圆周盘旋
+  let dy = a * rad * Math.sin(spin);
+  dx += a * 0.6 * Math.sin(w * 0.21 + ph * 4.1);                // 盘旋中心极缓游移
+  dy += a * 0.6 * Math.cos(w * 0.17 + ph * 5.3);
+  return { dx, dy, rf: 1 + fx.firefly * 0.4 * Math.sin(w * 0.8 + ph * TAU) };
+}
+export const hasFirefly = fx => !!(fx && fx.firefly);
 
 // ── 彩虹:唯一只改【颜色】的效果 ──
 // 色相按【绝对坐标】铺开,而不是相对形体质心 —— 相对质心的话,过渡期质心一移动,
