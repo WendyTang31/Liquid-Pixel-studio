@@ -6,7 +6,7 @@ import { sampleFrame, vectorSolids } from '../engine.js';
 import { computeVectorPolys } from '../vector.js';
 import { renderToImageData } from '../render.js';
 import { charactersSolids } from '../characters.js';
-import { applyOutputTransform } from '../outtx.js';
+import { applyOutputTransform, defaultMesh, resampleMesh } from '../outtx.js';
 import { exclusiveExportMode } from './exportmode.js';
 
 const SRC=256;                       // 预览用的基础渲染尺寸(小、够看)
@@ -32,21 +32,22 @@ function draw(){
   const t=P.outTx;
   if(!outCv) outCv=document.createElement('canvas');
   const src=baseFrame();
-  applyOutputTransform(src, { w:t.w, h:t.h, fit:t.fit, mirX:t.mirX, mirY:t.mirY, rot:t.rot, warp:t.warp, corners:t.corners }, outCv);
+  applyOutputTransform(src, { w:t.w, h:t.h, fit:t.fit, mirX:t.mirX, mirY:t.mirY, rot:t.rot, warp:t.warp, gx:t.gx, gy:t.gy, mesh:t.mesh }, outCv);
   const L=layout();
   prevCtx.clearRect(0,0,prevCanvas.width,prevCanvas.height);
-  // 目标画幅底框(棋盘感的暗底 + 边框)
   prevCtx.fillStyle='#0d1210'; prevCtx.fillRect(L.ox,L.oy,L.pw,L.ph);
   prevCtx.drawImage(outCv, L.ox, L.oy, L.pw, L.ph);
   prevCtx.strokeStyle='#2f6f5a'; prevCtx.lineWidth=1; prevCtx.strokeRect(L.ox+.5,L.oy+.5,L.pw-1,L.ph-1);
-  // warp:画四角连线 + 手柄
+  // warp:画网格线 + 每个控制点手柄
   if(t.warp){
-    const pts=t.corners.map(([x,y])=>[L.ox+x*L.pw, L.oy+y*L.ph]);
-    prevCtx.strokeStyle='#8ef'; prevCtx.lineWidth=1.5; prevCtx.beginPath();
-    prevCtx.moveTo(...pts[0]); for(let i=1;i<4;i++) prevCtx.lineTo(...pts[i]); prevCtx.closePath(); prevCtx.stroke();
-    pts.forEach((p,i)=>{ prevCtx.fillStyle=i===drag?'#ffd479':'#8ef';
-      prevCtx.beginPath(); prevCtx.arc(p[0],p[1],5,0,6.283); prevCtx.fill();
-      prevCtx.strokeStyle='#0a0a0a'; prevCtx.lineWidth=1; prevCtx.stroke(); });
+    const gx=t.gx||1, gy=t.gy||1, px=(i,j)=>{ const p=t.mesh[j*(gx+1)+i]; return [L.ox+p[0]*L.pw, L.oy+p[1]*L.ph]; };
+    prevCtx.strokeStyle='rgba(136,238,255,0.6)'; prevCtx.lineWidth=1;
+    for(let j=0;j<=gy;j++){ prevCtx.beginPath(); for(let i=0;i<=gx;i++){ const p=px(i,j); i?prevCtx.lineTo(...p):prevCtx.moveTo(...p);} prevCtx.stroke(); }
+    for(let i=0;i<=gx;i++){ prevCtx.beginPath(); for(let j=0;j<=gy;j++){ const p=px(i,j); j?prevCtx.lineTo(...p):prevCtx.moveTo(...p);} prevCtx.stroke(); }
+    for(let k=0;k<t.mesh.length;k++){ const j=(k/(gx+1))|0, i=k%(gx+1), p=px(i,j);
+      prevCtx.fillStyle=k===drag?'#ffd479':'#8ef';
+      prevCtx.beginPath(); prevCtx.arc(p[0],p[1],4.5,0,6.283); prevCtx.fill();
+      prevCtx.strokeStyle='#0a0a0a'; prevCtx.lineWidth=1; prevCtx.stroke(); }
   }
 }
 function loop(){ if(!rafOn) return; if(isVisible()){ draw(); } requestAnimationFrame(loop); }
@@ -54,8 +55,8 @@ function isVisible(){ return prevCanvas && prevCanvas.offsetParent!==null && $('
 
 function cornerAt(px,py){
   const t=P.outTx; if(!t.warp) return -1; const L=layout();
-  for(let i=0;i<4;i++){ const x=L.ox+t.corners[i][0]*L.pw, y=L.oy+t.corners[i][1]*L.ph;
-    if(Math.hypot(px-x,py-y)<12) return i; }
+  for(let k=0;k<t.mesh.length;k++){ const x=L.ox+t.mesh[k][0]*L.pw, y=L.oy+t.mesh[k][1]*L.ph;
+    if(Math.hypot(px-x,py-y)<11) return k; }
   return -1;
 }
 export function initOutTxPanel(){
@@ -77,9 +78,13 @@ export function initOutTxPanel(){
   if($('outTxFit')){ $('outTxFit').value=t.fit; $('outTxFit').onchange=e=>{ t.fit=e.target.value; draw(); }; }
   if($('outTxRot')){ $('outTxRot').value=String(t.rot); $('outTxRot').onchange=e=>{ t.rot=parseInt(e.target.value,10)||0; draw(); }; }
   const bindCk=(id,key)=>{ const el=$(id); if(!el) return; el.checked=!!t[key];
-    el.addEventListener('change',()=>{ t[key]=el.checked; if(key==='warp' && el.checked && !t.corners) t.corners=[[0,0],[1,0],[1,1],[0,1]]; draw(); }); };
+    el.addEventListener('change',()=>{ t[key]=el.checked; if(key==='warp' && el.checked && !t.mesh){ t.gx=t.gy=1; t.mesh=defaultMesh(1,1); } draw(); }); };
   bindCk('outTxMirX','mirX'); bindCk('outTxMirY','mirY'); bindCk('outTxWarp','warp');
-  if($('outTxWarpReset')) $('outTxWarpReset').onclick=()=>{ t.corners=[[0,0],[1,0],[1,1],[0,1]]; draw(); };
+  if($('outTxWarpReset')) $('outTxWarpReset').onclick=()=>{ t.mesh=defaultMesh(t.gx||1, t.gy||1); draw(); };
+  // 网格密度:改格数时在旧网格上重采样 → 保持当前 warp 形状,只是控制点更密。
+  if($('outTxGrid')){ $('outTxGrid').value=`${t.gx||1}x${t.gy||1}`;
+    $('outTxGrid').onchange=e=>{ const [nx,ny]=e.target.value.split('x').map(n=>parseInt(n,10)||1);
+      t.mesh=resampleMesh(t.mesh, t.gx||1, t.gy||1, nx, ny); t.gx=nx; t.gy=ny; if(!t.warp){ t.warp=true; $('outTxWarp').checked=true; } draw(); }; }
   // 拖四角
   if(prevCanvas){
     const pos=e=>{ const r=prevCanvas.getBoundingClientRect();
@@ -87,7 +92,7 @@ export function initOutTxPanel(){
     prevCanvas.addEventListener('pointerdown',e=>{ const [x,y]=pos(e); drag=cornerAt(x,y);
       if(drag>=0){ prevCanvas.setPointerCapture(e.pointerId); e.preventDefault(); } });
     prevCanvas.addEventListener('pointermove',e=>{ if(drag<0) return; const [x,y]=pos(e); const L=layout();
-      t.corners[drag]=[ Math.max(-0.5,Math.min(1.5,(x-L.ox)/L.pw)), Math.max(-0.5,Math.min(1.5,(y-L.oy)/L.ph)) ]; draw(); });
+      t.mesh[drag]=[ Math.max(-0.5,Math.min(1.5,(x-L.ox)/L.pw)), Math.max(-0.5,Math.min(1.5,(y-L.oy)/L.ph)) ]; draw(); });
     prevCanvas.addEventListener('pointerup',()=>{ drag=-1; draw(); });
   }
   sync();

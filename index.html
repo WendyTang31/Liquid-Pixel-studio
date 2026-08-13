@@ -511,8 +511,10 @@
         <select id="outTxRot" style="flex:1"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select>
         <label class="ck" style="margin-left:6px"><input type="checkbox" id="outTxMirX"> ⇋水平</label>
         <label class="ck"><input type="checkbox" id="outTxMirY"> ⇅垂直</label></div>
-      <div class="row"><label class="ck" title="四角透视 warp:拖预览里的四个角把整段动画拧成任意四边形(贴合斜面/异形屏)。"><input type="checkbox" id="outTxWarp"> 四角 warp(拖角)</label>
-        <button id="outTxWarpReset" style="margin-left:6px">↺ 复位</button></div>
+      <div class="row"><label class="ck" title="网格 warp:拖预览里的控制点把整段动画拧成任意形状(贴合斜面/异形屏)。1×1=四角透视;调高网格密度可分区精细微调。"><input type="checkbox" id="outTxWarp"> 网格 warp(拖点)</label>
+        <label style="min-width:auto;margin-left:6px" title="网格密度:格数越多控制点越密,越能局部精细微调。改密度会保持当前形状。">网格</label>
+        <select id="outTxGrid" style="width:56px"><option>1x1</option><option>2x2</option><option>3x3</option><option>4x4</option><option>5x5</option><option>4x2</option><option>6x3</option></select>
+        <button id="outTxWarpReset" style="margin-left:4px">↺ 复位</button></div>
       <canvas id="outTxPrev" width="300" height="200" style="width:100%;background:#0a0a0a;border:1px solid #2a3330;border-radius:4px;touch-action:none;cursor:crosshair"></canvas>
       <div class="small" style="opacity:.55;line-height:1.5">▶ 实时预览动画在目标画幅里的样子。勾『四角 warp』后拖动四个蓝角做透视贴合。导出的 MP4/PNG 与此预览一致。</div>
     </div>

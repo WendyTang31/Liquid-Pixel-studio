@@ -34,6 +34,69 @@ function proj(m,x,y){ const X=m[0]*x+m[1]*y+m[2], Y=m[3]*x+m[4]*y+m[5], W=m[6]*x
 // 默认四角(无 warp):铺满目标(归一化 0..1)。顺序 = 左上,右上,右下,左下。
 export const IDENTITY_CORNERS = [[0,0],[1,0],[1,1],[0,1]];
 
+// ── 网格 warp(mesh):(gx+1)×(gy+1) 个控制点,行主序,归一化目标坐标。每点可拖 → 分区精细 warp。──
+// 默认 = 规则网格(铺满目标)。gx=gy=1 即 2×2 = 四角(退化为透视 corner-pin)。
+export function defaultMesh(gx,gy){
+  const pts=[]; for(let j=0;j<=gy;j++) for(let i=0;i<=gx;i++) pts.push([i/gx, j/gy]); return pts;
+}
+const mAt=(mesh,gx,i,j)=>mesh[j*(gx+1)+i];
+// 双线性求任意 (u,v)∈[0,1] 在当前网格里的目标点 —— 用于改网格密度时保形重采样。
+export function evalMesh(mesh,gx,gy,u,v){
+  const fx=Math.max(0,Math.min(gx,u*gx)), fy=Math.max(0,Math.min(gy,v*gy));
+  const i=Math.min(gx-1,Math.max(0,Math.floor(fx))), j=Math.min(gy-1,Math.max(0,Math.floor(fy)));
+  const tx=fx-i, ty=fy-j;
+  const a=mAt(mesh,gx,i,j), b=mAt(mesh,gx,i+1,j), c=mAt(mesh,gx,i,j+1), d=mAt(mesh,gx,i+1,j+1);
+  const lx=(p,q)=>[p[0]+(q[0]-p[0])*tx, p[1]+(q[1]-p[1])*tx];
+  const top=lx(a,b), bot=lx(c,d);
+  return [top[0]+(bot[0]-top[0])*ty, top[1]+(bot[1]-top[1])*ty];
+}
+// 改网格密度:在旧网格上按新规则位置求值 → 保持当前 warp 形状,不清零。
+export function resampleMesh(mesh,gx,gy,ngx,ngy){
+  const out=[]; for(let j=0;j<=ngy;j++) for(let i=0;i<=ngx;i++) out.push(evalMesh(mesh,gx,gy,i/ngx,j/ngy)); return out;
+}
+// 3 点仿射:源三角 s→目标三角 d,返回 canvas setTransform 参数 [a,d,b,e,c,f]。
+function affine3(s,d){
+  const Si=inv3([s[0][0],s[0][1],1, s[1][0],s[1][1],1, s[2][0],s[2][1],1]);
+  const col=k=>[ Si[0]*d[0][k]+Si[1]*d[1][k]+Si[2]*d[2][k],
+                 Si[3]*d[0][k]+Si[4]*d[1][k]+Si[5]*d[2][k],
+                 Si[6]*d[0][k]+Si[7]*d[1][k]+Si[8]*d[2][k] ];
+  const [a,b,c]=col(0), [dd,e,f]=col(1);
+  return [a,dd,b,e,c,f];   // setTransform(m11,m12,m21,m22,dx,dy)
+}
+// 目标三角略微向外扩(抗三角接缝的细线/漏隙)。
+function inflate(tri,px){ const cx=(tri[0][0]+tri[1][0]+tri[2][0])/3, cy=(tri[0][1]+tri[1][1]+tri[2][1])/3;
+  return tri.map(([x,y])=>{ const dx=x-cx,dy=y-cy,L=Math.hypot(dx,dy)||1; return [x+dx/L*px, y+dy/L*px]; }); }
+// 镜像/旋转预处理:先把源翻/转进临时画布,网格再 warp 它(方位与快路径一致)。
+function preTransform(src,mirX,mirY,rot){
+  const r=((rot%360)+360)%360, sw=src.width, sh=src.height;
+  const w=(r===90||r===270)?sh:sw, h=(r===90||r===270)?sw:sh;
+  const c=document.createElement('canvas'); c.width=w; c.height=h; const g=c.getContext('2d');
+  g.translate(w/2,h/2); g.rotate(r*Math.PI/180); g.scale(mirX?-1:1, mirY?-1:1); g.drawImage(src,-sw/2,-sh/2);
+  return c;
+}
+// 网格 warp:逐格 2 三角,把源规则网格仿射贴到目标形变网格。快、复用 drawImage、可任意密。
+function meshWarp(src, octx, w, h, mesh, gx, gy, mirX, mirY, rot){
+  const pre=(mirX||mirY||rot) ? preTransform(src,mirX,mirY,rot) : src;
+  const pw=pre.width, ph=pre.height;
+  octx.clearRect(0,0,w,h);
+  for(let j=0;j<gy;j++) for(let i=0;i<gx;i++){
+    // 源四角(像素)+ 目标四角(像素)
+    const sTL=[i/gx*pw, j/gy*ph], sTR=[(i+1)/gx*pw, j/gy*ph], sBL=[i/gx*pw,(j+1)/gy*ph], sBR=[(i+1)/gx*pw,(j+1)/gy*ph];
+    const P0=mAt(mesh,gx,i,j), P1=mAt(mesh,gx,i+1,j), P2=mAt(mesh,gx,i,j+1), P3=mAt(mesh,gx,i+1,j+1);
+    const dTL=[P0[0]*w,P0[1]*h], dTR=[P1[0]*w,P1[1]*h], dBL=[P2[0]*w,P2[1]*h], dBR=[P3[0]*w,P3[1]*h];
+    const tris=[[[sTL,sTR,sBL],[dTL,dTR,dBL]], [[sTR,sBR,sBL],[dTR,dBR,dBL]]];
+    for(const [s,d] of tris){
+      const di=inflate(d,0.6);
+      octx.save();
+      octx.beginPath(); octx.moveTo(di[0][0],di[0][1]); octx.lineTo(di[1][0],di[1][1]); octx.lineTo(di[2][0],di[2][1]); octx.closePath(); octx.clip();
+      const m=affine3(s,di); octx.setTransform(m[0],m[1],m[2],m[3],m[4],m[5]);
+      octx.drawImage(pre,0,0);
+      octx.restore();
+    }
+  }
+  octx.setTransform(1,0,0,1,0,0);
+}
+
 // 源 UV 的镜像/旋转:把采样坐标 (u,v)∈[0,1] 变换后再取源像素。rot=0/90/180/270(顺时针)。
 function srcUV(u,v,mirX,mirY,rot){
   let a=u, b=v;
@@ -73,6 +136,13 @@ export function applyOutputTransform(src, opts, outCanvas){
   const octx=out.getContext('2d');
   octx.clearRect(0,0,w,h);
   const sw=src.width, sh=src.height;
+  // 🕸 网格 warp:mesh(gx×gy 控制点)。>1×1 → 逐格三角仿射(任意密、可分区精细拖);
+  //    1×1(四角)→ 走透视 homography(更"正"的透视贴合)。mesh 行主序,四角 = TL,TR,BL,BR。
+  if(warp && opts.mesh){
+    const m=opts.mesh;
+    if(opts.gx>1 || opts.gy>1){ meshWarp(src, octx, w, h, m, opts.gx, opts.gy, mirX, mirY, rot); return out; }
+    opts={...opts, corners:[m[0], m[1], m[3], m[2]]};   // TL,TR,BR,BL(homography 角序)
+  }
   const dc=destCorners(sw, sh, opts);
   // 快路径:无 warp 且是【铺满矩形】(fit/fill/stretch 的 dc 是轴对齐矩形)→ 用 drawImage(含镜像/旋转)。
   const axisAligned = !warp;
