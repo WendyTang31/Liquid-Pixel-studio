@@ -191,6 +191,38 @@ function elementToImportSubs(el, m){
 export function svgHasAnimation(svgText){
   return /<animate(Transform|Motion)?[\s>]/i.test(svgText||'');
 }
+// 元素的几何本身是否被 SMIL 动画(<animate attributeName="d"/"points"/圆的 cx/cy/r…)。
+function hasAnimatedGeom(el){
+  try{ return !!el.querySelector('animate[attributeName="d"],animate[attributeName="points"],animate[attributeName="cx"],animate[attributeName="cy"],animate[attributeName="r"],animate[attributeName="x"],animate[attributeName="y"],animate[attributeName="width"],animate[attributeName="height"]'); }
+  catch(_){ return false; }
+}
+// 🔑 读【被 SMIL 动画后】的路径几何。关键:getAttribute('d') 只返回【静态基值】(与时间无关),
+// 走路的 25 段 d 动画全被漏掉 → 导入后每帧同一姿势。getPointAtLength 反映动画当前呈现值,
+// 沿弧长等距取 n 点重建折线(n 由基础 d 的顶点数决定,故各帧锚点数恒定 → 木偶变形能逐帧配对)。
+function sampledAnimGeom(el){
+  let L=0; try{ L=el.getTotalLength(); }catch(_){ return null; }
+  if(!(L>0)) return null;
+  const dstr=el.getAttribute('d')||el.getAttribute('points')||'';
+  const nCmd=(dstr.match(/[MLTCSQAHVmltcsqahv]/g)||[]).length || (dstr.split(/[ ,]+/).filter(Boolean).length/2);
+  const n=Math.max(2, Math.min(80, Math.round(nCmd)));
+  const closed=/z/i.test(dstr) || el.tagName.toLowerCase()==='polygon';
+  const denom = closed ? n : (n-1);
+  const anchors=[];
+  for(let i=0;i<n;i++){ const d=L*(i/denom); let p;
+    try{ p=el.getPointAtLength(Math.min(L,d)); }catch(_){ p={x:0,y:0}; }
+    anchors.push({x:p.x, y:p.y}); }
+  return anchors;
+}
+// 采样单个元素 → subs(描边=中心线,填充=轮廓)。有几何动画的元素改读动画呈现值(见 sampledAnimGeom)。
+function importSubsAnimAware(el, m){
+  if(hasAnimatedGeom(el)){
+    const anchors=sampledAnimGeom(el);
+    if(anchors){ const info=strokeInfoOf(el);
+      return { subs:[{anchors, closed:/z/i.test(el.getAttribute('d')||'')||el.tagName.toLowerCase()==='polygon'}],
+               sw: info.isStroke ? info.sw*matScale(m) : 0 }; }
+  }
+  return elementToImportSubs(el, m);   // 无几何动画 → 静态解析(不变形,各帧一致)
+}
 
 // SMIL 里所有 <animate*> 的 keyTimes 并集(0..1)= 动画真正定义的关键帧时刻。
 // 用它采样,才不会像固定 N 帧那样把「周期性走路」采成同一相位(帧 1-4 全同、走路消失)。
@@ -255,7 +287,7 @@ export function importSvgAnimation(svgText, W, H, allocLid, nextId, opts={}){
       prims.forEach((el,ei)=>{
         let m=null;
         if(rootInv){ try{ const s=el.getScreenCTM(); if(s) m=rootInv.multiply(s); }catch(_){} }
-        const {subs, sw}=elementToImportSubs(el, m);       // 描边元素 → 中心线+线宽;填充 → 轮廓
+        const {subs, sw}=importSubsAnimAware(el, m);       // 有几何动画→读动画呈现值;否则静态。描边→中心线+线宽
         subs.forEach((sub,si)=>{ applyMatrix(sub, m); sub._lid=baseLid[ei]*100+si; sub._sw=sw; frame.push(sub); });
       });
       raw.push({frame, t, sig:frameSig(frame)});
