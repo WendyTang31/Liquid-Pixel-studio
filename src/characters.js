@@ -14,7 +14,7 @@ export function makeCharacter(name, frames, cycleSec){
     states:frames, SEQ:null, seqDirty:true, cycleSec:cycleSec||1,
     x0:0, y0:0, x1:0, y1:0,      // 位移:循环内从 (x0,y0) 线性走到 (x1,y1)(px,画布坐标偏移)
     scale:1, rot:0, speed:1, visible:true,   // rot=整体旋转(度)
-    laps:1,                                  // 跑几圈步子才走完一趟位移(>1 = 一次跑更远,中途不回原位)
+    laps:1, wrap:false,                      // laps=跑几圈才走完一趟位移;wrap=环绕(出右回左,永远向前)
     mirX:false, mirY:false,                  // 整体镜像(水平/垂直):跑向左 ⇄ 跑向右
   };
 }
@@ -47,15 +47,32 @@ export function charTime(ch, clock, gMain){
   // 【步频循环】与【位移行程】解耦:动画每 T 秒循环一次(步频不变),但位移要跑满 laps 圈才走完
   // x0→x1 一趟。laps=1 就是原来的行为;laps=2 = 迈两轮步子、位置一路向前推进,而不是第二圈弹回原点。
   const t=((total%T)+T)%T;
-  const prog=(((total/(T*laps))%1)+1)%1;
-  return { SEQ, T, t, prog, started, laps };
+  const progC=total/(T*laps);           // 连续里程(可 >1,永不回头)—— 环绕平移用
+  const prog=((progC%1)+1)%1;           // 循环内进度 0..1 —— 线性往返用
+  return { SEQ, T, t, prog, progC, started, laps };
 }
+// 取模到 [0,m):JS 的 % 对负数会返回负值,直接用会让向左跑的角色瞬移。
+const mod=(v,m)=>((v%m)+m)%m;
+const WRAP_PAD=200;                     // 环绕出画余量:够角色整个走出画面再折返,接缝落在画外
 // 角色当前帧的位移形变后轮廓 polys(逻辑画布坐标)。绕画布中心缩放,再按位移进度平移。
 export function charPolys(ch, clock, gMain){
   if(!ch.visible || !ch.states?.length) return [];
-  const { SEQ, t, prog, started }=charTime(ch, clock, gMain);
+  const { SEQ, t, prog, progC, started }=charTime(ch, clock, gMain);
   if(!started) return [];                             // 还没到出场时间
-  const dx=(ch.x0||0)+((ch.x1||0)-(ch.x0||0))*prog, dy=(ch.y0||0)+((ch.y1||0)-(ch.y0||0))*prog;
+  // 🔁 跑不停:画布只有 W 宽,想"一直往前跑"不能靠把行程拉到几千像素 —— 那样绝大部分时间人在画外,
+  // 看起来就是"跑到边上被裁成一条线、又凭空出现在中间"。正解是【环绕平移】:走到右边画外就从左边画外
+  // 接着进来。环绕周期 = 画布宽 + 余量,翻转点在画外发生 → 肉眼完全看不出接缝,视觉上就是永远向前跑。
+  let dx, dy;
+  if(ch.wrap){
+    const span=W+WRAP_PAD;                              // 一个环绕周期(画布宽 + 出画余量)
+    const perLap=((ch.x1||0)-(ch.x0||0)) || W;          // 跑满 laps 圈前进多少 px(正负 = 方向)
+    const travelled=perLap*progC;                       // 连续里程,永不回头
+    dx = -W/2 - WRAP_PAD/2 + mod(travelled, span);      // 取模 → 出右画外即从左画外接着进来
+    dy = (ch.y0||0);                                    // 环绕模式纵向固定(要斜跑就关掉环绕)
+  } else {
+    dx=(ch.x0||0)+((ch.x1||0)-(ch.x0||0))*prog;
+    dy=(ch.y0||0)+((ch.y1||0)-(ch.y0||0))*prog;
+  }
   const sc=ch.scale||1, cx=W/2, cy=H/2;
   const ang=(ch.rot||0)*Math.PI/180, ca=Math.cos(ang), sa=Math.sin(ang); // 整体旋转(绕画面中心)
   const mx=ch.mirX?-1:1, my=ch.mirY?-1:1;                                 // 整体镜像(在旋转之前,故是"角色自身"翻面)
@@ -85,7 +102,7 @@ export function serializeCharacters(){
   return store.characters.map(ch=>({
     id:ch.id, name:ch.name, cycleSec:ch.cycleSec,
     x0:ch.x0, y0:ch.y0, x1:ch.x1, y1:ch.y1, scale:ch.scale, rot:ch.rot||0, speed:ch.speed, visible:ch.visible,
-    mirX:!!ch.mirX, mirY:!!ch.mirY, sync:ch.sync||'free', delay:ch.delay||0, laps:ch.laps||1,
+    mirX:!!ch.mirX, mirY:!!ch.mirY, sync:ch.sync||'free', delay:ch.delay||0, laps:ch.laps||1, wrap:!!ch.wrap,
     states:ch.states.map(s=>({ name:s.name, color:s.color, hold:s.hold, dur:s.dur,
       shapes:JSON.parse(JSON.stringify(s.shapes)) })),
   }));
@@ -98,7 +115,7 @@ export function hydrateCharacters(arr){
       hold:s.hold||0, dur:s.dur||0.1 }));
     return { id:d.id, name:d.name, states:frames, SEQ:null, seqDirty:true, cycleSec:d.cycleSec||1,
       x0:d.x0||0, y0:d.y0||0, x1:d.x1||0, y1:d.y1||0, scale:d.scale??1, rot:d.rot||0, speed:d.speed??1,
-      visible:d.visible!==false, mirX:!!d.mirX, mirY:!!d.mirY, sync:d.sync||'free', delay:d.delay||0, laps:d.laps||1 };
+      visible:d.visible!==false, mirX:!!d.mirX, mirY:!!d.mirY, sync:d.sync||'free', delay:d.delay||0, laps:d.laps||1, wrap:!!d.wrap };
   });
 }
 export function loadCharacters(arr){

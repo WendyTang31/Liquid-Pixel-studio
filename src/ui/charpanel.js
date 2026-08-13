@@ -123,7 +123,9 @@ export function renderCharacters(){
       ch.x0=mid-half; ch.x1=mid+half;          // 行程翻倍,不受画布宽度限制
       ch.laps=Math.max(1,(ch.laps||1))+1;      // 多迈一轮步子,免得步频被拉快
       renderCharacters(); };
-    r5.append(mkLabel('圈数'), lapI, far);
+    const wrapCk=chk('🔁跑不停', ()=>!!ch.wrap, v=>{ ch.wrap=v; renderCharacters(); },
+      '环绕平移:跑出右边画外就立刻从左边画外接着进来,永远向前跑,接缝在画外看不见。\n想"一直往前跑"请用这个 —— 把行程拉到几千像素是没用的,画布只有这么宽,人跑出去就看不见了。');
+    r5.append(mkLabel('圈数'), lapI, far, wrapCk);
     card.appendChild(r5);
     box.appendChild(card);
   });
