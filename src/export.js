@@ -50,8 +50,8 @@ function makeOfflineRenderer(EW, EH){
       const fr=sampleFrame(store.SEQ, store.states, g, g, P);
       const solids=(fr.solids||[]).concat(
         vectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P), fr.seg, store.states, g, g));
-      if(ss===2){ renderToImageData(bctx,R*2,R*2,fr.balls,fr.col,P,solids,fr.cam); ectx.drawImage(big,0,0,R,R); }
-      else renderToImageData(ectx,R,R,fr.balls,fr.col,P,solids,fr.cam);
+      if(ss===2){ renderToImageData(bctx,R*2,R*2,fr.balls,fr.col,P,solids,fr.cam,fr.inkW); ectx.drawImage(big,0,0,R,R); }
+      else renderToImageData(ectx,R,R,fr.balls,fr.col,P,solids,fr.cam,fr.inkW);
       composeCrop(ec, uv.patch, uv.mirror, uv.plan, out);
     }
     return { ec, out, drawFrame, uv };
@@ -76,8 +76,8 @@ function makeOfflineRenderer(EW, EH){
     // vectorSolids:过渡期的矢量轮廓也带上形变修饰器(尖刺/锯齿等),与预览一致
     const solids=(fr.solids||[]).concat(
       vectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P), fr.seg, store.states, g, g));
-    if(ss===2){ renderToImageData(bctx,RW*2,RH*2,fr.balls,fr.col,P,solids,fr.cam); ectx.drawImage(big,0,0,RW,RH); }
-    else renderToImageData(ectx,RW,RH,fr.balls,fr.col,P,solids,fr.cam);
+    if(ss===2){ renderToImageData(bctx,RW*2,RH*2,fr.balls,fr.col,P,solids,fr.cam,fr.inkW); ectx.drawImage(big,0,0,RW,RH); }
+    else renderToImageData(ectx,RW,RH,fr.balls,fr.col,P,solids,fr.cam,fr.inkW);
     if(P.glow>0){
       glowCtx.clearRect(0,0,RW,RH); glowCtx.drawImage(ec,0,0);
       ectx.save();

@@ -454,6 +454,7 @@
     <div class="divider"></div>
     <div class="sec" title="水墨沉积:全局效果,对所有实心/矢量形状生效,停留与过渡同款。按形状轮廓深度上色 —— 边缘沉积深墨、某一侧更重,内部向背景晕染变淡。">🖋 墨水沉积(水墨)</div>
     <div class="row"><label class="ck" title="开启后所有实心形状呈水墨质感:边缘深、内部淡、可指定沉重方向"><input type="checkbox" id="inkOn"> 启用墨水沉积</label></div>
+    <div class="row"><label title="作用范围:『所有状态』=每一帧都上墨(全局,旧行为);『仅当前状态』=只有当前选中的这个 frame 上墨,进/出它的过渡里平滑淡入淡出,其它帧完全不上墨。">范围</label><select id="inkScope" style="flex:1"><option value="all">所有状态</option><option value="cur">仅当前状态</option></select></div>
     <div class="row"><label title="整体墨色浓度 / 强度">浓度</label><input type="range" id="inkIntensity" min="0" max="1.5" step="0.05" value="0.6"><div class="val" id="vInkIntensity">0.60</div></div>
     <div class="row"><label title="墨水沉重的方向(角度):这一侧的边缘沉积最深,像重力/湿画让墨往这边聚。0°=右,90°=下,180°=左,270°=上">方向°</label><input type="range" id="inkAngle" min="0" max="360" step="5" value="90"><div class="val" id="vInkAngle">90</div></div>
     <div class="row"><label title="边缘沉墨的薄层宽度(指数衰减):越小=只在最边缘一条细线、内部立刻变淡;越大=深墨往内渗得更宽。调小可彻底避免大面积深色块">墨边</label><input type="range" id="inkEdge" min="0.3" max="4" step="0.1" value="1.1"><div class="val" id="vInkEdge">1.1</div></div>

@@ -390,7 +390,16 @@ export function syncUI(){
     set('inkBleed',P.ink.bleed); $('vInkBleed').textContent=(+P.ink.bleed).toFixed(2);
     set('inkDir',P.ink.dir); $('vInkDir').textContent=(+P.ink.dir).toFixed(2);
     set('inkClear',P.ink.clear||0); $('vInkClear').textContent=(+(P.ink.clear||0)).toFixed(2);
-    set('inkDark',P.ink.dark==null?0.85:P.ink.dark); $('vInkDark').textContent=(+(P.ink.dark==null?0.85:P.ink.dark)).toFixed(2); }
+    set('inkDark',P.ink.dark==null?0.85:P.ink.dark); $('vInkDark').textContent=(+(P.ink.dark==null?0.85:P.ink.dark)).toFixed(2);
+    // 范围回填。墨水按【状态 id】钉死,可能钉在【别的】frame 上 —— 那就把下拉的『仅当前状态』
+    // 改写成『仅:那个状态名』,免得站在别的 frame 上看到"仅当前状态"却不上墨、令人困惑。
+    if($('inkScope')){
+      const sc=P.ink.scope, curOpt=$('inkScope').querySelector('option[value="cur"]');
+      if(sc==null||sc==='all'){ if(curOpt) curOpt.textContent='仅当前状态'; $('inkScope').value='all'; }
+      else { const idx=store.states.findIndex(s=>s.id===sc);
+        if(curOpt) curOpt.textContent = idx<0 ? '仅:(已删除)' : (sc===cur().id ? '仅当前状态' : '仅:'+(store.states[idx].name||('状态'+(idx+1))));
+        $('inkScope').value='cur'; }
+    } }
   $('vSpace').textContent=P.spacing; $('vJit').textContent=(+P.jitter).toFixed(1);
   $('vDotR').textContent=(+P.dotR).toFixed(1); $('vStag').textContent=(+P.stag).toFixed(2);
   $('vAmp').textContent='.'+Math.round(P.amp*1000).toString().padStart(3,'0');
@@ -556,6 +565,10 @@ export function initInspector(){
     for(const [id,key,valId,dp] of [['inkIntensity','intensity','vInkIntensity',2],['inkAngle','angle','vInkAngle',0],
       ['inkEdge','edge','vInkEdge',1],['inkBleed','bleed','vInkBleed',2],['inkDir','dir','vInkDir',2],['inkClear','clear','vInkClear',2],['inkDark','dark','vInkDark',2]])
       $(id).addEventListener('input',e=>{ const v=parseFloat(e.target.value); $(valId).textContent=dp?v.toFixed(dp):Math.round(v); P.ink[key]=v; });
+    // 范围:『仅当前状态』把墨水钉在当前这个 frame 的 id 上(按 id → 增删/重排不跑偏);『所有状态』恢复全局
+    if($('inkScope')) $('inkScope').addEventListener('change',e=>{
+      P.ink.scope = e.target.value==='cur' ? cur().id : 'all';
+      setHint(e.target.value==='cur' ? `🖋 墨水沉积现在只作用于当前状态「${cur().name||''}」` : '🖋 墨水沉积:所有状态'); });
   }
 
   // 复制状态:插到组尾之后(直接插 active+1 会落进"主状态与其姿态"之间抢走姿态)

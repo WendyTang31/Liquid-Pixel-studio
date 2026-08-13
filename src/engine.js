@@ -513,6 +513,16 @@ function suppressSolidDots(balls, seg, states, lt){
 }
 
 // 采样一帧:全局时间 g → {seg, balls, col, cam, solids}。预览与导出共用同一函数。
+// 🖋 墨水沉积的逐帧权重(0..1):scope='all'/缺省 → 恒 1(全局)。scope= 某状态 id → 只有那个
+// frame 上墨;进/出该状态的过渡里按缓动 e 平滑淡入淡出(避免硬切一下弹出来)。按 id 不按下标 →
+// 增删/重排状态后仍钉在同一个 frame 上。
+function inkWeight(seg, e, states, P){
+  const sc = P.ink && P.ink.scope;
+  if(sc==null || sc==='all') return 1;
+  if(seg.type==='hold') return states[seg.si]?.id===sc ? 1 : 0;
+  return (states[seg.a]?.id===sc ? 1-e : 0) + (states[seg.b]?.id===sc ? e : 0);
+}
+
 export function sampleFrame(SEQ, states, g, time, P){
   const {segs,T}=SEQ;
   g=Math.max(0,Math.min(T-1e-6,g));
@@ -530,7 +540,7 @@ export function sampleFrame(SEQ, states, g, time, P){
       const tau=Math.min(LT-1e-6, (lt*cycles*LT)%LT);
       const sub=sampleFrame(seg.loop.SEQ, seg.loop.states, tau, time, P);
       return {seg, col:sub.col, cam:camIdentity(cam)?null:cam, balls:applyCam(sub.balls, cam),
-        solids:sub.solids};
+        solids:sub.solids, inkW:inkWeight(seg,0,states,P)};
     }
     const fx=st.fx, fxOn=hasFx(fx), fs=fxOn?dotsStat(st.dots):null;
     // 🌟 边缘几何 fx(细波/锯齿/飞溅):停留期重建【位移后的矢量轮廓 SDF】+ 飞溅水珠 —— 几何级锐利细节,
@@ -565,7 +575,7 @@ export function sampleFrame(SEQ, states, g, time, P){
         return {x:X, y:Y, r:R, c:b.c, sfA:b.sf};
       }).concat(fxOn?labEmit(fx,time,fs,1):[]), seg, states, 0);
     applyLabTint(balls, fx, time, 1, col);        // 🌈 彩虹:逐球上色(含发射出来的球)
-    return {seg, col, cam:camIdentity(cam)?null:cam, solids, balls:applyCam(balls, cam)};
+    return {seg, col, cam:camIdentity(cam)?null:cam, solids, balls:applyCam(balls, cam), inkW:inkWeight(seg,0,states,P)};
   } else {
     const lt=(g-seg.t0)/seg.dur, ca=hex2rgb(states[seg.a].color), cb=hex2rgb(states[seg.b].color);
     const e=EASE.smoothstep(lt), cam=camAt(seg,states,lt);
@@ -585,6 +595,6 @@ export function sampleFrame(SEQ, states, g, time, P){
       cam:camIdentity(cam)?null:cam,
       // 动态几何 fx 按过渡进度交叉淡化:离场状态 1→e、入场状态 e(用位置同款缓动 e)—— 微光/波浪慢慢消失。
       solids:attachFxWarp(solidsOf(seg,states,lt), states, time, si=> si===seg.a ? 1-e : (si===seg.b ? e : 1), w),
-      col};
+      col, inkW:inkWeight(seg,e,states,P)};
   }
 }

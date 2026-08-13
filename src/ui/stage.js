@@ -354,7 +354,7 @@ function tick(now){
       .concat(charactersSolids(store.clock, store.g)); // 🚶 并行角色轨:各自循环 + 位移;传主时间轴 g 供同步
     // 实心场是 CPU 采样(SDF 纹理未进 GL 着色器);有实心或已缩放时走 CPU 视口渲染
     if(gpuOn() && !solids.length && !zoomed){ glCv.style.display='block'; glRender(fr.balls, fr.col, P); ctx.clearRect(0,0,W,H); }
-    else { if(glCv) glCv.style.display='none'; previewRender(fr.balls, fr.col, P, solids.length?solids:null, fr.cam, store.view); }
+    else { if(glCv) glCv.style.display='none'; previewRender(fr.balls, fr.col, P, solids.length?solids:null, fr.cam, store.view, fr.inkW); }
     overlayTraj(fr.balls, fr.seg, fr.cam); overlayFrameGuide();
   } else {
     const s=cur();
@@ -366,8 +366,10 @@ function tick(now){
     if(chSolids.length) solid=(solid||[]).concat(chSolids);
     const editBalls=s.dots.map((b,i)=>({x:b.x+P.amp*drift(i*2.3,store.clock,P),y:b.y+P.amp*drift(i*2.3+3,store.clock,P),
       r:(solid&&b.sf)?0:b.r, c:b.c}));
+    // 编辑态墨水权重:scope 全局或正指向当前编辑的这个状态 → 上墨,否则不上(与播放一致)
+    const inkW = (!P.ink||P.ink.scope==null||P.ink.scope==='all'||P.ink.scope===s.id) ? 1 : 0;
     if(gpuOn() && !solid && !zoomed){ glCv.style.display='block'; glRender(editBalls, hex2rgb(s.color), P); ctx.clearRect(0,0,W,H); }
-    else { if(glCv) glCv.style.display='none'; previewRender(editBalls, hex2rgb(s.color), P, solid, null, store.view); }
+    else { if(glCv) glCv.style.display='none'; previewRender(editBalls, hex2rgb(s.color), P, solid, null, store.view, inkW); }
     ctx.drawImage(s.ghost,0,0);
     overlayOnion();
     if(!store.hideOverlays && !store.editingChar && $('showSkin')?.checked) drawSkinRef(ctx); // 车面参考(UV);编辑角色帧时隐藏(那张黄底 UV 与角色无关)

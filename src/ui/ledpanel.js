@@ -25,7 +25,7 @@ function renderP1(){
   const solids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P)));
   if(!sq) sq=makeCanvas(LED_H, LED_H);                       // 方形暂存(与创作画布同比例)
   const sctx=sq.getContext('2d',{willReadFrequently:true});
-  renderToImageData(sctx, LED_H, LED_H, fr.balls, fr.col, P, solids, fr.cam);
+  renderToImageData(sctx, LED_H, LED_H, fr.balls, fr.col, P, solids, fr.cam, fr.inkW);
   ctx.drawImage(sq, (LED_H-LED_W)>>1, 0, LED_W, LED_H, 0, 0, LED_W, LED_H);
 }
 // 编辑模式下把播放头对到当前状态的停留段起点,便于逐帧校对。

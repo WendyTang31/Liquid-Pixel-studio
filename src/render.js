@@ -77,10 +77,11 @@ function packColors(balls, col){
 
 // 场求值 + 出像素。bx/by 已是目标像素坐标,br2 是半径平方(像素),bins 复用清零。
 // 墨水沉积参数(从 P.ink 预算 sin/cos)。null = 关闭。
-function inkParams(P){
-  const k=P.ink; if(!k||!k.on||!(k.intensity>0)) return null;
+// w = 逐帧权重(sampleFrame 按 scope 给出;缺省 1 = 全局)。w*intensity 太小则视作关闭 → 该帧不上墨。
+function inkParams(P, w=1){
+  const k=P.ink; if(!k||!k.on||!(k.intensity>0)||w<=0.004) return null;
   const a=(k.angle||90)*Math.PI/180;
-  return { intensity:k.intensity, cosA:Math.cos(a), sinA:Math.sin(a),
+  return { intensity:k.intensity*w, cosA:Math.cos(a), sinA:Math.sin(a),
     edge:Math.max(0.3,k.edge||2.6), bleed:k.bleed||0, dir:k.dir==null?0.7:k.dir, clear:k.clear||0,
     dark:Math.round(255*(1-(k.dark==null?0.85:k.dark))) }; // 墨边目标色(0.85→约 38,近黑;与底色无关)
 }
@@ -145,13 +146,13 @@ export function createPreviewRenderer(ctx){
   const img=ctx.createImageData(W,H);
   const tc=Math.ceil(W/TS), tr=Math.ceil(H/TS);
   const bins=Array.from({length:tc*tr},()=>[]);
-  return function render(balls,col,P,solids,cam){
+  return function render(balls,col,P,solids,cam,inkW){
     const n=balls.length, bg=hex2rgb(P.colBg);
     const bx=new Float32Array(n), by=new Float32Array(n), br2=new Float32Array(n);
     for(let i=0;i<n;i++){ bx[i]=balls[i].x*W; by[i]=balls[i].y*H;
       const r=balls[i].r*W; br2[i]=r*r; }
     const ss=makeSolidSampler(solids, cam, x=>x/W, (x,y)=>y/H, P.thr);
-    fieldLoop(img.data, W,H, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col), ss, inkParams(P));
+    fieldLoop(img.data, W,H, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col), ss, inkParams(P,inkW));
     ctx.putImageData(img,0,0);
   };
 }
@@ -165,20 +166,20 @@ export function createSizedRenderer(ctx, EW, EH){
   const rScale=Math.sqrt((EW*EH)/(W*H));
   // view={z,ox,oy}(归一化视口:可见区 [ox,ox+1/z]×[oy,oy+1/z])。缺省=满幅(z=1)。
   // 视口渲染:同样的缓冲像素只渲可见区 → 缩放后依旧清晰,开销恒定(不随缩放增大)。
-  return function render(balls,col,P,solids,cam,view){
+  return function render(balls,col,P,solids,cam,view,inkW){
     const z=view?view.z:1, ox=view?view.ox:0, oy=view?view.oy:0;
     const n=balls.length, bg=hex2rgb(P.colBg);
     const bx=new Float32Array(n), by=new Float32Array(n), br2=new Float32Array(n);
     for(let i=0;i<n;i++){ bx[i]=(balls[i].x-ox)*z*EW; by[i]=(balls[i].y-oy)*z*EH;
       const r=balls[i].r*W*rScale*z; br2[i]=r*r; }
     const ss=makeSolidSampler(solids, cam, x=>ox+x/(EW*z), (x,y)=>oy+y/(EH*z), P.thr);
-    fieldLoop(img.data, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col), ss, inkParams(P));
+    fieldLoop(img.data, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col), ss, inkParams(P,inkW));
     ctx.putImageData(img,0,0);
   };
 }
 
 // 导出渲染器:任意尺寸,stretch(拉伸填满)或 fit(等比留黑)映射。半径按面积比缩放。
-export function renderToImageData(ectx, EW, EH, balls, col, P, solids, cam){
+export function renderToImageData(ectx, EW, EH, balls, col, P, solids, cam, inkW){
   const eimg=ectx.createImageData(EW,EH), d=eimg.data, bg=hex2rgb(P.colBg);
   let mapX,mapY,rScale,invX,invY;
   if(P.fit==='stretch'){ mapX=x=>x*EW; mapY=y=>y*EH; rScale=Math.sqrt((EW*EH)/(W*H));
@@ -193,6 +194,6 @@ export function renderToImageData(ectx, EW, EH, balls, col, P, solids, cam){
   for(let i=0;i<n;i++){ bx[i]=mapX(balls[i].x); by[i]=mapY(balls[i].y);
     const r=balls[i].r*W*rScale; br2[i]=r*r; }
   const ss=makeSolidSampler(solids, cam, invX, invY, P.thr);
-  fieldLoop(d, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col), ss, inkParams(P));
+  fieldLoop(d, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col), ss, inkParams(P,inkW));
   ectx.putImageData(eimg,0,0);
 }

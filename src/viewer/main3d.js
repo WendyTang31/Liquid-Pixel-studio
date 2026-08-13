@@ -1228,7 +1228,7 @@ function renderGroupsAt(gt, clock){
     const vs=(fr.solids||[]).concat(
       vectorSolids(computeVectorPolys(gr.states, gr.SEQ, t, clock, gr.P), fr.seg, gr.states, t, clock));
     if(gr===groups[0] && viewerChars.length) vs.push(...charSolidsFrom(viewerChars, clock, t));
-    gr.renderTex(fr.balls, fr.col, gr.P, vs, fr.cam);
+    gr.renderTex(fr.balls, fr.col, gr.P, vs, fr.cam, undefined, fr.inkW);
     gr.screenTex.needsUpdate=true; gr.screenTexUV.needsUpdate=true;
   }
 }
@@ -1498,7 +1498,7 @@ function frame(now){
     const vsolids=(fr.solids||[]).concat(
       vectorSolids(computeVectorPolys(gr.states, gr.SEQ, gt, clock, gr.P), fr.seg, gr.states, gt, clock));
     if(gr===groups[0] && viewerChars.length) vsolids.push(...charSolidsFrom(viewerChars, clock, gt)); // 🚶 并行角色轨合成(gt=主时间轴位置,供同步)
-    gr.renderTex(fr.balls, fr.col, gr.P, vsolids, fr.cam);
+    gr.renderTex(fr.balls, fr.col, gr.P, vsolids, fr.cam, undefined, fr.inkW);
     gr.screenTex.needsUpdate=true; gr.screenTexUV.needsUpdate=true;
   }
   if($('spinCk').checked && !gizmoDrag && !painting) carGroup.rotation.y+=dt*0.12;
