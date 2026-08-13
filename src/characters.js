@@ -40,7 +40,9 @@ export function charTime(ch, clock, gMain){
   const SEQ=ensureSEQ(ch), T=Math.max(1e-3, SEQ.T);
   const speed=ch.speed||1, delay=ch.delay||0;
   const laps=Math.max(1, ch.laps||1);                 // 跑几圈步子才走完一趟位移
-  const useTL = ch.sync==='timeline' && gMain!=null;
+  // 🔁 跑不停(wrap)= 永远向前的连续里程,天生与「跟随主时间轴」(每个主循环归零)矛盾 ——
+  // 若两者并用,主循环一归零里程就回退 → 画面里小人瞬间退回去。故 wrap 时【强制走单调墙钟】,永不退回。
+  const useTL = ch.sync==='timeline' && gMain!=null && !ch.wrap;
   const base = (useTL ? gMain : clock) - delay;      // 有效起算时间
   const started = base >= -1e-6;                      // delay 未到 → 尚未出场
   const total = base*speed;
