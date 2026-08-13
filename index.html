@@ -515,8 +515,16 @@
         <label style="min-width:auto;margin-left:6px" title="网格密度:格数越多控制点越密,越能局部精细微调。改密度会保持当前形状。">网格</label>
         <select id="outTxGrid" style="width:56px"><option>1x1</option><option>2x2</option><option>3x3</option><option>4x4</option><option>5x5</option><option>4x2</option><option>6x3</option></select>
         <button id="outTxWarpReset" style="margin-left:4px">↺ 复位</button></div>
-      <canvas id="outTxPrev" width="300" height="200" style="width:100%;background:#0a0a0a;border:1px solid #2a3330;border-radius:4px;touch-action:none;cursor:crosshair"></canvas>
-      <div class="small" style="opacity:.55;line-height:1.5">▶ 实时预览动画在目标画幅里的样子。勾『四角 warp』后拖动四个蓝角做透视贴合。导出的 MP4/PNG 与此预览一致。</div>
+      <div class="row" style="justify-content:flex-end;gap:4px">
+        <span class="small" style="opacity:.6;margin-right:auto">▶ 预览</span>
+        <button id="outTxZoomOut" title="缩小预览">−</button>
+        <span class="small" id="outTxZoomVal" style="min-width:32px;text-align:center">1.0×</span>
+        <button id="outTxZoomIn" title="放大预览(控制点更大更好拖)">+</button>
+      </div>
+      <div style="overflow:auto;max-height:340px;background:#0a0a0a;border:1px solid #2a3330;border-radius:4px">
+        <canvas id="outTxPrev" width="330" height="210" style="display:block;touch-action:none;cursor:crosshair"></canvas>
+      </div>
+      <div class="small" style="opacity:.55;line-height:1.5">拖动蓝色控制点做 warp;『网格』调密度可分区精细微调;『+/−』放大预览方便拖点。导出的 MP4/PNG 与此预览一致。</div>
     </div>
 
     <div class="row"><label>帧率</label><input type="range" id="pFps" min="10" max="60" step="1" value="30"><div class="val" id="vFps">30</div></div>
