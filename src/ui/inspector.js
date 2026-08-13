@@ -290,6 +290,9 @@ export function updateSelBox(){
     for(const sh of (multi>1?store.selMulti:[sel]).filter(sh=>sh&&sh.type!=='image')) add(sh);
     for(const sh of wanted) if(!sh.layerId){ sh.layerId=store.layerSeq=(store.layerSeq||0)+1; if(!('solidFill' in sh)) sh.solidFill=true; }
     let ni=groupTail(store.active)+1;
+    // 若「按组尾」会跑到序列末尾【新建一帧】,但其实紧接着就已有下一帧(例如后面是循环姿态帧)——
+    // 那就并入【字面的下一帧】与它已有的图形共存,别在末尾单独造一帧。(中段有下一主状态时不受影响)
+    if(ni>=store.states.length && store.active+1<store.states.length) ni=store.active+1;
     if(ni>=store.states.length) store.states.splice(ni,0,makeState(cur().name+' ▸帧', cur().color));
     const next=store.states[ni];
     let n=0;
