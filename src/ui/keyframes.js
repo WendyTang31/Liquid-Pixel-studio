@@ -33,6 +33,7 @@ function buildState(d){
 
 export function copyKeyframes(){
   const idx=sel(); clipboard=idx.map(i=>serializeState(store.states[i]));
+  store.clipKind='frame';            // 标记:最近复制的是关键帧 → Ctrl+V 走整帧粘贴
   renderStrip(); // 重绘操作条,让 📌 粘贴按钮出现
   setHint(`📋 已复制 ${clipboard.length} 个关键帧 — 📌 或 Ctrl+V 粘贴到后面`);
 }
@@ -51,6 +52,7 @@ export function cutKeyframes(){
   const idx=sel(); if(!idx.length) return;
   if(idx.length>=store.states.length){ setHint('⚠ 不能剪切全部帧(至少留 1 帧);想全部转移请先「＋新建角色」再逐段挪'); return; }
   clipboard=idx.map(i=>serializeState(store.states[i]));
+  store.clipKind='frame';
   pushUndo();
   for(const i of [...idx].sort((a,b)=>b-a)) store.states.splice(i,1);
   store.selStates=[]; setActive(Math.max(0, Math.min(idx[0], store.states.length-1)));
@@ -82,8 +84,12 @@ export function initKeyframeKeys(){
       deleteKeyframes(); e.preventDefault(); e.stopImmediatePropagation(); return;
     }
     if(!(e.ctrlKey||e.metaKey)) return;
-    if(e.key==='c' && store.selStates?.length>=1){ copyKeyframes(); e.preventDefault(); }
-    else if(e.key==='x' && store.selStates?.length>=1){ cutKeyframes(); e.preventDefault(); }   // ✂ 剪切帧
-    else if(e.key==='v' && clipboard.length){ pasteKeyframes(); e.preventDefault(); }
+    // 选中了图形 → Ctrl+C/V 交给 stage.js 的【图形复制/粘贴】(在同一帧里复制图形),关键帧复制在此让位。
+    // 否则选中一个图形想复制它,却复制/粘贴了整帧 —— 这正是用户反馈的 bug。
+    const shapeSel = !!(store.sel || store.selMulti?.length);
+    if(e.key==='c' && store.selStates?.length>=1 && !shapeSel){ copyKeyframes(); e.preventDefault(); }
+    else if(e.key==='x' && store.selStates?.length>=1 && !shapeSel){ cutKeyframes(); e.preventDefault(); }   // ✂ 剪切帧
+    // 整帧粘贴仅当【最近一次复制的就是关键帧】—— 复制图形后按 Ctrl+V 不会再冒出一整帧
+    else if(e.key==='v' && clipboard.length && store.clipKind==='frame'){ pasteKeyframes(); e.preventDefault(); }
   });
 }

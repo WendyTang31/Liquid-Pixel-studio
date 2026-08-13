@@ -1038,11 +1038,12 @@ function onKeyDown(e){
   if((e.ctrlKey||e.metaKey)&&k==='y'){ redo(); e.preventDefault(); return; }
   if((e.ctrlKey||e.metaKey)&&k==='c' && store.mode==='edit'){
     const list=store.selMulti?.length?store.selMulti:(store.sel?[store.sel]:[]);
-    if(list.length){ shapeClipboard=JSON.parse(JSON.stringify(list));
-      setHint(`已复制 ${list.length} 个形状 — 切到任意状态 Ctrl+V 粘贴`); e.preventDefault(); }
+    if(list.length){ shapeClipboard=JSON.parse(JSON.stringify(list)); store.clipKind='shape';
+      setHint(`已复制 ${list.length} 个形状 — 切到任意状态 Ctrl+V 粘贴`); e.preventDefault(); e.stopImmediatePropagation(); }
     return;
   }
-  if((e.ctrlKey||e.metaKey)&&k==='v' && store.mode==='edit' && shapeClipboard?.length){
+  // 只有【最近一次复制的就是形状】才在这里粘贴 —— 否则让关键帧粘贴处理器接手,避免两处同时粘贴
+  if((e.ctrlKey||e.metaKey)&&k==='v' && store.mode==='edit' && store.clipKind==='shape' && shapeClipboard?.length){
     pushUndo();
     const s=cur(), made=[];
     for(const src of shapeClipboard){
