@@ -10,6 +10,7 @@ import { LED_W, LED_H, MODULE_MAP } from '../ledmap.js';
 import { makeCanvas, transformCanvasP1toP2, calibrationCanvas, mirrorSymmetricH } from '../ledcanvas.js';
 import { uvPatches, activePatch, planSize, mirrorScale } from '../uvcrop.js';
 import { exclusiveExportMode } from './exportmode.js';
+import { charactersSolids } from '../characters.js';
 
 let p1Cv=null, p2Cv=null, raf=0, lastSig='';
 let calibMode=false, calibCv=null, warned=false;
@@ -23,7 +24,8 @@ function renderP1(){
   if(calibMode){ ctx.drawImage(calibCv,0,0); return; }
   const g=store.mode==='play' ? store.g : (store.active>0 ? seekOfState() : 0);
   const fr=sampleFrame(store.SEQ, store.states, g, g, P);
-  const solids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P)));
+  const solids=(fr.solids||[]).concat(rasterizeVectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P)))
+    .concat(charactersSolids(store.charClock||0, store.g));   // 🚶 并行角色也进 P2 预览/导出(此前 P2 漏了角色)
   if(!sq) sq=makeCanvas(LED_H, LED_H);                       // 方形暂存(与创作画布同比例)
   const sctx=sq.getContext('2d',{willReadFrequently:true});
   renderToImageData(sctx, LED_H, LED_H, fr.balls, fr.col, P, solids, fr.cam, fr.inkW);
