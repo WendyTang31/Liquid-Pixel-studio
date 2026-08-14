@@ -375,6 +375,7 @@ export function syncUI(){
   set('pSample',P.sample); set('pSpace',P.spacing); set('pJit',P.jitter); set('pDotR',P.dotR);
   set('pMatch',P.match); set('pEase',P.ease); set('pStag',P.stag); set('pAmp',P.amp);
   set('pThr',P.thr); set('pSoft',P.soft); set('pGamma',P.gamma); set('pFps',P.fps);
+  if($('pSolidSharp')){ set('pSolidSharp',P.solidSharp||0); $('vSolidSharp').textContent=(+(P.solidSharp||0)).toFixed(2); }
   set('pMatch',P.match); set('expFit',P.fit); set('colBg',P.colBg); set('pFont',P.font);
   set('pFlow',P.flow); set('pStretch',P.stretch); set('pGlow',P.glow);
   $('vFlow').textContent=(+P.flow).toFixed(2); $('vStretch').textContent=(+P.stretch).toFixed(2);
@@ -433,6 +434,7 @@ export function initInspector(){
   bind('pAmp','amp','vAmp',v=>'.'+Math.round(v*1000).toString().padStart(3,'0'));
   bind('pThr','thr','vThr',v=>v.toFixed(2));
   bind('pSoft','soft','vSoft',v=>v.toFixed(2));
+  if($('pSolidSharp')) bind('pSolidSharp','solidSharp','vSolidSharp',v=>v.toFixed(2));   // 🔬 实心锐度:细节保留
   bind('pGamma','gamma','vGamma',v=>v.toFixed(2));
   bind('pFps','fps','vFps',v=>v);
   bind('pGlow','glow','vGlow',v=>v.toFixed(2));

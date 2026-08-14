@@ -441,6 +441,7 @@
     <div class="sec">④ 渲染</div>
     <div class="row"><label>融合阈值</label><input type="range" id="pThr" min="0.4" max="3" step="0.05" value="1.1"><div class="val" id="vThr">1.10</div></div>
     <div class="row"><label>边缘柔度</label><input type="range" id="pSoft" min="0.01" max="0.6" step="0.01" value="0.12"><div class="val" id="vSoft">0.12</div></div>
+    <div class="row"><label title="实心锐度:0=柔和液态软边(默认)。调高 → 实心软边变窄,细尖/薄边即使把 SVG 缩得很小也不会被软边吃掉而消失。缩到实装小尺寸想保细节、或做 LED 清晰边缘时调高。">实心锐度</label><input type="range" id="pSolidSharp" min="0" max="1" step="0.05" value="0"><div class="val" id="vSolidSharp">0.00</div></div>
     <div class="row"><label>Gamma</label><input type="range" id="pGamma" min="0.5" max="2.6" step="0.05" value="1.0"><div class="val" id="vGamma">1.00</div></div>
     <div class="row">
       <label class="ck"><input type="checkbox" id="showTraj"> 轨迹</label>

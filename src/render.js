@@ -36,10 +36,12 @@ function sampleWarp(g, u, v){
   const L=(a,b,c,d,o)=>{ const t=(g[a+o]*(1-tx)+g[b+o]*tx), u2=(g[c+o]*(1-tx)+g[d+o]*tx); return t*(1-ty)+u2*ty; };
   return [L(i00,i10,i01,i11,0), L(i00,i10,i01,i11,1), L(i00,i10,i01,i11,2)];
 }
-function makeSolidSampler(solids, cam, invX, invY, thr, frameCol){
+function makeSolidSampler(solids, cam, invX, invY, thr, frameCol, edgeDiv){
   if(!solids||!solids.length) return null;
   const anyWarp=solids.some(s=>s.warp); // 动态几何(停留期):位移场 warp(u,v)→{dx,dy,rf},实心整体随之晃动
   const anyCol=solids.some(s=>s.col);   // 有实心带【自身颜色】(如角色帧色)→ 走逐像素着色,否则沿用帧色(零回归)
+  // 🔬 实心锐度:软边宽度 = SEDGE/edgeDiv。edgeDiv>1 → 软边更窄 = 覆盖度更快饱和 → 细尖/薄边即使很小也能越过阈值不消失。
+  const SE = SEDGE / Math.max(0.05, edgeDiv||1);
   const grids = anyWarp ? solids.map(s=>s.warp?buildWarpGrid(s.warp):null) : null; // 每帧预算一次粗网格
   const scratch={r:0,g:0,b:0};          // 本像素实心颜色(按覆盖度加权),fieldLoop 读它;复用一个对象避免逐像素分配
   const fn=(x,y)=>{
@@ -49,7 +51,7 @@ function makeSolidSampler(solids, cam, invX, invY, thr, frameCol){
     if(!anyWarp){ // 快路径:无形变,单次坐标 + 边界判定
       const sx=u*SDFW, sy=v*SDFH;
       if(sx<-1||sy<-1||sx>SDFW||sy>SDFH) return 0;
-      for(const s of solids){ const cov=s.w*Math.min(8, bilin(s.sdf,sx,sy)/SEDGE);
+      for(const s of solids){ const cov=s.w*Math.min(8, bilin(s.sdf,sx,sy)/SE);
         f+=cov; if(anyCol && cov>0){ const c=s.col||frameCol; sr+=cov*c[0]; sg+=cov*c[1]; sb+=cov*c[2]; tw+=cov; } }
     } else {
       for(let k=0;k<solids.length;k++){ const s=solids[k];
@@ -57,7 +59,7 @@ function makeSolidSampler(solids, cam, invX, invY, thr, frameCol){
         if(grids[k]){ const d=sampleWarp(grids[k], u, v); su=u-d[0]; sv=v-d[1]; rf=d[2]; } // 逆向采样 → 形体整体位移
         const sx=su*SDFW, sy=sv*SDFH;
         if(sx<-1||sy<-1||sx>SDFW||sy>SDFH) continue;
-        const cov=s.w*Math.min(8, bilin(s.sdf,sx,sy)/SEDGE)*rf;
+        const cov=s.w*Math.min(8, bilin(s.sdf,sx,sy)/SE)*rf;
         f+=cov; if(anyCol && cov>0){ const c=s.col||frameCol; sr+=cov*c[0]; sg+=cov*c[1]; sb+=cov*c[2]; tw+=cov; }
       }
     }
@@ -159,7 +161,7 @@ export function createPreviewRenderer(ctx){
     const bx=new Float32Array(n), by=new Float32Array(n), br2=new Float32Array(n);
     for(let i=0;i<n;i++){ bx[i]=balls[i].x*W; by[i]=balls[i].y*H;
       const r=balls[i].r*W; br2[i]=r*r; }
-    const ss=makeSolidSampler(solids, cam, x=>x/W, (x,y)=>y/H, P.thr, col);
+    const ss=makeSolidSampler(solids, cam, x=>x/W, (x,y)=>y/H, P.thr, col, 1+(P.solidSharp||0)*5);
     fieldLoop(img.data, W,H, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col, ss&&ss.anyCol), ss, inkParams(P,inkW));
     ctx.putImageData(img,0,0);
   };
@@ -180,7 +182,7 @@ export function createSizedRenderer(ctx, EW, EH){
     const bx=new Float32Array(n), by=new Float32Array(n), br2=new Float32Array(n);
     for(let i=0;i<n;i++){ bx[i]=(balls[i].x-ox)*z*EW; by[i]=(balls[i].y-oy)*z*EH;
       const r=balls[i].r*W*rScale*z; br2[i]=r*r; }
-    const ss=makeSolidSampler(solids, cam, x=>ox+x/(EW*z), (x,y)=>oy+y/(EH*z), P.thr, col);
+    const ss=makeSolidSampler(solids, cam, x=>ox+x/(EW*z), (x,y)=>oy+y/(EH*z), P.thr, col, 1+(P.solidSharp||0)*5);
     fieldLoop(img.data, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col, ss&&ss.anyCol), ss, inkParams(P,inkW));
     ctx.putImageData(img,0,0);
   };
@@ -201,7 +203,7 @@ export function renderToImageData(ectx, EW, EH, balls, col, P, solids, cam, inkW
   const bins=Array.from({length:tc*tr},()=>[]);
   for(let i=0;i<n;i++){ bx[i]=mapX(balls[i].x); by[i]=mapY(balls[i].y);
     const r=balls[i].r*W*rScale; br2[i]=r*r; }
-  const ss=makeSolidSampler(solids, cam, invX, invY, P.thr, col);
+  const ss=makeSolidSampler(solids, cam, invX, invY, P.thr, col, 1+(P.solidSharp||0)*5);
   fieldLoop(d, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col, ss&&ss.anyCol), ss, inkParams(P,inkW));
   ectx.putImageData(eimg,0,0);
 }
