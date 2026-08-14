@@ -3,7 +3,7 @@
 import { store } from '../store.js';
 import { W, H } from '../config.js';
 import { setHint } from '../utils.js';
-import { charLoopSec, setCharLoopSec } from '../characters.js';
+import { charLoopSec, setCharLoopSec, duplicateCharacter } from '../characters.js';
 import { enterCharEdit, combineSelectedIntoCharacter, newEmptyCharacter } from './charedit.js';
 import { pushUndo } from '../state.js';
 
@@ -42,13 +42,21 @@ export function renderCharacters(){
     const edit=document.createElement('span'); edit.textContent=editing?'✏️…':'✏️'; edit.style.cursor='pointer';
     edit.title=editing?'正在编辑此角色的帧':'编辑此角色的帧(改图形 / 每帧停留·过渡时长)';
     edit.onclick=e=>{ e.stopPropagation(); enterCharEdit(ch); };
+    const dup=document.createElement('span'); dup.textContent='⧉'; dup.style.cursor='pointer';
+    dup.title='复制该角色(含全部图形/效果/逐帧图像/动画属性/位置)—— 副本可单独设「延迟」做错峰播放';
+    dup.onclick=e=>{ e.stopPropagation();
+      pushUndo();
+      const copy=duplicateCharacter(ch);
+      store.characters.splice(idx+1,0,copy);            // 紧跟原角色之后
+      store.activeChar=idx+1; renderCharacters();
+      setHint(`已复制角色「${ch.name||''}」→「${copy.name}」。在副本卡片设『延迟』即可错峰(如 0.3s 后开始),不影响时长/速度/逐帧节奏`); };
     const del=document.createElement('span'); del.textContent='🗑'; del.style.cursor='pointer'; del.title='删除该角色';
     del.onclick=e=>{ e.stopPropagation();
       if(store.editingChar===ch){ setHint('请先「✓ 完成编辑角色」再删除'); return; }
       pushUndo();                                       // 可 Ctrl+Z 撤销删除
       store.characters.splice(idx,1);
       store.activeChar=Math.min(store.activeChar, store.characters.length-1); renderCharacters(); };
-    head.append(eye,name,edit,del); card.appendChild(head);
+    head.append(eye,name,edit,dup,del); card.appendChild(head);
     if(editing){ const bar=document.createElement('div'); bar.textContent='✏ 编辑中 —— 顶部「✓ 完成编辑角色」保存';
       bar.style.cssText='font:11px system-ui;color:#2cc4f5'; card.appendChild(bar); }
     // 数值行工厂

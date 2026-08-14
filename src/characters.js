@@ -19,6 +19,16 @@ export function makeCharacter(name, frames, cycleSec){
     mirX:false, mirY:false,                  // 整体镜像(水平/垂直):跑向左 ⇄ 跑向右
   };
 }
+// 复制一个角色:深克隆全部内容 —— 每帧图形/实心/采样、逐帧停留·过渡时长、fx 效果、
+// 位置(x0/x1/y0/y1)、缩放/旋转/镜像、步频·地面速度、延迟偏移、跑不停/同步等,全部原样带走。
+// SEQ 是派生的,不克隆(置脏后按新副本重建)。新 id + 「副本」名。
+export function duplicateCharacter(ch){
+  const dup=JSON.parse(JSON.stringify({ ...ch, SEQ:null, id:undefined }));
+  dup.id=++store.charSeq; dup.SEQ=null; dup.seqDirty=true;
+  dup.name=(ch.name||'角色')+' 副本';
+  return dup;
+}
+
 // 把导入动画(anim.frames/durations/holds)转成角色的 state 帧(computeVectorPolys/buildSequence 所需字段)。
 export function framesFromAnim(anim){
   return anim.frames.map((shapes,i)=>({
