@@ -18,6 +18,20 @@ export function makeCanvas(w=LED_W, h=LED_H){
   const x=c.getContext('2d', {willReadFrequently:true}); x.imageSmoothingEnabled=false;
   return c;
 }
+// 🪞 整体镜像(双边):沿【竖直中线 x=宽/2】把画面镜像叠加成左右对称 —— 双边动画效果。
+// 【必须在 transformCanvasP1toP2(分屏切割)之前】对 P1 画面施加:这样模组分屏拿到的已是镜像后的内容,
+// 分屏/侧板旋转随之得到准确镜像。整幅(含所有帧 + 角色动画)一起镜像,因为它作用在最终 P1 画面上。
+export function mirrorSymmetricH(cv){
+  const w=cv.width, h=cv.height;
+  const ctx=cv.getContext('2d', {willReadFrequently:true}); ctx.imageSmoothingEnabled=false;
+  const tmp=makeCanvas(w,h); const tc=tmp.getContext('2d'); tc.imageSmoothingEnabled=false;
+  tc.setTransform(-1,0,0,1,w,0); tc.drawImage(cv,0,0); tc.setTransform(1,0,0,1,0,0);   // 水平翻转副本
+  // 合并:透明底→source-over(内容像素并集);不透明底→按底色明暗取 darken/lighten,让"内容像素"胜出。
+  let mode='source-over';
+  if(!P.transBg){ const d=ctx.getImageData(0,0,1,1).data; mode=((d[0]+d[1]+d[2])/3>128)?'darken':'lighten'; }
+  ctx.save(); ctx.globalCompositeOperation=mode; ctx.drawImage(tmp,0,0); ctx.restore();
+}
+
 // 源画布 → 新画布(P2 布局)。out 可复用以免每帧新建。
 export function transformCanvasP1toP2(src, out){
   const sctx=src.getContext('2d', {willReadFrequently:true});

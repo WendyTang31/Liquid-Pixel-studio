@@ -7,7 +7,7 @@ import { sampleFrame } from '../engine.js';
 import { computeVectorPolys, rasterizeVectorSolids } from '../vector.js';
 import { renderToImageData } from '../render.js';
 import { LED_W, LED_H, MODULE_MAP } from '../ledmap.js';
-import { makeCanvas, transformCanvasP1toP2, calibrationCanvas } from '../ledcanvas.js';
+import { makeCanvas, transformCanvasP1toP2, calibrationCanvas, mirrorSymmetricH } from '../ledcanvas.js';
 import { uvPatches, activePatch, planSize, mirrorScale } from '../uvcrop.js';
 import { exclusiveExportMode } from './exportmode.js';
 
@@ -40,7 +40,7 @@ function seekOfState(){
 export function refreshP2Preview(){
   if(!p1Cv) return;
   // 预览失败要看得见(静默 catch 会让人以为"没接上"):只警告一次,避免刷屏。
-  try{ renderP1(); transformCanvasP1toP2(p1Cv, p2Cv); }
+  try{ renderP1(); if(P.p2Mirror) mirrorSymmetricH(p1Cv); transformCanvasP1toP2(p1Cv, p2Cv); }
   catch(e){ if(!warned){ warned=true; console.warn('[P2 预览] 渲染失败:', e); } }
 }
 function tick(){
@@ -48,7 +48,7 @@ function tick(){
   if(!$('p2Panel') || $('p2Panel').style.display==='none') return;
   // 只在画面可能变化时重算(播放中/切帧/改了覆盖角度/校准模式)
   const sig=[store.mode, store.playing?store.g.toFixed(2):'', store.active, calibMode,
-             (P.p2Rot||[]).join(','), P.p2Side, store.seqDirty].join('|');
+             (P.p2Rot||[]).join(','), P.p2Side, P.p2Mirror, store.seqDirty].join('|');
   if(sig===lastSig && !store.playing) return;
   lastSig=sig;
   refreshP2Preview();
@@ -167,6 +167,11 @@ export function initLedPanel(){
   const side=$('p2Side');
   side.value=P.p2Side||'cw';
   side.onchange=()=>{ P.p2Side=side.value; refreshP2Preview(); };
+  // 🪞 整体镜像(双边):分屏切割前施加,预览立即反映
+  const mir=$('p2Mirror');
+  if(mir){ mir.checked=!!P.p2Mirror;
+    mir.onchange=()=>{ P.p2Mirror=mir.checked; refreshP2Preview();
+      setHint(mir.checked?'🪞 双边镜像已开:动画整幅沿中线镜像(分屏前施加,侧板也准确镜像)':'已关闭双边镜像'); }; }
 
   // 变换方向:正向 / 反向(照车上的样子画)
   const dir=$('p2Dir');

@@ -13,7 +13,7 @@ import { rebuildSequence } from './sequence.js';
 import { resampleAll } from './pipeline.js';
 import { setMode } from './ui/stage.js';
 import { LED_W, LED_H } from './ledmap.js';
-import { p2On, p2Size, p2Scale, makeCanvas, transformCanvasP1toP2 } from './ledcanvas.js';
+import { p2On, p2Size, p2Scale, makeCanvas, transformCanvasP1toP2, mirrorSymmetricH } from './ledcanvas.js';
 import { uvCropOn, uvCropCfg, activePatch, planSize, composeCrop } from './uvcrop.js';
 import { charactersSolids, charPolys } from './characters.js';
 import { renderWideFrame, wideEW } from './widexport.js';
@@ -131,6 +131,7 @@ function makeOfflineRenderer(EW, EH){
     if(!p2on) return;
     const cx=crop.getContext('2d',{willReadFrequently:true}); cx.imageSmoothingEnabled=false;
     cx.drawImage(ec, cropX, 0, EW, EH, 0, 0, EW, EH);   // 同尺寸裁切 = 逐像素原样搬运
+    if(P.p2Mirror) mirrorSymmetricH(crop);              // 🪞 双边镜像:【在分屏切割之前】,故分屏也得到准确镜像
     transformCanvasP1toP2(crop, p2);
   }
   return { ec, out: p2 || ec, drawFrame: drawOut };
