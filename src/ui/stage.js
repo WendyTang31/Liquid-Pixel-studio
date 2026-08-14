@@ -1049,7 +1049,8 @@ function onKeyDown(e){
     for(const src of shapeClipboard){
       const c=JSON.parse(JSON.stringify(src));
       c.id=store.shapeId++; delete c.rel; // 约束引用不跨状态,粘贴即自由形状
-      if(c.type==='path') c.points=c.points.map(pt=>({x:pt.x+8,y:pt.y+8}));
+      // translatePt 保留 hIn/hOut(贝塞尔曲柄)—— 之前只搬 x/y,曲线粘完变直线;现在圆角/弧线原样保留。
+      if(c.type==='path') c.points=c.points.map(pt=>translatePt(pt,8,8));
       c.x+=8; c.y+=8;                     // 轻微错位,肉眼可辨"粘出来了"
       s.shapes.push(c); made.push(c);
     }

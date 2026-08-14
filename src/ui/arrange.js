@@ -66,7 +66,8 @@ function mirror(axis){
     const c=JSON.parse(JSON.stringify({...s, id:undefined})); c.id=store.shapeId++;
     delete c._img; // 图片运行时缓存不复制,revive 机制会补
     if(s.type==='path'){
-      c.points=s.points.map(p=>axis==='h'?{x:W-p.x,y:p.y}:{x:p.x,y:H-p.y});
+      const mir=p=>axis==='h'?{x:W-p.x,y:p.y}:{x:p.x,y:H-p.y};   // 镜像点 + 曲柄(hIn/hOut),保留圆角/弧线
+      c.points=s.points.map(p=>{ const o=mir(p); if(p.hIn)o.hIn=mir(p.hIn); if(p.hOut)o.hOut=mir(p.hOut); return o; });
       Object.assign(c, pathBBox(c.points));
     } else if(axis==='h') c.x=W-s.x-s.w; else c.y=H-s.y-s.h;
     if(s.type==='image'&&s._img) Object.defineProperty(c,'_img',{value:s._img,enumerable:false,configurable:true});
@@ -87,7 +88,8 @@ function array(){
   for(const s of ts) for(let k=1;k<n;k++){
     const c=JSON.parse(JSON.stringify({...s, id:undefined})); c.id=store.shapeId++;
     delete c._img;
-    if(s.type==='path'){ c.points=s.points.map(p=>({x:p.x+dx*k, y:p.y+dy*k}));
+    if(s.type==='path'){ const t=(p)=>({x:p.x+dx*k, y:p.y+dy*k});   // 平移点 + 曲柄,保留圆角/弧线
+      c.points=s.points.map(p=>{ const o=t(p); if(p.hIn)o.hIn=t(p.hIn); if(p.hOut)o.hOut=t(p.hOut); return o; });
       Object.assign(c, pathBBox(c.points)); }
     else { c.x=s.x+dx*k; c.y=s.y+dy*k; }
     if(s.type==='image'&&s._img) Object.defineProperty(c,'_img',{value:s._img,enumerable:false,configurable:true});
