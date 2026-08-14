@@ -8,7 +8,7 @@ export const store = {
   clipKind:null,                   // 最近一次复制的是 'shape'(图形)还是 'frame'(关键帧)→ Ctrl+V 据此择一,避免两个粘贴处理器同时触发
   stateId:1, shapeId:1,            // 自增 id 分配器
   mode:'edit', playing:false,      // edit | play;play 下是否在走时间
-  g:0, clock:0, last:0,            // 序列时间 / 单调墙钟(驱动漂移)/ 上帧时刻
+  g:0, clock:0, charClock:0, last:0,            // 序列时间 / 单调墙钟(驱动漂移)/ 上帧时刻
   SEQ:{segs:[],T:0}, seqDirty:true,// 构建好的序列 + 脏标记
   undoStack:[], redoStack:[],
   hideOverlays:false,              // 录制/导出时隐藏洋葱皮等叠加层

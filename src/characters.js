@@ -107,7 +107,14 @@ export function charPolys(ch, clock, gMain){
 export function charSolidsFrom(chars, clock, gMain){
   const out=[];
   for(const ch of chars||[]){ const polys=charPolys(ch, clock, gMain);
-    if(polys.length) out.push(...rasterizeVectorSolids(polys)); }
+    if(polys.length){
+      const sol=rasterizeVectorSolids(polys);
+      // 🎨 把角色【当前帧的颜色】(charPolys 里已按过渡插值)附到实心上,渲染时用它自己的颜色 ——
+      // 而不是被主状态的帧色统一涂掉。这样角色图层保留每帧设置的颜色。
+      const col=polys[0]?.col; if(col) for(const s of sol) s.col=col;
+      out.push(...sol);
+    }
+  }
   return out;
 }
 // 编辑器:合成 store 里的所有角色。并入主渲染的 solids 数组即可同屏并行播放。

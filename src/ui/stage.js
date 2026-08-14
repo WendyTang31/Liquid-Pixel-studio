@@ -336,6 +336,8 @@ function overlaySelection(){
 // ══════════════ 主循环 ══════════════
 function tick(now){
   const dt=(now-store.last)/1000; store.last=now; store.clock+=dt;
+  // 🚶 角色时钟:只在【播放】时走 —— 按暂停角色随之停住(store.clock 仍走,供编辑态点阵呼吸)。
+  if(store.playing) store.charClock=(store.charClock||0)+dt;
   // 叠加层按逻辑坐标绘制,经视口变换到缓冲;previewRender 的 putImageData 忽略变换、直接铺满缓冲。
   setOverlayTransform();
   const zoomed=store.view.z>1.001; // 缩放时强制 CPU 视口渲染(GL 路径未接视口)→ 放大依旧清晰
@@ -351,7 +353,7 @@ function tick(now){
     const solids=(fr.solids||[]).concat(
         vectorSolids(computeVectorPolys(store.states, store.SEQ, store.g, store.clock, P),
                      fr.seg, store.states, store.g, store.clock))
-      .concat(charactersSolids(store.clock, store.g)); // 🚶 并行角色轨:各自循环 + 位移;传主时间轴 g 供同步
+      .concat(charactersSolids(store.charClock||0, store.g)); // 🚶 并行角色轨:各自循环 + 位移;传主时间轴 g 供同步
     // 实心场是 CPU 采样(SDF 纹理未进 GL 着色器);有实心或已缩放时走 CPU 视口渲染
     if(gpuOn() && !solids.length && !zoomed){ glCv.style.display='block'; glRender(fr.balls, fr.col, P); ctx.clearRect(0,0,W,H); }
     else { if(glCv) glCv.style.display='none'; previewRender(fr.balls, fr.col, P, solids.length?solids:null, fr.cam, store.view, fr.inkW); }
@@ -362,7 +364,7 @@ function tick(now){
     // 实心蒙版内的点抑制(r=0),边缘由矢量 SDF 主导;编辑态不套镜头,SDF 与点同在画布坐标系。
     // 矢量图层的停留态已并入 s._sdf(实心显示);编辑态直接用它即可
     let solid = s.solid && s._sdf ? [{sdf:s._sdf, w:1}] : null;
-    const chSolids=charactersSolids(store.clock);       // 🚶 编辑态也显示角色(便于摆位/调走动)
+    const chSolids=charactersSolids(store.charClock||0);       // 🚶 编辑态也显示角色(便于摆位/调走动)
     if(chSolids.length) solid=(solid||[]).concat(chSolids);
     const editBalls=s.dots.map((b,i)=>({x:b.x+P.amp*drift(i*2.3,store.clock,P),y:b.y+P.amp*drift(i*2.3+3,store.clock,P),
       r:(solid&&b.sf)?0:b.r, c:b.c}));
