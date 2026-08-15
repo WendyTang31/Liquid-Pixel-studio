@@ -34,7 +34,8 @@ export const P = {
   wideExport:false, wideW:5,
   // 🖥 输出变换(导出末端):把方形动画适配进任意画幅 + 整体镜像/旋转/网格 warp,带实时预览。见 outtx.js。
   // gx/gy=网格格数(1×1=四角透视);mesh=(gx+1)(gy+1) 个控制点(行主序,归一化 0..1),可逐点拖做分区精细 warp。
-  // symMirror:双边镜像(中线对称)'off'|'h'(竖直中线,左右对称)|'v'(水平中线,上下对称)—— 同 P2 逻辑,warp 前施加。
+  // symMirror:双边镜像。'off'|'h'/'v'=整幅沿中线【对称叠加】(同 P2 逻辑,内容已满幅时用)|
+  //   'hfill'/'vfill'=【铺满两半】(把动画装进一半、镜像到另一半,填满整条宽灯带的左右/上下两半)。均在 warp 前施加。
   outTx:{ on:false, w:1440, h:600, fit:'fit', mirX:false, mirY:false, rot:0, warp:false, symMirror:'off',
     gx:1, gy:1, mesh:[[0,0],[1,0],[0,1],[1,1]] },
   // 🔩 物理布局导出(P1 创作 → P2 实装,见 ledmap.js)。默认关 → 导出行为与既有构建逐字节一致。

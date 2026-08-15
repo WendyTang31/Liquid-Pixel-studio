@@ -105,7 +105,10 @@ export function initOutTxPanel(){
   if($('outTxRot')){ $('outTxRot').value=String(P.outTx.rot); $('outTxRot').onchange=e=>{ P.outTx.rot=parseInt(e.target.value,10)||0; draw(); }; }
   if($('outTxSymMir')){ $('outTxSymMir').value=P.outTx.symMirror||'off';
     $('outTxSymMir').onchange=e=>{ P.outTx.symMirror=e.target.value; scheduleAutosave(); draw();
-      setHint(e.target.value==='off'?'已关闭双边镜像':'🪞 双边镜像:动画沿中线对称到另一边(旋转/warp 前施加)'); }; }
+      const v=e.target.value;
+      setHint(v==='off'?'已关闭双边镜像'
+        : (v==='hfill'||v==='vfill')?'🪞🪞 双边铺满:动画装进一半、镜像到另一半 → 填满整条宽灯带的两半(方形塞进 36:15 双边充满就用它)'
+        : '🪞 双边对称叠加:整幅沿中线镜像叠加(内容已满幅时用;旋转/warp 前施加)'); }; }
   const bindCk=(id,key)=>{ const el=$(id); if(!el) return; el.checked=!!P.outTx[key];
     el.addEventListener('change',()=>{ P.outTx[key]=el.checked; if(key==='warp' && el.checked) OT(); draw(); }); };
   bindCk('outTxMirX','mirX'); bindCk('outTxMirY','mirY'); bindCk('outTxWarp','warp');

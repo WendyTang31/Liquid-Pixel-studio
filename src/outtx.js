@@ -146,10 +146,46 @@ export function symMirror(src, axis, transBg){
   return out;
 }
 
+// 把源 src 按 fit 方式画进 dw×dh 的框(居中)。fit:'fit'=等比留边;'fill'=等比裁满;'stretch'=拉伸填满。
+function fitInto(ctx, src, dw, dh, fit){
+  const sw=src.width, sh=src.height;
+  if(fit==='stretch'){ ctx.drawImage(src,0,0,dw,dh); return; }
+  const s = fit==='fill' ? Math.max(dw/sw,dh/sh) : Math.min(dw/sw,dh/sh);
+  const rw=sw*s, rh=sh*s;
+  ctx.drawImage(src, (dw-rw)/2, (dh-rh)/2, rw, rh);
+}
+// 🪞🪞 双边【铺满】:把动画装进目标画幅的【一半】,再镜像到另一半 —— 填满整条宽灯带的左右/上下两半。
+// axis:'h'=左右两半(左半装动画→镜像到右半);'v'=上下两半。与「对称叠加」不同:那是整幅沿中线叠加(内容已满幅时用);
+// 这里是给「方形动画塞进 36:15 宽屏、想让内容双边充满整幅」用的。产物已是 w×h 目标尺寸 → 后续 fit 走 stretch(恒等)。
+export function symFill(src, axis, w, h, fit){
+  const out=document.createElement('canvas'); out.width=w; out.height=h;
+  const ctx=out.getContext('2d'); ctx.imageSmoothingEnabled=false;
+  if(axis==='v'){
+    const hh=Math.max(1,Math.round(h/2));
+    const half=document.createElement('canvas'); half.width=w; half.height=hh;
+    const hc=half.getContext('2d'); hc.imageSmoothingEnabled=false; fitInto(hc, src, w, hh, fit);
+    ctx.drawImage(half,0,0);                                             // 上半
+    ctx.save(); ctx.setTransform(1,0,0,-1,0,h); ctx.drawImage(half,0,0); ctx.restore(); // 下半=镜像
+  } else {
+    const hw=Math.max(1,Math.round(w/2));
+    const half=document.createElement('canvas'); half.width=hw; half.height=h;
+    const hc=half.getContext('2d'); hc.imageSmoothingEnabled=false; fitInto(hc, src, hw, h, fit);
+    ctx.drawImage(half,0,0);                                             // 左半
+    ctx.save(); ctx.setTransform(-1,0,0,1,w,0); ctx.drawImage(half,0,0); ctx.restore(); // 右半=镜像
+  }
+  return out;
+}
+
 // 核心:src 画布 → 目标 out 画布(w×h),应用 双边镜像/fit/镜像/旋转/warp。写入 outCanvas 并返回它。
 export function applyOutputTransform(src, opts, outCanvas){
   // 🪞 双边镜像【最先施加】(在 fit/旋转/warp 之前)—— 与 P2「镜像在分屏切割之前」一致,后续变换作用于已对称的内容。
-  if(opts.symMirror && opts.symMirror!=='off') src=symMirror(src, opts.symMirror, opts.transBg);
+  const sm=opts.symMirror;
+  if(sm==='hfill' || sm==='vfill'){
+    src=symFill(src, sm==='hfill'?'h':'v', opts.w, opts.h, opts.fit||'fit'); // 已生成 w×h → 后续 fit 恒等
+    opts={...opts, fit:'stretch'};
+  } else if(sm && sm!=='off'){
+    src=symMirror(src, sm, opts.transBg);                                   // 整幅对称叠加(旧行为)
+  }
   const {w,h,mirX,mirY,rot=0,warp}=opts;
   const out=outCanvas||document.createElement('canvas');
   if(out.width!==w||out.height!==h){ out.width=w; out.height=h; }
