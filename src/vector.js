@@ -348,13 +348,19 @@ export function applyFireflyRigid(polys, time, fxA, fxB, e=0){
 
 // 轮廓多边形(全部并成一个蒙版)→ SDF solid,喂给既有实心渲染(软边/gamma/辉光/镜头一致)。
 // canvas 懒建,避免模块顶层依赖 DOM(纯几何部分可 node 单测)。
+// 🖼 画布外余量 VPAD:图形/角色越出画布时,把 SDF 缓冲向四周各扩 VPAD 逻辑像素 —— 于是"被裁断"的
+// 硬边落在画布【外】(视口看不见),画面内看到的是图形自然延伸出画布、被视口裁掉,而不是贴着画布边
+// 一条直线软边、还沿这条线长出尖刺/墨边等效果。VPAD 只需 > 软边饱和距离(~30px),取 32 足够、开销小。
+const VPAD=32;
 let _vc=null, _vctx=null;
 export function rasterizeVectorSolids(polys){
   if(!polys.length) return [];
-  if(!_vc){ _vc=document.createElement('canvas'); _vc.width=SDFW; _vc.height=SDFH;
-    _vctx=_vc.getContext('2d',{willReadFrequently:true}); }
-  _vctx.setTransform(SDFSC,0,0,SDFSC,0,0); // 逻辑坐标 → 2× 画布,轮廓更细
-  _vctx.fillStyle='#000'; _vctx.fillRect(0,0,W,H); _vctx.fillStyle='#fff'; _vctx.strokeStyle='#fff';
+  const pad=VPAD*SDFSC, MW=SDFW+2*pad, MH=SDFH+2*pad; // 加宽缓冲(SDF 像素)+ 四周余量
+  if(!_vc){ _vc=document.createElement('canvas'); _vctx=_vc.getContext('2d',{willReadFrequently:true}); }
+  if(_vc.width!==MW||_vc.height!==MH){ _vc.width=MW; _vc.height=MH; }
+  _vctx.setTransform(1,0,0,1,0,0); _vctx.fillStyle='#000'; _vctx.fillRect(0,0,MW,MH);
+  _vctx.setTransform(SDFSC,0,0,SDFSC,pad,pad); // 逻辑坐标 → 缓冲(整体偏移 pad,腾出四周余量),轮廓更细
+  _vctx.fillStyle='#fff'; _vctx.strokeStyle='#fff';
   _vctx.lineJoin='round'; _vctx.lineCap='round';
   for(const {poly, strokeW} of polys){ if(!poly?.length) continue;
     _vctx.beginPath(); _vctx.moveTo(poly[0].x,poly[0].y);
@@ -363,7 +369,8 @@ export function rasterizeVectorSolids(polys){
     if(strokeW>0){ _vctx.lineWidth=strokeW; _vctx.stroke(); } // 🖊 描边形状:轮廓描成线,不填实心
     else _vctx.fill(); }
   _vctx.setTransform(1,0,0,1,0,0);
-  const d=_vctx.getImageData(0,0,SDFW,SDFH).data;
-  const on=(x,y)=> x>=0&&y>=0&&x<SDFW&&y<SDFH && d[(y*SDFW+x)*4]>127;
-  return [{sdf: distanceField(on, SDFW, SDFH), w:1}];
+  const d=_vctx.getImageData(0,0,MW,MH).data;
+  const on=(x,y)=> x>=0&&y>=0&&x<MW&&y<MH && d[(y*MW+x)*4]>127;
+  // pad/mw/mh 随 solid 带出:渲染时归一化 (u,v) → 缓冲像素 = u·SDFW+pad, v·SDFH+pad(见 render.js)。
+  return [{sdf: distanceField(on, MW, MH), w:1, mw:MW, mh:MH, pad}];
 }

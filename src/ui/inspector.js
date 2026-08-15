@@ -6,7 +6,7 @@ import { $, setHint } from '../utils.js';
 import { pushUndo, makeState, groupTail } from '../state.js';
 import { rasterize, resample, resampleAll, updateThumb, tintGhost, shapesChanged, mergeShapesToPath } from '../pipeline.js';
 import { renderStrip, setActive, syncStateUI } from './filmstrip.js';
-import { exportPNG, exportMP4, toggleRecord } from '../export.js';
+import { exportPNG, exportMP4, toggleRecord, plannedFrames } from '../export.js';
 import { applyShapeBBox, shapeToPath } from '../shapes.js';
 import { renderLayers } from './layers.js';
 import { renderGuides } from './arrange.js';
@@ -464,6 +464,18 @@ export function initInspector(){
     if($('wideW')) $('wideW').addEventListener('input',()=>{ P.wideW=Math.max(1,parseFloat($('wideW').value)||5); refresh(); });
     $('expH').addEventListener('input',refresh);
     sync();
+  }
+  // ⏱ 指定导出时长:勾上则强制导出填入的秒数;读数区实时显示实际将导出的时长/帧数(自动或手动)。
+  if($('expDurOn')){
+    const on=$('expDurOn'), sec=$('expDurSec'), info=$('expDurInfo');
+    const refresh=()=>{ try{ const f=plannedFrames(); const s=(f/(P.fps||30));
+      info.textContent = `实际导出 ≈ ${s.toFixed(1)}s · ${f} 帧`; }catch(_){ info.textContent=''; } };
+    window.refreshExportDurInfo=refresh;          // 供角色面板改「走过用时」后同步刷新读数
+    on.checked=!!(P.exportSec&&P.exportSec.on); sec.value=(P.exportSec?.sec??15);
+    on.addEventListener('change',e=>{ P.exportSec.on=e.target.checked; refresh();
+      setHint(e.target.checked?`⏱ 导出时长锁定为 ${P.exportSec.sec}s(不再自动判定)`:'⏱ 导出时长恢复自动(跟随角色走完全程)'); });
+    sec.addEventListener('input',()=>{ P.exportSec.sec=Math.max(0.1, parseFloat(sec.value)||1); refresh(); });
+    refresh();
   }
   $('pngBtn').onclick=exportPNG;
   $('mp4Btn').onclick=exportMP4;

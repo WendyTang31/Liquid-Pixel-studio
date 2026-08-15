@@ -12,11 +12,12 @@ const TS=24; // tile 边长
 // ── 实心场采样(solid 显示):SDF(SDFSC× 分辨率,chamfer 3≈1 SDF 像素)→ 场值。──
 // 边缘软度按逻辑约 1.2px = 1.2·SDFSC·3 chamfer(随 SDFSC 缩放,软度恒定);SDF 越高分辨率边缘越细腻。
 const SEDGE=3*1.2*SDFSC; // chamfer 单位(随 SDF 分辨率缩放)
-function bilin(D,x,y){
-  const x0=Math.max(0,Math.min(SDFW-2,x|0)), y0=Math.max(0,Math.min(SDFH-2,y|0));
+// mw/mh = SDF 缓冲实际尺寸(默认 SDFW×SDFH;带画布外余量的矢量实心会更大)。
+function bilin(D,x,y,mw=SDFW,mh=SDFH){
+  const x0=Math.max(0,Math.min(mw-2,x|0)), y0=Math.max(0,Math.min(mh-2,y|0));
   const fx=Math.min(1,Math.max(0,x-x0)), fy=Math.min(1,Math.max(0,y-y0));
-  const i=y0*SDFW+x0;
-  return (D[i]*(1-fx)+D[i+1]*fx)*(1-fy) + (D[i+SDFW]*(1-fx)+D[i+SDFW+1]*fx)*fy;
+  const i=y0*mw+x0;
+  return (D[i]*(1-fx)+D[i+1]*fx)*(1-fy) + (D[i+mw]*(1-fx)+D[i+mw+1]*fx)*fy;
 }
 // 目标像素 → 源画布像素(经逆镜头)→ 各实心场加权求和(单位:thr 的倍数)。
 // invX/invY 把目标像素映射回归一化画布坐标(处理 stretch/fit 与任意分辨率)。SDF 为 2× 分辨率。
@@ -48,18 +49,22 @@ function makeSolidSampler(solids, cam, invX, invY, thr, frameCol, edgeDiv){
     let u=invX(x,y), v=invY(x,y);
     if(cam){ const p=camPtInv(u,v,cam); u=p[0]; v=p[1]; }
     let f=0, sr=0, sg=0, sb=0, tw=0;
-    if(!anyWarp){ // 快路径:无形变,单次坐标 + 边界判定
-      const sx=u*SDFW, sy=v*SDFH;
-      if(sx<-1||sy<-1||sx>SDFW||sy>SDFH) return 0;
-      for(const s of solids){ const cov=s.w*Math.min(8, bilin(s.sdf,sx,sy)/SE);
-        f+=cov; if(anyCol && cov>0){ const c=s.col||frameCol; sr+=cov*c[0]; sg+=cov*c[1]; sb+=cov*c[2]; tw+=cov; } }
+    if(!anyWarp){ // 快路径:无形变;每个实心按自己的 SDF 余量 pad 映射 —— 越出画布的部分落在余量内仍可采样,
+      for(const s of solids){                       // 于是图形自然延伸出画布被视口裁掉,而非贴边一条直线软边
+        const pad=s.pad||0, mw=s.mw||SDFW, mh=s.mh||SDFH;
+        const sx=u*SDFW+pad, sy=v*SDFH+pad;
+        if(sx<-1||sy<-1||sx>mw||sy>mh) continue;
+        const cov=s.w*Math.min(8, bilin(s.sdf,sx,sy,mw,mh)/SE);
+        f+=cov; if(anyCol && cov>0){ const c=s.col||frameCol; sr+=cov*c[0]; sg+=cov*c[1]; sb+=cov*c[2]; tw+=cov; }
+      }
     } else {
       for(let k=0;k<solids.length;k++){ const s=solids[k];
         let su=u, sv=v, rf=1;
         if(grids[k]){ const d=sampleWarp(grids[k], u, v); su=u-d[0]; sv=v-d[1]; rf=d[2]; } // 逆向采样 → 形体整体位移
-        const sx=su*SDFW, sy=sv*SDFH;
-        if(sx<-1||sy<-1||sx>SDFW||sy>SDFH) continue;
-        const cov=s.w*Math.min(8, bilin(s.sdf,sx,sy)/SE)*rf;
+        const pad=s.pad||0, mw=s.mw||SDFW, mh=s.mh||SDFH;
+        const sx=su*SDFW+pad, sy=sv*SDFH+pad;
+        if(sx<-1||sy<-1||sx>mw||sy>mh) continue;
+        const cov=s.w*Math.min(8, bilin(s.sdf,sx,sy,mw,mh)/SE)*rf;
         f+=cov; if(anyCol && cov>0){ const c=s.col||frameCol; sr+=cov*c[0]; sg+=cov*c[1]; sb+=cov*c[2]; tw+=cov; }
       }
     }

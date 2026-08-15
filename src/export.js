@@ -15,7 +15,7 @@ import { setMode } from './ui/stage.js';
 import { LED_W, LED_H } from './ledmap.js';
 import { p2On, p2Size, p2Scale, makeCanvas, transformCanvasP1toP2, mirrorSymmetricH } from './ledcanvas.js';
 import { uvCropOn, uvCropCfg, activePatch, planSize, composeCrop } from './uvcrop.js';
-import { charactersSolids, charPolys } from './characters.js';
+import { charactersSolids, charPolys, charLoopFrames } from './characters.js';
 import { renderWideFrame, wideEW } from './widexport.js';
 import { applyOutputTransform } from './outtx.js';
 
@@ -146,15 +146,47 @@ function makeExportRenderer(){
   const final=makeCanvas(FW,FH);
   const opts=()=>({ w:FW, h:FH, fit:P.outTx.fit, mirX:!!P.outTx.mirX, mirY:!!P.outTx.mirY,
     rot:P.outTx.rot||0, warp:!!P.outTx.warp, gx:P.outTx.gx||1, gy:P.outTx.gy||1, mesh:P.outTx.mesh,
-    symMirror:P.outTx.symMirror||'off', transBg:!!P.transBg });
+    symMirror:P.outTx.symMirror||'off', transBg:!!P.transBg, bg:P.colBg,   // 🎨 留边用画布背景色填充(如白)
+    sx:P.outTx.sx??1, sy:P.outTx.sy??1 });                                 // 手动拉伸倍率
   return { out:final, drawFrame(f){ base.drawFrame(f); applyOutputTransform(base.out, opts(), final); } };
 }
 
+const gcd=(a,b)=>{ a=Math.abs(a); b=Math.abs(b); while(b){ [a,b]=[b,a%b]; } return a||1; };
+const lcm=(a,b)=>a/gcd(a,b)*b;
 // 帧数护栏:PNG/MP4 共用。
+// 🚶 关键:并行角色里【跑不停 / 自由横穿】的用墙钟推进,其一整圈远比主序列长 ——
+// 若只按 store.SEQ.T 出帧,骑车人只会导出旅途的一小段、跑不完全程(骑车 loop 全变空白/太短的根因)。
+// 故导出时长【以最长角色圈为准】,角色在此长度天然首尾相接。主序列若还有真实多段动画,再尽量
+// 让它在导出里整数次循环 —— 但代价可控时才做(避免与角色圈互质时时长暴涨到几十秒)。
+// 自动时长(帧):主序列 + 墙钟角色圈的合理公共长度(无副作用,供 UI 预读)。
+function autoFrames(){
+  const fps=P.fps;
+  const mainF=Math.max(1, Math.round((store.SEQ?.T||0)*fps));
+  const wall=(store.characters||[]).filter(c=>
+    c && c.visible!==false && c!==store.editingChar && (c.wrap || (c.sync||'free')==='free'));
+  let frames=mainF;
+  if(wall.length){
+    // 各角色圈的公共长度(彼此取整数倍);超上限则退取最长的那个圈。
+    let cf=1;
+    for(const c of wall){ cf=lcm(cf, charLoopFrames(c, fps)); }
+    if(cf>1200) cf=Math.min(1200, Math.max(...wall.map(c=>charLoopFrames(c, fps))));
+    frames=cf;
+    // 主序列有真实多段动画时,让它也整数次循环 —— 仅在结果不超上限、且不把时长撑大到 3 倍以上时。
+    if((store.states?.length||0)>1 && mainF>1){ const F=lcm(mainF, cf); if(F<=1200 && F<=cf*3) frames=F; }
+  }
+  return Math.min(1200, frames);
+}
+// 实际将导出的帧数(无副作用,UI 读数用):优先手动指定的时长,否则走自动。
+export function plannedFrames(){
+  const fps=P.fps;
+  if(P.exportSec && P.exportSec.on)
+    return Math.min(1200, Math.max(2, Math.round(Math.max(0.1, P.exportSec.sec||1)*fps)));
+  return autoFrames();
+}
 function frameCount(){
-  const frames=Math.round(store.SEQ.T*P.fps);
+  const frames=plannedFrames();
   if(frames<2){ setHint('⚠ 序列太短'); return 0; }
-  if(frames>1200){ setHint(`⚠ ${frames} 帧超上限1200,请缩短停留/过渡或降帧率`); return 0; }
+  if(frames>=1200){ setHint('⚠ 已达 1200 帧上限 —— 缩短导出时长/提高角色「地面速度」或降帧率'); }
   return frames;
 }
 
@@ -175,7 +207,7 @@ export async function exportPNG(){
   setHint('打包 zip…');
   downloadBlob(await zip.generateAsync({type:'blob'}),
     `morph_seq_${EW}x${EH}${p2On()?'_P2':''}_${P.fps}fps_${frames}f.zip`);
-  setHint(`✓ 已导出整条序列 ${frames} 帧 (${EW}×${EH}${p2On()?' · 🔩P2 实装布局':''}, ${store.SEQ.T.toFixed(1)}s)`);
+  setHint(`✓ 已导出整条序列 ${frames} 帧 (${EW}×${EH}${p2On()?' · 🔩P2 实装布局':''}, ${(frames/P.fps).toFixed(1)}s)`);
   $('pngBtn').textContent='🎞 PNG 序列'; store.exporting=false;
 }
 
@@ -230,7 +262,7 @@ export async function exportMP4(){
     muxer.finalize();
     downloadBlob(new Blob([muxer.target.buffer],{type:'video/mp4'}),
       `morph_${EW}x${EH}${p2On()?'_P2':''}_${fps}fps_${frames}f.mp4`);
-    setHint(`✓ 已导出 MP4 ${frames} 帧 (${EW}×${EH}${p2On()?' · 🔩P2 实装布局':''}, ${store.SEQ.T.toFixed(1)}s, H.264)`);
+    setHint(`✓ 已导出 MP4 ${frames} 帧 (${EW}×${EH}${p2On()?' · 🔩P2 实装布局':''}, ${(frames/fps).toFixed(1)}s, H.264)`);
   }catch(err){
     setHint('⚠ MP4 编码失败:'+(err?.message||err)+' —— 可改用 🎞 PNG 序列');
   }

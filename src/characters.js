@@ -48,6 +48,18 @@ export function setCharLoopSec(ch, sec){ const T=ensureSEQ(ch).T; ch.speed = T /
 // sync='timeline':跟随主时间轴 gMain —— 每个主循环内从 delay 处开始 → 与箭头等主动画【严格同步】,
 //   两个角色都设 sync='timeline'、delay=0 即"一起开始";一个 delay=0、一个 delay=1 即"箭头后 1s 小人才跑"。
 export const DEFAULT_GROUND_SPEED = 300;               // 地面速度默认值(px/s):距离与它一起决定"走多久"
+// 取模到 [0,m):JS 的 % 对负数会返回负值,直接用会让向左跑的角色瞬移。
+const mod=(v,m)=>((v%m)+m)%m;
+const WRAP_PAD=200;                     // 环绕出画余量:够角色整个走出画面再折返,接缝落在画外
+const WRAP_SPAN=W+WRAP_PAD;             // 一个环绕周期(画布宽 + 出画余量):跑不停一整圈前进这么多 px
+// 一整圈需要走【整数个走路循环 laps】—— 首尾腿相位相同 → 无缝可循环。
+// wrap:一圈 = 前进正好一个 WRAP_SPAN,laps=round(span/(gs·cycSec)),故一圈耗时 ≈ span/gs(与步频无关)。
+// 非 wrap:一圈 = 走完 (x0,y0)→(x1,y1) 的距离,laps=round(距离/(gs·cycSec))。
+function charLaps(ch, cycSec, gs){
+  if(ch.wrap) return Math.max(1, Math.round(WRAP_SPAN/(gs*cycSec)));
+  const d=Math.hypot((ch.x1||0)-(ch.x0||0), (ch.y1||0)-(ch.y0||0));
+  return d>1 ? Math.max(1, Math.round(d/(gs*cycSec))) : 1;
+}
 export function charTime(ch, clock, gMain){
   const SEQ=ensureSEQ(ch), T=Math.max(1e-3, SEQ.T);
   const speed=ch.speed||1, delay=ch.delay||0;
@@ -58,21 +70,38 @@ export function charTime(ch, clock, gMain){
   const started = base >= -1e-6;                      // delay 未到 → 尚未出场
   const total = base*speed;
   // 🚶【位移距离】与【步频/循环时长/速度】彻底解耦:走路循环每 T 秒一圈(步频),位移按【地面速度】推进。
-  // 圈数不再手填,而是 = 距离 ÷ (地面速度 × 每圈秒数) 四舍五入成整数圈 —— 距离越远,自动多迈几圈、
-  // 耗时更长,地面速度恒定,绝不"距离一大就加速"。整数圈 → 走路循环在一趟位移里跑整数次,无缝。
+  // 圈数不手填,而是四舍五入成整数圈(见 charLaps)—— 距离越远/地面越慢,自动多迈几圈、耗时更长,
+  // 地面速度恒定,绝不"距离一大就加速"。整数圈 → 走路循环在一整圈里跑整数次,首尾无缝。
   const cycSec = T/speed;                              // 一个走路循环的实际秒数
   const gs = Math.max(1, ch.groundSpeed || DEFAULT_GROUND_SPEED);
-  const travDist = ch.wrap ? (Math.abs((ch.x1||0)-(ch.x0||0)) || W)
-                           : Math.hypot((ch.x1||0)-(ch.x0||0), (ch.y1||0)-(ch.y0||0));
-  const laps = travDist>1 ? Math.max(1, Math.round(travDist/(gs*cycSec))) : 1;
+  const laps = charLaps(ch, cycSec, gs);
   const t=((total%T)+T)%T;
   const progC=total/(T*laps);           // 连续里程(可 >1,永不回头)—— 环绕平移用
   const prog=((progC%1)+1)%1;           // 循环内进度 0..1 —— 线性往返用
   return { SEQ, T, t, prog, progC, started, laps };
 }
-// 取模到 [0,m):JS 的 % 对负数会返回负值,直接用会让向左跑的角色瞬移。
-const mod=(v,m)=>((v%m)+m)%m;
-const WRAP_PAD=200;                     // 环绕出画余量:够角色整个走出画面再折返,接缝落在画外
+// 一个墙钟角色(跑不停 / 自由横穿)跑完整整一圈需要多少【导出帧】——
+// 导出时长据此取整数圈,骑车人才能完整从左跑到右、且首尾相接无缝循环(而非只导出主序列的一小段)。
+export function charLoopFrames(ch, fps){
+  const SEQ=ensureSEQ(ch), T=Math.max(1e-3, SEQ.T);
+  const speed=ch.speed||1, cycSec=T/speed;
+  const gs=Math.max(1, ch.groundSpeed || DEFAULT_GROUND_SPEED);
+  return Math.max(1, Math.round(charLaps(ch, cycSec, gs)*cycSec*fps));  // 一圈秒数 laps·cycSec × 帧率
+}
+// 角色横穿一整圈的【实际秒数】(跑不停=环绕一周;自由=走完起止距离)—— 面板「走过用时」直接读它;
+// 也正是导出这条角色的时长。因整数圈取整,回读可能是 15.0→15.1 这种极小偏差。
+export function charCrossSec(ch){
+  const SEQ=ensureSEQ(ch), T=Math.max(1e-3, SEQ.T), speed=ch.speed||1, cycSec=T/speed;
+  const gs=Math.max(1, ch.groundSpeed || DEFAULT_GROUND_SPEED);
+  return charLaps(ch, cycSec, gs)*cycSec;
+}
+// 反解:想让走过用时 = sec 秒,则地面速度 = 距离 / sec。距离:跑不停=一个环绕周期,自由=起止距离。
+export function setCharCrossSec(ch, sec){
+  sec=Math.max(0.1, sec||1);
+  const dist = ch.wrap ? WRAP_SPAN
+    : Math.max(1, Math.hypot((ch.x1||0)-(ch.x0||0), (ch.y1||0)-(ch.y0||0)));
+  ch.groundSpeed = Math.max(1, dist/sec);
+}
 // 角色当前帧的位移形变后轮廓 polys(逻辑画布坐标)。绕画布中心缩放,再按位移进度平移。
 export function charPolys(ch, clock, gMain){
   if(!ch.visible || !ch.states?.length) return [];
@@ -83,10 +112,9 @@ export function charPolys(ch, clock, gMain){
   // 接着进来。环绕周期 = 画布宽 + 余量,翻转点在画外发生 → 肉眼完全看不出接缝,视觉上就是永远向前跑。
   let dx, dy;
   if(ch.wrap){
-    const span=W+WRAP_PAD;                              // 一个环绕周期(画布宽 + 出画余量)
-    const perLap=((ch.x1||0)-(ch.x0||0)) || W;          // 跑满 laps 圈前进多少 px(正负 = 方向)
-    const travelled=perLap*progC;                       // 连续里程,永不回头
-    dx = -W/2 - WRAP_PAD/2 + mod(travelled, span);      // 取模 → 出右画外即从左画外接着进来
+    const dir=((ch.x1||0)-(ch.x0||0))<0 ? -1 : 1;       // 方向:x1<x0 向左跑,否则向右(x0=x1 默认向右)
+    const travelled=dir*WRAP_SPAN*progC;                // 一圈正好前进一个 span → 首尾无缝;连续里程,永不回头
+    dx = -W/2 - WRAP_PAD/2 + mod(travelled, WRAP_SPAN); // 取模 → 出右画外即从左画外接着进来
     dy = (ch.y0||0);                                    // 环绕模式纵向固定(要斜跑就关掉环绕)
   } else {
     dx=(ch.x0||0)+((ch.x1||0)-(ch.x0||0))*prog;

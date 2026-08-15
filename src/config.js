@@ -29,6 +29,9 @@ export const P = {
   // 缩小 SVG 到实装小尺寸时想保留细节就调高它(LED 硬件本就要清晰边缘)。
   solidSharp:0,
   ss2x:true, glow:0,
+  // ⏱ 指定导出时长(秒):on=false 时自动跟随角色走完全程的时长;on=true 时强制导出 sec 秒
+  //(骑车小人 loop 想要多长就填多长,绝不被自动判定悄悄缩短成主序列那一小段)。
+  exportSec:{ on:false, sec:15 },
   // 📐 宽画幅导出:把世界横向拉长成 wideW 个 480 基准方 → 小人从左跑到右【跑完不消失】,且不缩小分辨率
   //(不是拉伸方形,而是真正加宽世界、原始密度逐像素渲染)。基准方居中,角色跨世界。见 widexport.js。
   wideExport:false, wideW:5,
@@ -36,8 +39,10 @@ export const P = {
   // gx/gy=网格格数(1×1=四角透视);mesh=(gx+1)(gy+1) 个控制点(行主序,归一化 0..1),可逐点拖做分区精细 warp。
   // symMirror:双边镜像。'off'|'h'/'v'=整幅沿中线【对称叠加】(同 P2 逻辑,内容已满幅时用)|
   //   'hfill'/'vfill'=【铺满两半】(把动画装进一半、镜像到另一半,填满整条宽灯带的左右/上下两半)。均在 warp 前施加。
+  // fit:'fit'等比留边 | 'fill'等比裁满 | 'stretch'拉伸填满 | 'manual'手动拉伸(自定 X/Y 倍率,见 sx/sy)。
+  // sx/sy:手动拉伸倍率(相对「等比留边」基准),1=不变形;调大 sx 拉宽、sy 拉高,空出处用背景色填满。
   outTx:{ on:false, w:1440, h:600, fit:'fit', mirX:false, mirY:false, rot:0, warp:false, symMirror:'off',
-    gx:1, gy:1, mesh:[[0,0],[1,0],[0,1],[1,1]] },
+    sx:1, sy:1, gx:1, gy:1, mesh:[[0,0],[1,0],[0,1],[1,1]] },
   // 🔩 物理布局导出(P1 创作 → P2 实装,见 ledmap.js)。默认关 → 导出行为与既有构建逐字节一致。
   // 开启时导出强制为 128×320(控制器画布),逐模组裁切/旋转/平移,永不缩放。
   // p2Rot:逐模组旋转覆盖(现场校正),null=按映射表;p2Side:侧板方向 'cw'|'ccw'(实装镜像时整体翻转)。

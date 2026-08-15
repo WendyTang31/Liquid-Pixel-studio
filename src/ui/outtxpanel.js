@@ -49,7 +49,7 @@ function draw(){
   const t=OT();
   if(!outCv) outCv=document.createElement('canvas');
   const src=baseFrame();
-  applyOutputTransform(src, { w:t.w, h:t.h, fit:t.fit, mirX:t.mirX, mirY:t.mirY, rot:t.rot, warp:t.warp, gx:t.gx, gy:t.gy, mesh:t.mesh, symMirror:t.symMirror||'off', transBg:!!P.transBg }, outCv);
+  applyOutputTransform(src, { w:t.w, h:t.h, fit:t.fit, mirX:t.mirX, mirY:t.mirY, rot:t.rot, warp:t.warp, gx:t.gx, gy:t.gy, mesh:t.mesh, symMirror:t.symMirror||'off', transBg:!!P.transBg, bg:P.colBg, sx:t.sx??1, sy:t.sy??1 }, outCv);
   const L=layout();
   prevCtx.clearRect(0,0,prevCanvas.width,prevCanvas.height);
   prevCtx.fillStyle='#0d1210'; prevCtx.fillRect(L.ox,L.oy,L.pw,L.ph);
@@ -101,7 +101,21 @@ export function initOutTxPanel(){
   bindNum('outTxW','w'); bindNum('outTxH','h');
   if($('outTx3615')) $('outTx3615').onclick=()=>{ const t=P.outTx, long=Math.max(t.w,t.h);
     t.w=Math.round(long); t.h=Math.round(long*15/36); $('outTxW').value=t.w; $('outTxH').value=t.h; draw(); };
-  if($('outTxFit')){ $('outTxFit').value=P.outTx.fit; $('outTxFit').onchange=e=>{ P.outTx.fit=e.target.value; draw(); }; }
+  if($('outTxFit')){
+    const row=$('outTxScaleRow'), toggle=()=>{ if(row) row.style.display = P.outTx.fit==='manual' ? '' : 'none'; };
+    $('outTxFit').value=P.outTx.fit; toggle();
+    $('outTxFit').onchange=e=>{ P.outTx.fit=e.target.value; toggle(); draw();
+      setHint(e.target.value==='manual'?'手动拉伸:下面『横/纵 %』自己定拉伸倍率(100%=不变形),空出处用背景色填满'
+        : e.target.value==='fit'?'等比留边:图形不变形,四周用背景色(如白)补满画幅' : ''); }; }
+  // 手动拉伸倍率 X/Y(以百分比呈现;内部存倍率)。「铺满宽」= 横向设为正好铺满画幅宽度。
+  const bindPct=(id,key)=>{ const el=$(id); if(!el) return; el.value=Math.round((P.outTx[key]??1)*100);
+    el.addEventListener('input',()=>{ P.outTx[key]=Math.max(0.05,(parseFloat(el.value)||100)/100); draw(); }); };
+  bindPct('outTxSx','sx'); bindPct('outTxSy','sy');
+  if($('outTxFillW')) $('outTxFillW').onclick=()=>{
+    // 让横向正好铺满画幅宽:content 宽 = sw·s0·sx = w  →  sx = (w/sw)/s0 = (w/sw)/min(w/sw,h/sh)。
+    // 用预览基础尺寸(方形 SRC)近似源比例即可 —— 源是方形,w/sw 与 h/sh 之比 = 画幅宽高比。
+    const t=OT(), s0=Math.min(t.w, t.h); t.sx=t.w/s0;                 // 方形源:sx=w/min(w,h)
+    if($('outTxSx')) $('outTxSx').value=Math.round(t.sx*100); draw(); };
   if($('outTxRot')){ $('outTxRot').value=String(P.outTx.rot); $('outTxRot').onchange=e=>{ P.outTx.rot=parseInt(e.target.value,10)||0; draw(); }; }
   if($('outTxSymMir')){ $('outTxSymMir').value=P.outTx.symMirror||'off';
     $('outTxSymMir').onchange=e=>{ P.outTx.symMirror=e.target.value; scheduleAutosave(); draw();

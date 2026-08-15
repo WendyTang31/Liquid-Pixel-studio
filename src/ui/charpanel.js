@@ -3,7 +3,7 @@
 import { store } from '../store.js';
 import { W, H } from '../config.js';
 import { setHint } from '../utils.js';
-import { charLoopSec, setCharLoopSec, duplicateCharacter } from '../characters.js';
+import { charLoopSec, setCharLoopSec, charCrossSec, setCharCrossSec, duplicateCharacter } from '../characters.js';
 import { enterCharEdit, combineSelectedIntoCharacter, newEmptyCharacter } from './charedit.js';
 import { pushUndo } from '../state.js';
 
@@ -129,10 +129,19 @@ export function renderCharacters(){
     gsI.title='地面速度(像素/秒):小人横穿地面的快慢。距离越远,自动走越久,速度恒定 —— 绝不"距离一大就加速"。\n和「步频×」(迈腿快慢)、「时长」(一个走路循环多久)完全分离。嫌快就把它调小。';
     gsI.style.cssText='width:52px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
     gsI.onclick=e=>e.stopPropagation();
-    gsI.oninput=()=>{ ch.groundSpeed=Math.max(10, parseFloat(gsI.value)||300); };
+    // 走过用时(秒):横穿一整圈需要多久 —— 也【正是导出这条角色的时长】。与地面速度互为倒数关系,双向联动。
+    // 跑不停时:用时 ≈ (画宽+余量)/地面速度;想要 15s 长循环就直接填 15。
+    const crossI=document.createElement('input'); crossI.type='number'; crossI.step='0.5'; crossI.min='0.1';
+    try{ crossI.value=+charCrossSec(ch).toFixed(1); }catch(_){ crossI.value=''; }
+    crossI.title='走过用时(秒):横穿一整圈(跑不停=环绕一周;自由=走完起止距离)用多久。\n这就是导出这条角色的时长 —— 想要 15 秒的长循环直接填 15,地面速度会自动反算。';
+    crossI.style.cssText='width:46px;background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:2px 4px';
+    crossI.onclick=e=>e.stopPropagation();
+    gsI.oninput=()=>{ ch.groundSpeed=Math.max(10, parseFloat(gsI.value)||300);
+      try{ crossI.value=+charCrossSec(ch).toFixed(1); }catch(_){} window.refreshExportDurInfo?.(); };
+    crossI.oninput=()=>{ const v=parseFloat(crossI.value); if(v>0){ setCharCrossSec(ch,v); gsI.value=Math.round(ch.groundSpeed); window.refreshExportDurInfo?.(); } };
     const wrapCk=chk('🔁跑不停', ()=>!!ch.wrap, v=>{ ch.wrap=v; renderCharacters(); },
       '环绕平移:跑出右边画外就立刻从左边画外接着进来,永远向前跑,接缝在画外看不见。\n想"一直往前跑"请用这个 —— 把行程拉到几千像素是没用的,画布只有这么宽,人跑出去就看不见了。');
-    r5.append(mkLabel('地面速度'), gsI, mkLabel('px/s'), wrapCk);
+    r5.append(mkLabel('地面速度'), gsI, mkLabel('px/s'), mkLabel('走过用时'), crossI, mkLabel('s'), wrapCk);
     card.appendChild(r5);
     box.appendChild(card);
   });

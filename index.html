@@ -505,9 +505,14 @@
         <input type="text" id="outTxW" value="1440" style="width:52px"> ×
         <input type="text" id="outTxH" value="600" style="width:52px">
         <button id="outTx3615" title="按长边套用 36:15 比例">36:15</button></div>
-      <div class="row"><label title="动画方块塞进画幅的方式:等比留边 / 等比裁满 / 拉伸填满">适配</label>
+      <div class="row"><label title="动画方块塞进画幅的方式:等比留边(不变形+背景填边)/ 等比裁满(不变形+裁切)/ 拉伸填满(强行铺满会变形)/ 手动拉伸(自己定 X/Y 拉伸倍率)">适配</label>
         <select id="outTxFit" style="flex:1">
-          <option value="fit">等比留边</option><option value="fill">等比裁满</option><option value="stretch">拉伸填满</option></select></div>
+          <option value="fit">等比留边</option><option value="fill">等比裁满</option><option value="stretch">拉伸填满</option><option value="manual">手动拉伸(自定 X/Y)</option></select></div>
+      <div class="row" id="outTxScaleRow" style="display:none" title="手动拉伸倍率:100%=不变形(与等比留边一致)。调大『横』把图形拉宽、调大『纵』拉高;两者相等=等比放大;不相等=按你定的比例拉伸。空出的地方用画布背景色(如白)填满。">
+        <label>拉伸%</label>
+        <span style="opacity:.8">横</span><input type="text" id="outTxSx" value="100" style="width:46px">
+        <span style="opacity:.8">纵</span><input type="text" id="outTxSy" value="100" style="width:46px">
+        <button id="outTxFillW" title="把横向设为『正好铺满画幅宽度』(纵向不变)" style="font:11px system-ui;padding:2px 6px">铺满宽</button></div>
       <div class="row"><label title="整体旋转(度)">旋转</label>
         <select id="outTxRot" style="flex:1"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select>
         <label class="ck" style="margin-left:6px" title="整体翻转(把画面翻过来),不是对称"><input type="checkbox" id="outTxMirX"> ⇋翻转横</label>
@@ -537,6 +542,11 @@
     </div>
 
     <div class="row"><label>帧率</label><input type="range" id="pFps" min="10" max="60" step="1" value="30"><div class="val" id="vFps">30</div></div>
+    <div class="row" title="导出多少秒。不勾=自动跟随角色走完全程(从左到右)的时长;勾上=强制导出你填的秒数 —— 骑车小人 loop 想要多长就填多长。旁边显示实际将导出的时长与帧数。">
+      <label class="ck"><input type="checkbox" id="expDurOn"> ⏱ 指定导出时长</label>
+      <input type="text" id="expDurSec" value="15" style="width:44px"> s
+      <span class="small" id="expDurInfo" style="opacity:.7;margin-left:auto"></span>
+    </div>
     <div class="row">
       <label class="ck" title="抗锯齿:内部按 2 倍分辨率渲染再缩回,边缘更细腻无锯齿(PNG 与 MP4 均生效;输出≥3000px 时自动关闭,分辨率本身已足够)"><input type="checkbox" id="pSs2x" checked> 2×超采样(抗锯齿)</label>
       <label title="轻高斯模糊加亮叠加,LED 发光感(仅 PNG 序列);0=关">辉光</label>

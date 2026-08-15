@@ -2,6 +2,10 @@
 // 并可【整体镜像 / 旋转 / 四角透视 warp】—— 全部有实时预览,所见即所得。
 // 纯几何 + 画布搬运:无 warp 时走 drawImage(快、精确);有 warp 时按【逆向单应】逐像素采样(透视贴合)。
 
+// 十六进制颜色 → [r,g,b](本地小工具,避免为一处依赖引入 DOM 模块;支持 #rgb / #rrggbb)。
+function hex2rgbLocal(h){ h=(h||'#000000').replace('#',''); if(h.length===3) h=h.split('').map(c=>c+c).join('');
+  const n=parseInt(h,16)||0; return [(n>>16)&255,(n>>8)&255,n&255]; }
+
 // 单位正方形 (0,0)(1,0)(1,1)(0,1) → 目标四边形(Heckbert 闭式解)。返回 3×3 矩阵 M(行主序 [a,b,c,d,e,f,g,h,i])。
 export function unitToQuad(c){
   const [x0,y0]=c[0],[x1,y1]=c[1],[x2,y2]=c[2],[x3,y3]=c[3];
@@ -63,7 +67,8 @@ function affine3(s,d){
   const [a,b,c]=col(0), [dd,e,f]=col(1);
   return [a,dd,b,e,c,f];   // setTransform(m11,m12,m21,m22,dx,dy)
 }
-// 目标三角略微向外扩(抗三角接缝的细线/漏隙)。
+// 目标三角略微向外扩(抗三角接缝的细线/漏隙)。扩得更足一点 → 相邻三角充分交叠,
+// 高分辨率导出时不再露出对角接缝细线(小预览里本就看不见,全尺寸视频里才明显)。
 function inflate(tri,px){ const cx=(tri[0][0]+tri[1][0]+tri[2][0])/3, cy=(tri[0][1]+tri[1][1]+tri[2][1])/3;
   return tri.map(([x,y])=>{ const dx=x-cx,dy=y-cy,L=Math.hypot(dx,dy)||1; return [x+dx/L*px, y+dy/L*px]; }); }
 // 镜像/旋转预处理:先把源翻/转进临时画布,网格再 warp 它(方位与快路径一致)。
@@ -78,7 +83,8 @@ function preTransform(src,mirX,mirY,rot){
 function meshWarp(src, octx, w, h, mesh, gx, gy, mirX, mirY, rot){
   const pre=(mirX||mirY||rot) ? preTransform(src,mirX,mirY,rot) : src;
   const pw=pre.width, ph=pre.height;
-  octx.clearRect(0,0,w,h);
+  // 不再在这里 clearRect —— 上游 applyOutputTransform 已按背景色填充/清空整幅。保留那层底色 →
+  // 三角接缝处的漏隙露出的是背景色(如白),而非透明/黑,配合下面更足的三角交叠,导出全尺寸不见对角细线。
   for(let j=0;j<gy;j++) for(let i=0;i<gx;i++){
     // 源四角(像素)+ 目标四角(像素)
     const sTL=[i/gx*pw, j/gy*ph], sTR=[(i+1)/gx*pw, j/gy*ph], sBL=[i/gx*pw,(j+1)/gy*ph], sBR=[(i+1)/gx*pw,(j+1)/gy*ph];
@@ -86,7 +92,7 @@ function meshWarp(src, octx, w, h, mesh, gx, gy, mirX, mirY, rot){
     const dTL=[P0[0]*w,P0[1]*h], dTR=[P1[0]*w,P1[1]*h], dBL=[P2[0]*w,P2[1]*h], dBR=[P3[0]*w,P3[1]*h];
     const tris=[[[sTL,sTR,sBL],[dTL,dTR,dBL]], [[sTR,sBR,sBL],[dTR,dBR,dBL]]];
     for(const [s,d] of tris){
-      const di=inflate(d,0.6);
+      const di=inflate(d,1.0);   // 更足的交叠余量,遮住相邻三角间的对角接缝
       octx.save();
       octx.beginPath(); octx.moveTo(di[0][0],di[0][1]); octx.lineTo(di[1][0],di[1][1]); octx.lineTo(di[2][0],di[2][1]); octx.closePath(); octx.clip();
       const m=affine3(s,di); octx.setTransform(m[0],m[1],m[2],m[3],m[4],m[5]);
@@ -120,9 +126,16 @@ function sample(sd,sw,sh,fx,fy,out,oi){
 
 // 目标画幅四角(像素)。无 warp 时按 fit/fill/stretch 把源方块摆进目标;有 warp 时用 opts.corners(归一化)。
 export function destCorners(sw, sh, opts){
-  const {w,h,fit='fit',warp,corners}=opts;
+  const {w,h,fit='fit',warp,corners,sx=1,sy=1}=opts;
   if(warp && corners) return corners.map(([x,y])=>[x*w, y*h]);
   if(fit==='stretch') return [[0,0],[w,0],[w,h],[0,h]];
+  if(fit==='manual'){
+    // 手动拉伸:以「等比留边」为基准(不变形时铺满可用空间),再各自乘用户倍率 sx/sy —— 想拉多宽自己定,
+    // 空出的地方由 applyOutputTransform 的背景色填满。sx=sy=1 即等比留边;sx>sy 横向拉宽。
+    const s0=Math.min(w/sw, h/sh);
+    const dw=sw*s0*sx, dh=sh*s0*sy, ox=(w-dw)/2, oy=(h-dh)/2;
+    return [[ox,oy],[ox+dw,oy],[ox+dw,oy+dh],[ox,oy+dh]];
+  }
   const s = fit==='fill' ? Math.max(w/sw,h/sh) : Math.min(w/sw,h/sh);
   const dw=sw*s, dh=sh*s, ox=(w-dw)/2, oy=(h-dh)/2;
   return [[ox,oy],[ox+dw,oy],[ox+dw,oy+dh],[ox,oy+dh]];
@@ -190,7 +203,11 @@ export function applyOutputTransform(src, opts, outCanvas){
   const out=outCanvas||document.createElement('canvas');
   if(out.width!==w||out.height!==h){ out.width=w; out.height=h; }
   const octx=out.getContext('2d');
-  octx.clearRect(0,0,w,h);
+  // 🎨 留边填充:非透明底时,先把整幅填成【背景色】—— 于是「等比留边」空出来的边不再是黑/透明,
+  // 而是画布背景色(如白):图形保持原比例不变,四周用背景色补满整条画幅(用户想要的「填白 fill」)。
+  // 「等比裁满/拉伸」会盖满整幅,这层底色被覆盖、无副作用;透明底(transBg)则保持透明。
+  const bgHex = (!opts.transBg && opts.bg) ? opts.bg : null;
+  if(bgHex){ octx.fillStyle=bgHex; octx.fillRect(0,0,w,h); } else octx.clearRect(0,0,w,h);
   const sw=src.width, sh=src.height;
   // 🕸 网格 warp:mesh(gx×gy 控制点)。>1×1 → 逐格三角仿射(任意密、可分区精细拖);
   //    1×1(四角)→ 走透视 homography(更"正"的透视贴合)。mesh 行主序,四角 = TL,TR,BL,BR。
@@ -222,6 +239,8 @@ export function applyOutputTransform(src, opts, outCanvas){
   const minX=Math.max(0,Math.floor(Math.min(...dc.map(p=>p[0])))), maxX=Math.min(w,Math.ceil(Math.max(...dc.map(p=>p[0]))));
   const minY=Math.max(0,Math.floor(Math.min(...dc.map(p=>p[1])))), maxY=Math.min(h,Math.ceil(Math.max(...dc.map(p=>p[1]))));
   const img=octx.createImageData(w,h), d=img.data;
+  if(bgHex){ const [br,bg2,bb]=hex2rgbLocal(bgHex);            // putImageData 会整幅替换 → 先把四边形外铺成背景色
+    for(let p=0;p<d.length;p+=4){ d[p]=br; d[p+1]=bg2; d[p+2]=bb; d[p+3]=255; } }
   for(let y=minY;y<maxY;y++) for(let x=minX;x<maxX;x++){
     const [u,v]=proj(M, x+0.5, y+0.5);
     if(u<-0.001||v<-0.001||u>1.001||v>1.001) continue;   // 四边形外
