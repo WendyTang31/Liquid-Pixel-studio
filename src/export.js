@@ -28,6 +28,10 @@ function charPolysForExport(g){
   for(const c of store.characters||[]){ if(c===store.editingChar) continue; out.push(...charPolys(c, g, gm)); }
   return out;
 }
+// ⏱ 主时间轴时间:导出总时长可以【超过主序列周期 T】(角色跑整圈 / 指定导出时长)——
+// 但 sampleFrame 会把 g 钳在 T 内(过了 T 主动画就冻在最后一瞬,停留帧显示成空白/变形)。
+// 故主序列一律用【取模包裹】的 gm(和预览播放到点循环一样),角色则继续用未包裹的墙钟 g。
+const wrapMain = g => g % Math.max(1e-3, store.SEQ.T);
 export const wideOn = () => !!P.wideExport;
 
 // 🔩 物理布局导出:开启时尺寸锁成 128×320 的整数倍(1×=硬件原生;N×=原生高清渲染,模组网格同步放大)。
@@ -62,9 +66,9 @@ function makeOfflineRenderer(EW, EH){
     const worldW=Math.max(1, P.wideW||5);
     const out=makeCanvas(EW, EH), octx=out.getContext('2d');
     function drawFrame(f){
-      const g=f/P.fps;
-      const fr=sampleFrame(store.SEQ, store.states, g, g, P);
-      const polys=computeVectorPolys(store.states, store.SEQ, g, g, P).concat(charPolysForExport(g));
+      const g=f/P.fps, gm=wrapMain(g);           // 主序列取模循环;角色走墙钟(见 wrapMain 注释)
+      const fr=sampleFrame(store.SEQ, store.states, gm, g, P);
+      const polys=computeVectorPolys(store.states, store.SEQ, gm, g, P).concat(charPolysForExport(g));
       renderWideFrame(octx, EW, EH, worldW, fr.balls, fr.col, polys, fr.inkW);
     }
     return { ec:out, out, drawFrame };
@@ -79,10 +83,10 @@ function makeOfflineRenderer(EW, EH){
     const big=makeCanvas(R*ss,R*ss), bctx=big.getContext('2d');
     const out=makeCanvas(uv.plan.outW, uv.plan.outH);
     function drawFrame(f){
-      const g=f/P.fps;
-      const fr=sampleFrame(store.SEQ, store.states, g, g, P);
+      const g=f/P.fps, gm=wrapMain(g);           // 主序列取模循环;角色走墙钟
+      const fr=sampleFrame(store.SEQ, store.states, gm, g, P);
       const solids=(fr.solids||[]).concat(
-        vectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P), fr.seg, store.states, g, g))
+        vectorSolids(computeVectorPolys(store.states, store.SEQ, gm, g, P), fr.seg, store.states, gm, g))
         .concat(charSolidsForExport(g));   // 🚶 并行角色也进导出(此前只有预览有,导出漏了)
       if(ss===2){ renderToImageData(bctx,R*2,R*2,fr.balls,fr.col,P,solids,fr.cam,fr.inkW); ectx.drawImage(big,0,0,R,R); }
       else renderToImageData(ectx,R,R,fr.balls,fr.col,P,solids,fr.cam,fr.inkW);
@@ -105,11 +109,11 @@ function makeOfflineRenderer(EW, EH){
   const glowCv=document.createElement('canvas'); glowCv.width=RW; glowCv.height=RH;
   const glowCtx=glowCv.getContext('2d');
   function drawFrame(f){
-    const g=f/P.fps;
-    const fr=sampleFrame(store.SEQ, store.states, g, g, P); // g 同时作墙钟 → 导出确定
+    const g=f/P.fps, gm=wrapMain(g);             // 主序列取模循环;角色走墙钟;g 作漂移相位(连续)
+    const fr=sampleFrame(store.SEQ, store.states, gm, g, P); // 确定性:同 f 永远同帧
     // vectorSolids:过渡期的矢量轮廓也带上形变修饰器(尖刺/锯齿等),与预览一致
     const solids=(fr.solids||[]).concat(
-      vectorSolids(computeVectorPolys(store.states, store.SEQ, g, g, P), fr.seg, store.states, g, g))
+      vectorSolids(computeVectorPolys(store.states, store.SEQ, gm, g, P), fr.seg, store.states, gm, g))
       .concat(charSolidsForExport(g));   // 🚶 并行角色也进导出(此前只有预览有,导出漏了)
     if(ss===2){ renderToImageData(bctx,RW*2,RH*2,fr.balls,fr.col,P,solids,fr.cam,fr.inkW); ectx.drawImage(big,0,0,RW,RH); }
     else renderToImageData(ectx,RW,RH,fr.balls,fr.col,P,solids,fr.cam,fr.inkW);
@@ -138,8 +142,22 @@ function makeOfflineRenderer(EW, EH){
 }
 
 // 导出渲染器:基础渲染 → (可选)🖥 输出变换(适配画幅 + 镜像/旋转/warp)。PNG/MP4 共用。
-function makeExportRenderer(){
-  const [BW,BH]=baseExpSize();
+// (导出 export 供测试/诊断:与真实导出走同一条码路)
+export function makeExportRenderer(){
+  let [BW,BH]=baseExpSize();
+  // ⚡ 输出变换开着时,基础方形只需渲染到【输出真正用得到】的分辨率:
+  // 等比留边(fit)时内容方块 = min(目标宽,高)(如 2880×1200 → 1200²),按 2048² 渲再缩小纯属浪费
+  //(加上 2× 超采样就是 4096² = 每帧一千六百万像素,导出慢的主因)。裁满/拉伸/warp 需要铺满 → 用 max。
+  // 只降不升:绝不超过用户选的基础分辨率(质量上限不变),P2/取景框/宽画幅各有专属尺寸逻辑,不动。
+  if(outTxOn() && !p2On() && !uvCropOn() && !P.wideExport){
+    const t=P.outTx, FW=Math.max(2,t.w|0), FH=Math.max(2,t.h|0);
+    let needed;
+    if(t.warp || t.fit==='fill' || t.fit==='stretch') needed=Math.max(FW,FH);
+    else if(t.fit==='manual') needed=Math.min(Math.max(FW,FH), Math.min(FW,FH)*Math.max(1, t.sx||1, t.sy||1));
+    else needed=Math.min(FW,FH);                        // fit 等比留边:内容方块 = 短边
+    const k=Math.min(1, needed/Math.max(BW,BH));
+    BW=Math.max(2,Math.round(BW*k)); BH=Math.max(2,Math.round(BH*k));
+  }
   const base=makeOfflineRenderer(BW,BH);
   if(!outTxOn()) return base;
   const [FW,FH]=expSize();

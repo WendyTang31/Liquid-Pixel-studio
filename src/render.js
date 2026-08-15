@@ -194,8 +194,18 @@ export function createSizedRenderer(ctx, EW, EH){
 }
 
 // 导出渲染器:任意尺寸,stretch(拉伸填满)或 fit(等比留黑)映射。半径按面积比缩放。
+// ⚡ 帧间复用:ImageData(2048² ≈ 16MB)与 tile bins 每帧重建会造成大量分配 + GC 抖动,
+// 导出上百帧时明显拖慢。按 ctx 缓存,同尺寸直接复用 —— 内容每帧全量重写,无脏数据风险。
+const _expCache=new WeakMap();
 export function renderToImageData(ectx, EW, EH, balls, col, P, solids, cam, inkW){
-  const eimg=ectx.createImageData(EW,EH), d=eimg.data, bg=hex2rgb(P.colBg);
+  let C=_expCache.get(ectx);
+  if(!C || C.w!==EW || C.h!==EH){
+    C={ w:EW, h:EH, img:ectx.createImageData(EW,EH),
+        tc:Math.ceil(EW/TS), tr:Math.ceil(EH/TS) };
+    C.bins=Array.from({length:C.tc*C.tr},()=>[]);
+    _expCache.set(ectx,C);
+  }
+  const eimg=C.img, d=eimg.data, bg=hex2rgb(P.colBg);
   let mapX,mapY,rScale,invX,invY;
   if(P.fit==='stretch'){ mapX=x=>x*EW; mapY=y=>y*EH; rScale=Math.sqrt((EW*EH)/(W*H));
     invX=x=>x/EW; invY=(x,y)=>y/EH; }
@@ -204,11 +214,9 @@ export function renderToImageData(ectx, EW, EH, balls, col, P, solids, cam, inkW
         invX=x=>(x-ox)/(W*s); invY=(x,y)=>(y-oy)/(H*s); }
   const n=balls.length;
   const bx=new Float32Array(n), by=new Float32Array(n), br2=new Float32Array(n);
-  const tc=Math.ceil(EW/TS), tr=Math.ceil(EH/TS);
-  const bins=Array.from({length:tc*tr},()=>[]);
   for(let i=0;i<n;i++){ bx[i]=mapX(balls[i].x); by[i]=mapY(balls[i].y);
     const r=balls[i].r*W*rScale; br2[i]=r*r; }
   const ss=makeSolidSampler(solids, cam, invX, invY, P.thr, col, 1+(P.solidSharp||0)*5);
-  fieldLoop(d, EW,EH, tc,tr, bins, bx,by,br2, n, col, bg, P, packColors(balls,col, ss&&ss.anyCol), ss, inkParams(P,inkW));
+  fieldLoop(d, EW,EH, C.tc,C.tr, C.bins, bx,by,br2, n, col, bg, P, packColors(balls,col, ss&&ss.anyCol), ss, inkParams(P,inkW));
   ectx.putImageData(eimg,0,0);
 }
