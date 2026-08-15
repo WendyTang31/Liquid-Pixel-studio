@@ -1,6 +1,6 @@
 // 数据模型 + 撤销/重做 + 工程序列化。快照只碰"可序列化部分"(不含 canvas 对象),
 // 严守数据层与画布对象分离的铁律。工程读取兼容 v3 的 A/B 与 v4 的 states。
-import { W, H, P } from './config.js';
+import { W, H, P, applyParams } from './config.js';
 import { store, cur } from './store.js';
 import { setHint, downloadBlob } from './utils.js';
 import { rasterize, resample } from './pipeline.js';
@@ -118,11 +118,11 @@ export function loadProject(data){
   try{
     pushUndo();
     if(data.states){ /* v4 */
-      if(data.params) Object.assign(P, data.params);
+      if(data.params) applyParams(data.params);
       hydrate({states:data.states, active:data.active??0});
       loadCharacters(data.characters); renderCharacters(); // 🚶 并行角色轨随工程恢复
     } else if(data.A||data.B){ /* v3 兼容:A/B → 两个状态 */
-      if(data.params) Object.assign(P, data.params);
+      if(data.params) applyParams(data.params);
       const cA=data.params?.colA||'#98f5d0', cB=data.params?.colB||'#98f5d0';
       hydrate({states:[
         {id:1,name:'状态 1',color:cA,hold:1,dur:3,shapes:data.A?.shapes||[],manual:data.A?.manual||[]},

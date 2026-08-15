@@ -8,6 +8,7 @@ import { renderToImageData } from '../render.js';
 import { charactersSolids } from '../characters.js';
 import { applyOutputTransform, defaultMesh, resampleMesh } from '../outtx.js';
 import { exclusiveExportMode } from './exportmode.js';
+import { scheduleAutosave } from '../autosave.js';
 
 const SRC=256;                       // 预览用的基础渲染尺寸(小、够看)
 const BASE_W=330, BASE_H=210;        // 预览画布基础分辨率(缩放倍数在其上)
@@ -20,6 +21,7 @@ function OT(){
   t.gx=Math.max(1, t.gx|0 || 1); t.gy=Math.max(1, t.gy|0 || 1);
   const need=(t.gx+1)*(t.gy+1);
   if(!Array.isArray(t.mesh) || t.mesh.length!==need) t.mesh=defaultMesh(t.gx, t.gy);
+  if(t.symMirror==null) t.symMirror='off';   // 🛡 旧存档/被整体覆盖后可能缺此键 → 补默认,绝不让下拉显示'h'却渲染成关闭
   return t;
 }
 
@@ -31,7 +33,7 @@ function baseFrame(){
     const fr=sampleFrame(store.SEQ, store.states, store.g, store.clock, P);
     const solids=(fr.solids||[]).concat(
       vectorSolids(computeVectorPolys(store.states, store.SEQ, store.g, store.clock, P), fr.seg, store.states, store.g, store.clock))
-      .concat(charactersSolids(store.clock, store.g));
+      .concat(charactersSolids(store.charClock||0, store.g)); // 🚶 与主舞台一致:角色用 charClock(暂停即停、位置对齐),而非 store.clock
     renderToImageData(srcCv.getContext('2d'), SRC, SRC, fr.balls, fr.col, P, solids, fr.cam, fr.inkW);
   }catch(_){ const c=srcCv.getContext('2d'); c.clearRect(0,0,SRC,SRC); }
   return srcCv;
@@ -102,7 +104,7 @@ export function initOutTxPanel(){
   if($('outTxFit')){ $('outTxFit').value=P.outTx.fit; $('outTxFit').onchange=e=>{ P.outTx.fit=e.target.value; draw(); }; }
   if($('outTxRot')){ $('outTxRot').value=String(P.outTx.rot); $('outTxRot').onchange=e=>{ P.outTx.rot=parseInt(e.target.value,10)||0; draw(); }; }
   if($('outTxSymMir')){ $('outTxSymMir').value=P.outTx.symMirror||'off';
-    $('outTxSymMir').onchange=e=>{ P.outTx.symMirror=e.target.value; draw();
+    $('outTxSymMir').onchange=e=>{ P.outTx.symMirror=e.target.value; scheduleAutosave(); draw();
       setHint(e.target.value==='off'?'已关闭双边镜像':'🪞 双边镜像:动画沿中线对称到另一边(旋转/warp 前施加)'); }; }
   const bindCk=(id,key)=>{ const el=$(id); if(!el) return; el.checked=!!P.outTx[key];
     el.addEventListener('change',()=>{ P.outTx[key]=el.checked; if(key==='warp' && el.checked) OT(); draw(); }); };

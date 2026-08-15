@@ -1,5 +1,5 @@
 // 装配层:接线顶栏按钮、初始化各 UI 模块、铺三状态启动示例、开跑主循环。
-import { W, H, P } from './config.js';
+import { W, H, P, applyParams } from './config.js';
 import { store, cur } from './store.js';
 import { $, setHint } from './utils.js';
 import { makeState, pushUndo, saveProject, loadProject, serializeStates, hydrate } from './state.js';
@@ -127,7 +127,7 @@ function tryRestoreAutosave(){
   try{
     const raw=localStorage.getItem(AUTOSAVE_KEY); if(!raw) return false; // 副窗口首开时自己槽为空 → 返回 false → 新文件
     const d=JSON.parse(raw); if(!d.states?.length) return false;
-    if(d.params) Object.assign(P, d.params);
+    if(d.params) applyParams(d.params);
     hydrate({states:d.states, active:d.active??0});
     loadCharacters(d.characters); renderCharacters();   // 🚶 并行角色轨随会话恢复
     return true;

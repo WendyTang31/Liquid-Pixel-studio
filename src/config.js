@@ -51,3 +51,18 @@ export const P = {
   // 🧩 按取景框导出(Blender):只输出 3D 取景框内的画面(+镜像补全),框外丢弃。见 uvcrop.js
   uvCrop:{ on:false, patch:'', mirror:'h', res:4096 }
 };
+
+// 载入工程/会话(loadProject / tryRestoreAutosave)时把存档参数并入 P。
+// 铁律:对【嵌套对象】(outTx / ink / efx / uvCrop 等)【逐键并入】,而非整体替换 ——
+// 旧存档缺的新字段(如 outTx.symMirror、outTx.gx/gy/mesh)才不会连同默认值一起被抹掉,
+// 否则新功能"载入旧工程后消失"(选了镜像却渲染成关闭)。数组与基本类型整体替换。
+export function applyParams(saved){
+  if(!saved || typeof saved!=='object') return;
+  for(const k in saved){
+    const cur=P[k], val=saved[k];
+    if(cur && val && typeof cur==='object' && typeof val==='object'
+       && !Array.isArray(cur) && !Array.isArray(val)){
+      Object.assign(cur, val);   // 默认键留存(含新字段);存档提供的键覆盖
+    } else P[k]=val;
+  }
+}
