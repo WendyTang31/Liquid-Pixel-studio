@@ -128,8 +128,28 @@ export function destCorners(sw, sh, opts){
   return [[ox,oy],[ox+dw,oy],[ox+dw,oy+dh],[ox,oy+dh]];
 }
 
-// 核心:src 画布 → 目标 out 画布(w×h),应用 fit/镜像/旋转/warp。写入 outCanvas 并返回它。
+// 🪞 双边镜像(中线对称):与 P2 实装导出的 mirrorSymmetricH 同逻辑 —— 沿中线把画面镜像叠加成对称。
+// axis:'h'=沿【竖直中线】左右对称(默认);'v'=沿【水平中线】上下对称。返回对称后的新画布。
+// 合并:透明底→source-over(内容并集);不透明→按底色明暗取 darken/lighten,内容像素胜出。
+export function symMirror(src, axis, transBg){
+  const w=src.width, h=src.height;
+  const out=document.createElement('canvas'); out.width=w; out.height=h;
+  const ctx=out.getContext('2d',{willReadFrequently:true}); ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(src,0,0);
+  const tmp=document.createElement('canvas'); tmp.width=w; tmp.height=h;
+  const tc=tmp.getContext('2d'); tc.imageSmoothingEnabled=false;
+  if(axis==='v') tc.setTransform(1,0,0,-1,0,h); else tc.setTransform(-1,0,0,1,w,0);  // 翻转副本
+  tc.drawImage(src,0,0); tc.setTransform(1,0,0,1,0,0);
+  let mode='source-over';
+  if(!transBg){ const d=ctx.getImageData(0,0,1,1).data; mode=((d[0]+d[1]+d[2])/3>128)?'darken':'lighten'; }
+  ctx.save(); ctx.globalCompositeOperation=mode; ctx.drawImage(tmp,0,0); ctx.restore();
+  return out;
+}
+
+// 核心:src 画布 → 目标 out 画布(w×h),应用 双边镜像/fit/镜像/旋转/warp。写入 outCanvas 并返回它。
 export function applyOutputTransform(src, opts, outCanvas){
+  // 🪞 双边镜像【最先施加】(在 fit/旋转/warp 之前)—— 与 P2「镜像在分屏切割之前」一致,后续变换作用于已对称的内容。
+  if(opts.symMirror && opts.symMirror!=='off') src=symMirror(src, opts.symMirror, opts.transBg);
   const {w,h,mirX,mirY,rot=0,warp}=opts;
   const out=outCanvas||document.createElement('canvas');
   if(out.width!==w||out.height!==h){ out.width=w; out.height=h; }

@@ -145,7 +145,8 @@ function makeExportRenderer(){
   const [FW,FH]=expSize();
   const final=makeCanvas(FW,FH);
   const opts=()=>({ w:FW, h:FH, fit:P.outTx.fit, mirX:!!P.outTx.mirX, mirY:!!P.outTx.mirY,
-    rot:P.outTx.rot||0, warp:!!P.outTx.warp, gx:P.outTx.gx||1, gy:P.outTx.gy||1, mesh:P.outTx.mesh });
+    rot:P.outTx.rot||0, warp:!!P.outTx.warp, gx:P.outTx.gx||1, gy:P.outTx.gy||1, mesh:P.outTx.mesh,
+    symMirror:P.outTx.symMirror||'off', transBg:!!P.transBg });
   return { out:final, drawFrame(f){ base.drawFrame(f); applyOutputTransform(base.out, opts(), final); } };
 }
 

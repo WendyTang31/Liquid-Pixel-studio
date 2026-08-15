@@ -47,7 +47,7 @@ function draw(){
   const t=OT();
   if(!outCv) outCv=document.createElement('canvas');
   const src=baseFrame();
-  applyOutputTransform(src, { w:t.w, h:t.h, fit:t.fit, mirX:t.mirX, mirY:t.mirY, rot:t.rot, warp:t.warp, gx:t.gx, gy:t.gy, mesh:t.mesh }, outCv);
+  applyOutputTransform(src, { w:t.w, h:t.h, fit:t.fit, mirX:t.mirX, mirY:t.mirY, rot:t.rot, warp:t.warp, gx:t.gx, gy:t.gy, mesh:t.mesh, symMirror:t.symMirror||'off', transBg:!!P.transBg }, outCv);
   const L=layout();
   prevCtx.clearRect(0,0,prevCanvas.width,prevCanvas.height);
   prevCtx.fillStyle='#0d1210'; prevCtx.fillRect(L.ox,L.oy,L.pw,L.ph);
@@ -101,6 +101,9 @@ export function initOutTxPanel(){
     t.w=Math.round(long); t.h=Math.round(long*15/36); $('outTxW').value=t.w; $('outTxH').value=t.h; draw(); };
   if($('outTxFit')){ $('outTxFit').value=P.outTx.fit; $('outTxFit').onchange=e=>{ P.outTx.fit=e.target.value; draw(); }; }
   if($('outTxRot')){ $('outTxRot').value=String(P.outTx.rot); $('outTxRot').onchange=e=>{ P.outTx.rot=parseInt(e.target.value,10)||0; draw(); }; }
+  if($('outTxSymMir')){ $('outTxSymMir').value=P.outTx.symMirror||'off';
+    $('outTxSymMir').onchange=e=>{ P.outTx.symMirror=e.target.value; draw();
+      setHint(e.target.value==='off'?'已关闭双边镜像':'🪞 双边镜像:动画沿中线对称到另一边(旋转/warp 前施加)'); }; }
   const bindCk=(id,key)=>{ const el=$(id); if(!el) return; el.checked=!!P.outTx[key];
     el.addEventListener('change',()=>{ P.outTx[key]=el.checked; if(key==='warp' && el.checked) OT(); draw(); }); };
   bindCk('outTxMirX','mirX'); bindCk('outTxMirY','mirY'); bindCk('outTxWarp','warp');
