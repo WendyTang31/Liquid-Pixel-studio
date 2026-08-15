@@ -21,6 +21,7 @@ import { serializeCharacters, loadCharacters } from './characters.js';
 import { renderCharacters } from './ui/charpanel.js';
 import { initLedPanel, initUvCropPanel } from './ui/ledpanel.js';
 import { initOutTxPanel } from './ui/outtxpanel.js';
+import { syncExportUIFromP } from './ui/exportmode.js';
 
 // ── 顶栏:组操作 + 工程 ──
 function initTopbar(){
@@ -38,7 +39,7 @@ function initTopbar(){
   $('saveBtn').onclick=saveProject;
   function openProjectFile(f){ if(!f) return;
     const rd=new FileReader();
-    rd.onload=()=>{ try{ loadProject(JSON.parse(rd.result)); setHint('✓ 已打开工程:'+f.name); }
+    rd.onload=()=>{ try{ loadProject(JSON.parse(rd.result)); syncExportUIFromP(); setHint('✓ 已打开工程:'+f.name); }
       catch(err){ setHint('⚠ 工程解析失败:'+err.message+'(需是本工具「💾 保存工程」导出的 .json)'); } };
     rd.readAsText(f);
   }
@@ -172,6 +173,9 @@ initArrange();
 initFoldableSections();
 const restored=tryRestoreAutosave();
 if(!restored) seedExample();
+// 🔄 恢复的存档改了 P,但各面板在上面 init 时读的是【默认 P】—— 必须回写一遍 UI,
+// 否则界面显示"未勾选"而导出按存档里隐藏的旧设置走(导出 1500×600 拉伸、预设却显示 2048² 的根因)。
+if(restored) syncExportUIFromP();
 renderStrip(); syncStateUI(); syncUI(); renderLayers(); renderCharacters();
 setMode('play');
 startLoop();
