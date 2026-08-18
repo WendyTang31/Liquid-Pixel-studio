@@ -625,7 +625,12 @@
           <option value="cw">顺时针 CW(默认)</option>
           <option value="ccw">逆时针 CCW(实装镜像时)</option>
         </select></div>
-      <div class="row"><label class="ck" title="整体镜像(双边):把动画整幅(含所有帧 + 角色动画)沿竖直中线镜像到另一边,做左右对称的双边动画。在【分屏切割之前】施加,所以侧板分屏也得到准确镜像。"><input type="checkbox" id="p2Mirror"> 🪞 整体镜像(双边 · 中线对称)</label></div>
+      <div class="row"><label class="ck" title="整体镜像(双边):沿竖直中线做左右对称的双边动画。在【分屏切割之前】施加,所以侧板分屏也得到准确镜像。"><input type="checkbox" id="p2Mirror"> 🪞 整体镜像(双边)</label>
+        <select id="p2MirMode" style="flex:1" title="镜像方式:『留左半』=只保留左半边画面,镜像覆盖到右半(原来的右半被替换);『留右半』反之;『对称叠加』=两份画面融合(旧行为)。留左/右半是纯覆盖,与背景颜色无关。">
+          <option value="left">留左半 → 镜像到右</option>
+          <option value="right">留右半 → 镜像到左</option>
+          <option value="overlay">对称叠加(融合)</option>
+        </select></div>
       <div class="row"><label title="每块模组【从画面哪块区域取像素】(源 x/y/宽/高)以及【放到实装画布的哪个位置】(目标 x/y)。实装尺寸与默认不符时,直接在这里改成真实值 —— 改完预览立刻更新。">模组映射</label>
         <button id="p2MapReset" style="font:11px system-ui;padding:2px 6px" title="恢复默认映射表">↺ 重置</button></div>
       <div class="small" style="opacity:.5">源 x · y · 宽 · 高 → 目标 x · y</div>

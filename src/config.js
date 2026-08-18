@@ -53,6 +53,9 @@ export const P = {
   // —— 实装尺寸/位置与默认不符时直接在界面上改,不必动代码。
   p2Export:false, p2Rot:[null,null,null,null,null], p2Side:'cw', p2Scale:8, p2Dir:'fwd', p2Map:null,
   p2Mirror:false,   // 🪞 整体镜像(双边):分屏切割【之前】沿竖直中线镜像 P1 画面 → 双边对称动画。见 ledcanvas mirrorSymmetricH
+  // 镜像方式:'left'=只留左半,镜像到右半(默认);'right'=只留右半,镜像到左半;
+  // 'overlay'=整幅对称叠加(旧行为,两份画面融合)。left/right 是纯覆盖 → 与背景颜色无关,永不"吃掉"图形。
+  p2MirrorMode:'left',
 
   // 🧩 按取景框导出(Blender):只输出 3D 取景框内的画面(+镜像补全),框外丢弃。见 uvcrop.js
   uvCrop:{ on:false, patch:'', mirror:'h', res:4096 }

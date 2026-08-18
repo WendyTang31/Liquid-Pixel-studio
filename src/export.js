@@ -135,7 +135,7 @@ function makeOfflineRenderer(EW, EH){
     if(!p2on) return;
     const cx=crop.getContext('2d',{willReadFrequently:true}); cx.imageSmoothingEnabled=false;
     cx.drawImage(ec, cropX, 0, EW, EH, 0, 0, EW, EH);   // 同尺寸裁切 = 逐像素原样搬运
-    if(P.p2Mirror) mirrorSymmetricH(crop);              // 🪞 双边镜像:【在分屏切割之前】,故分屏也得到准确镜像
+    if(P.p2Mirror) mirrorSymmetricH(crop, P.p2MirrorMode||'left'); // 🪞 双边镜像:【在分屏切割之前】,故分屏也得到准确镜像
     transformCanvasP1toP2(crop, p2);
   }
   return { ec, out: p2 || ec, drawFrame: drawOut };

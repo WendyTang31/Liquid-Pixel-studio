@@ -43,6 +43,7 @@ export function syncExportUIFromP(){
   // 宽画幅 / 取景框 / P2 主要字段
   set('wideW',P.wideW); set('uvCropMirror',P.uvCrop?.mirror); set('uvCropRes',P.uvCrop?.res);
   set('p2Scale',P.p2Scale); set('p2Dir',P.p2Dir); set('p2Side',P.p2Side); ck('p2Mirror',P.p2Mirror);
+  set('p2MirMode',P.p2MirrorMode||'left');
   // 基础导出参数
   set('expFit',P.fit);
   const fps=$('pFps'); if(fps){ fps.value=P.fps; const v=$('vFps'); if(v) v.textContent=P.fps; }

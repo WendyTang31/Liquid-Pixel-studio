@@ -42,7 +42,7 @@ function seekOfState(){
 export function refreshP2Preview(){
   if(!p1Cv) return;
   // 预览失败要看得见(静默 catch 会让人以为"没接上"):只警告一次,避免刷屏。
-  try{ renderP1(); if(P.p2Mirror) mirrorSymmetricH(p1Cv); transformCanvasP1toP2(p1Cv, p2Cv); }
+  try{ renderP1(); if(P.p2Mirror) mirrorSymmetricH(p1Cv, P.p2MirrorMode||'left'); transformCanvasP1toP2(p1Cv, p2Cv); }
   catch(e){ if(!warned){ warned=true; console.warn('[P2 预览] 渲染失败:', e); } }
 }
 function tick(){
@@ -50,7 +50,7 @@ function tick(){
   if(!$('p2Panel') || $('p2Panel').style.display==='none') return;
   // 只在画面可能变化时重算(播放中/切帧/改了覆盖角度/校准模式)
   const sig=[store.mode, store.playing?store.g.toFixed(2):'', store.active, calibMode,
-             (P.p2Rot||[]).join(','), P.p2Side, P.p2Mirror, store.seqDirty].join('|');
+             (P.p2Rot||[]).join(','), P.p2Side, P.p2Mirror, P.p2MirrorMode, P.colBg, store.seqDirty].join('|');
   if(sig===lastSig && !store.playing) return;
   lastSig=sig;
   refreshP2Preview();
@@ -174,6 +174,13 @@ export function initLedPanel(){
   if(mir){ mir.checked=!!P.p2Mirror;
     mir.onchange=()=>{ P.p2Mirror=mir.checked; refreshP2Preview();
       setHint(mir.checked?'🪞 双边镜像已开:动画整幅沿中线镜像(分屏前施加,侧板也准确镜像)':'已关闭双边镜像'); }; }
+  // 镜像方式:留左半/留右半(纯覆盖,与背景无关)/ 对称叠加(旧行为,逐像素取离背景更远者)
+  const mm=$('p2MirMode');
+  if(mm){ mm.value=P.p2MirrorMode||'left';
+    mm.onchange=()=>{ P.p2MirrorMode=mm.value; refreshP2Preview();
+      setHint(mm.value==='overlay'?'对称叠加:两份画面融合(逐像素取离背景色更远的那份)'
+        : mm.value==='right'?'留右半:只保留右半画面,镜像覆盖到左半'
+        : '留左半:只保留左半画面,镜像覆盖到右半'); }; }
 
   // 变换方向:正向 / 反向(照车上的样子画)
   const dir=$('p2Dir');
