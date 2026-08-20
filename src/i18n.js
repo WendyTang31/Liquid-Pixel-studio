@@ -86,6 +86,105 @@ const EN = {
   '🖋 墨水沉积(水墨)':'🖋 INK DEPOSIT (wash)', '启用墨水沉积':'Enable ink',
   '所有状态':'All states', '仅当前状态':'Current state only',
   '浓度':'Density', '方向°':'Angle°', '墨边':'Ink edge', '晕染':'Bleed', '偏重':'Bias', '透明':'Transparent', '墨深':'Ink dark',
+  // ── 品牌 / 角色面板(2026-08 英文界面补全)──
+  'v4 · 序列状态机 · ALIAS':'v4 · state sequencer · ALIAS',
+  '🚶 角色(并行走动)':'🚶 CHARACTERS (parallel tracks)',
+  '＋ 选中帧→角色':'+ Selected frames → character', '＋ 新建角色':'+ New character',
+  '导入动画 SVG(走路小人)即成一个角色。可导入多个 → 同屏并行走动,互不干扰主时间轴。':
+    'Import an animated SVG (e.g. a walker) to make a character. Import several — they run in parallel without touching the main timeline.',
+  '✏ 编辑中 —— 顶部「✓ 完成编辑角色」保存':'✏ Editing — click “✓ Done editing” up top to save',
+  '✓ 完成编辑角色':'✓ Done editing character',
+  '左右':'L / R', '上下':'Up / Dn', '缩放':'Scale', '步频×':'Cadence ×', '时长':'Cycle (s)', '整屏走过':'Cross screen',
+  '⇋镜像':'⇋Mirror', '⇅翻转':'⇅Flip', '⏱自由':'⏱Free', '🔗跟主轴':'🔗Follow timeline', '延迟':'Delay',
+  '地面速度':'Ground speed', '走过用时':'Crossing (s)', '🔁跑不停':'🔁Run forever',
+  '🎬 动画片段':'🎬 Clip', '总时长秒':'Total (s)',
+  'linear 匀速':'linear (constant)', 'smootherstep 平滑':'smootherstep (smooth)',
+  '⚡ 速度曲线(起步/落位)':'⚡ Speed curve (in/out)', '起步':'Launch', '落位':'Arrive', '到':'to',
+  '实心锐度':'Solid sharpness',
+  // ── 导出区:宽画幅 / 输出变换 / 取景框 / P2 ──
+  '📐 宽画幅导出(小人跑完全程)':'📐 Wide export (full run visible)', '画幅倍数 ×':'Width × squares',
+  '💡 在「🚶 角色」面板把小人的':'💡 In the 🚶 Characters panel set the walker’s',
+  '设成一段很宽的行程(如 -1000→1000),再开这个导出 —— 它就会横穿整条跑道全程可见。分辨率不变(每一格都是原始像素密度)。':
+    'to a very wide travel (e.g. -1000→1000), then enable this export — it crosses the whole track fully visible. Resolution is preserved (every square at native density).',
+  '🖥 输出变换(画幅 · 镜像 · 旋转 · warp)':'🖥 Output transform (frame · mirror · rotate · warp)',
+  '画幅':'Frame', '适配':'Fit',
+  '等比留边':'Fit (letterbox)', '等比裁满':'Fill (crop)', '拉伸填满':'Stretch',
+  '手动拉伸(自定 X/Y)':'Manual stretch (custom X/Y)',
+  '拉伸%':'Stretch %', '横':'X', '纵':'Y', '铺满宽':'Fill width',
+  '⇋翻转横':'⇋Flip H', '⇅翻转纵':'⇅Flip V',
+  '双边镜像':'Symmetric mirror', '关闭':'Off',
+  '竖直中线 · 对称叠加(左右)':'Vertical CL · overlay (L/R)',
+  '水平中线 · 对称叠加(上下)':'Horizontal CL · overlay (T/B)',
+  '左右铺满两半(各半张镜像)':'Fill both halves L/R (mirrored)',
+  '上下铺满两半(各半张镜像)':'Fill both halves T/B (mirrored)',
+  '网格 warp(拖点)':'Mesh warp (drag points)', '网格':'Grid', '↺ 复位':'↺ Reset', '▶ 预览':'▶ Preview',
+  '拖动蓝色控制点做 warp;『网格』调密度可分区精细微调;『+/−』放大预览方便拖点。导出的 MP4/PNG 与此预览一致。':
+    'Drag the blue points to warp; raise Grid density for local control; +/− zooms the preview. Exported MP4/PNG matches this preview exactly.',
+  '⏱ 指定导出时长':'⏱ Fixed export duration',
+  '导出整条序列(勾"无缝"含尾→首过渡,循环播放天衣无缝)。 PNG →':
+    'Exports the whole sequence (“Seamless” adds the last→first transition for a perfect loop). PNG →',
+  '🧩 按取景框导出(Blender)':'🧩 Export by viewfinder (Blender)',
+  '取景框':'Viewfinder', '镜像补全':'Mirror completion',
+  '关闭(只要框内)':'Off (frame only)',
+  '水平:本身 + 右侧镜像':'H: self + right mirror', '水平:左侧镜像 + 本身':'H: left mirror + self',
+  '垂直:本身 + 下方镜像':'V: self + bottom mirror', '垂直:上方镜像 + 本身':'V: top mirror + self',
+  '四向对称':'4-way symmetric', '分辨率':'Resolution',
+  '3072(MP4 上限)':'3072 (MP4 max)', '4096 · 4K(建议走 PNG 序列)':'4096 · 4K (use PNG seq)',
+  '💡 渲染交付建议用':'💡 For deliverables prefer', 'PNG 序列':'PNG sequence',
+  ':H.264 是 4:2:0 色度抽样(硬边会渗色)且':': H.264 uses 4:2:0 chroma (hard edges bleed) and has',
+  '没有 alpha':'no alpha',
+  '—— 勾上「背景透明」后只有 PNG 能保住透明底,在 Blender 里直接叠到车漆上。':
+    '— with “Transparent BG” only PNG keeps the alpha and composites straight onto the car paint in Blender.',
+  '🔩 按实装布局导出(P2 · LED 硬件)':'🔩 Export for physical layout (P2 · LED hardware)',
+  '动画在':'Authored in', '(5 模组竖排)里创作,实车上模组 2/3 是':'(5 modules stacked); on the car modules 2/3 are',
+  '旋转 90° 并排':'rotated 90° side-by-side', '装的(':'mounted (',
+  ')。 导出时逐模组裁切→旋转→平移 —— 一个像素 = 一颗灯珠,':
+    '). Export crops→rotates→moves each module — one pixel = one LED,',
+  '零插值零缩放':'zero interpolation, zero scaling', '。开启后导出固定 128×320。':'. When on, export is fixed at 128×320.',
+  '导出倍数':'Export scale',
+  '1× · 128×320(硬件原生)':'1× · 128×320 (hardware native)',
+  '2× · 256×640':'2× · 256×640', '4× · 512×1280':'4× · 512×1280',
+  '8× · 1024×2560(演示推荐)':'8× · 1024×2560 (demo rec.)', '12× · 1536×3840':'12× · 1536×3840',
+  '16× · 2048×5120(超 H.264 上限 → MP4 自动转 PNG 序列)':'16× · 2048×5120 (over H.264 max → falls back to PNG seq)',
+  '倍数越高越慢(8× 会额外开 2× 超采样,最慢也最细腻)。':'Higher = slower (8× also enables 2× supersampling; slowest, finest).',
+  '送硬件请用 1×':'Use 1× for hardware', ';汇报演示片用 8× 即可。':'; 8× is enough for demo videos.',
+  '变换方向':'Transform direction',
+  'P1 → P2(在竖排里画)':'P1 → P2 (draw in stacked layout)',
+  'P2 → P1(反向 · 照车上的样子画)':'P2 → P1 (inverse · draw as seen on the car)',
+  '🪞 整体镜像(双边)':'🪞 Symmetric mirror (bilateral)',
+  '留左半 → 镜像到右':'Keep left → mirror to right', '留右半 → 镜像到左':'Keep right → mirror to left',
+  '对称叠加(融合)':'Overlay (blend)',
+  '模组映射':'Module map', '↺ 重置':'↺ Reset',
+  '源 x · y · 宽 · 高 → 目标 x · y':'src x · y · w · h → dst x · y',
+  // ── 常用提示 ──
+  '点上方缩略图选状态编辑;▶ 预览整条序列':'Click a thumbnail above to edit that state; ▶ previews the whole sequence',
+  '✓ 已恢复上次编辑(自动保存)· 若要全新开始:🗑 全部':'✓ Restored last session (autosave) · fresh start: 🗑 All',
+  '＋ 已新建空角色 —— Ctrl+V 把刚剪切的帧贴进来(占位空帧可删)':'+ Empty character created — Ctrl+V pastes the cut frames (placeholder frame can be deleted)',
+  '打包 zip…':'Packing zip…', '⚠ 序列太短':'⚠ Sequence too short',
+  '… 渲染中':'… rendering', '… 编码中':'… encoding',
+  // ── 3D 预览器补全 ──
+  '空':'empty', '未放置':'not placed',
+  '💡 同一动画组里的多个投影面【共享同一段动画】,由下方「画面分区」切分 —— 所以走动的图案会从一个面【跑到】另一个面(前脸→侧面),不是各播各的。':
+    '💡 Patches in one anim group SHARE one animation, sliced by “Regions” below — a moving pattern travels from one patch to the next (front → side), not separate playback.',
+  '想让车的':'To give the car’s', '前脸':'front', '和':'and', '侧面':'side',
+  '各放【不同 / 独立】的动画:点「➕ 新动画(节点)」新建一组,把它的投影面放到另一个面上即可(两组各有自己的动画与时间线)。':
+    'independent animations: click “➕ New Anim (node)” for another group and place its patch on the other surface (each group has its own animation & timeline).',
+  '📺 实体 LED 拼版导出':'📺 Physical LED tiling export',
+  '把每个投影面':'Bakes each patch', '正对着烘焙':'head-on',
+  '成平面 —— 平板 LED 播出来就接近你在 3D 里看到的样子。逐块可旋转(有的板是竖装的)。':
+    'into a flat tile — flat LED playback looks close to the 3D view. Each tile can rotate (some panels mount vertically).',
+  '每块 px':'px / tile', '列':'cols', '↻ 自动分配':'↻ Auto assign', '⚙ 用 P2 校准':'⚙ Use P2 calibration',
+  '(空 · 黑屏)':'(empty · black)', '拼版输出':'Tiled output',
+  '块竖装 ·':'tiles vertical ·', '自动分配中':'auto-assigning',
+  '纵轴 · 绕车一圈':'Vertical axis · around the car',
+  '动画画面按"角度×高度"展开包在车身上;起始角决定接缝藏在哪(建议车尾/底部)。':
+    'The animation wraps around the body as angle × height; Start° picks where the seam hides (rear/bottom recommended).',
+  '拖动 = 移动本面的取景框;拖右下角 = 缩放;点别的框 = 选中那个投影面。各面共享同一动画与时间线 —— 分区相邻,球就能跨面"跑过去"。':
+    'Drag = move this patch’s viewfinder; corner = resize; click another box = select that patch. Patches share one animation & timeline — adjacent regions let blobs travel across.',
+  '快捷键:Q 选择 · W 放置 · B 画笔 · E 橡皮 · C 上色 · Ctrl+Z 撤销 · Delete 删投影面 · Esc 取消选中':
+    'Keys: Q select · W place · B brush · E eraser · C paint · Ctrl+Z undo · Delete removes patch · Esc deselect',
+  '📍 放置工具点击车身,放上第一块投影面;或 📂 载入工程':
+    '📍 Click the body with the Place tool to drop the first patch; or 📂 open a project',
   '⑤ 导出':'⑤ EXPORT', '预设':'Preset',
   '当前画布 480×480(方)':'Canvas 480×480 (square)',
   '方形 1080²(高清)':'Square 1080²', '方形 2K 2048²(推荐)':'Square 2K 2048² (rec.)',
@@ -210,7 +309,20 @@ const KO = {
 const PAT = {
   en:[[/^🎬 动画片段「(.+)」· (\d+) 帧$/,'🎬 Clip "$1" · $2 frames'],[/^🧩 UV · (.+)$/,'🧩 UV · $1'],
       [/^投影面 (\d+)(.*)$/,'Patch $1$2'],[/^动画 (\d+)$/,'Anim $1'],[/^编辑「(.+)」$/,'Editing "$1"'],
-      [/^预览序列 · 共 (\d+) 个状态 · 总时长 ([\d.]+)s$/,'Preview · $1 states · $2s total'],[/^(\d+) · (.+)$/,'$1 · $2']],
+      [/^预览序列 · 共 (\d+) 个状态 · 总时长 ([\d.]+)s$/,'Preview · $1 states · $2s total'],[/^(\d+) · (.+)$/,'$1 · $2'],
+      // 2026-08 英文界面补全:动态数字文案
+      [/^实际导出 ≈ ([\d.]+)s · (\d+) 帧$/,'Actual export ≈ $1s · $2 frames'],
+      [/^按表 \((\d+)°\)$/,'Per map ($1°)'],
+      [/^导出中 (\d+)\/(\d+)…$/,'Exporting $1/$2…'],
+      [/^MP4 编码中 (\d+)\/(\d+)…$/,'Encoding MP4 $1/$2…'],
+      [/^✓ 已导出 MP4 (\d+) 帧 \((.+)\)$/,'✓ MP4 exported: $1 frames ($2)'],
+      [/^✓ 已导出整条序列 (\d+) 帧 \((.+)\)$/,'✓ Sequence exported: $1 frames ($2)'],
+      [/^(\d+) 帧$/,'$1 frames'],
+      [/^✏ 编辑角色帧:(.+)[((]整体缩放\/旋转\/走位在左侧卡片[))]$/,'✏ Editing frames of “$1” (scale/rotate/travel in the left card)'],
+      [/^(\d+) 投影面\(未放置\)$/,'$1 patch (not placed)'],
+      [/^(\d+) 投影面\((.+)\)$/,'$1 patch ($2)'],
+      [/^· (\d+)\/(\d+) 块有画面,其中$/,'· $1/$2 tiles lit,'],
+      [/^只放置了 (\d+) 个投影面 —— 不足的块会是黑屏$/,'Only $1 patches placed — missing tiles stay black']],
   ko:[[/^🎬 动画片段「(.+)」· (\d+) 帧$/,'🎬 클립 "$1" · $2 프레임'],[/^🧩 UV · (.+)$/,'🧩 UV · $1'],
       [/^投影面 (\d+)(.*)$/,'패치 $1$2'],[/^动画 (\d+)$/,'애니 $1'],[/^编辑「(.+)」$/,'편집 "$1"'],
       [/^预览序列 · 共 (\d+) 个状态 · 总时长 ([\d.]+)s$/,'미리보기 · 상태 $1개 · $2s'],[/^(\d+) · (.+)$/,'$1 · $2']],
@@ -224,6 +336,11 @@ const REV_PAT = { // lang → zh(还原动态文案)
   ko:[[/^🎬 클립 "(.+)" · (\d+) 프레임$/,'🎬 动画片段「$1」· $2 帧'],[/^패치 (\d+)(.*)$/,'投影面 $1$2'],[/^애니 (\d+)$/,'动画 $1'],[/^편집 "(.+)"$/,'编辑「$1」'],[/^미리보기 · 상태 (\d+)개 · ([\d.]+)s$/,'预览序列 · 共 $1 个状态 · 总时长 $2s']],
 };
 
+// 空白归一:HTML 缩进/换行会混进文本节点(如「…。\n      PNG →」),精确匹配必失手。
+// 字典键一律按"单空格"写;查表前把文案的连续空白折叠成单空格。
+const norm = s => s.replace(/\s+/g,' ');
+const EN_N = Object.fromEntries(Object.entries(EN).map(([z,e])=>[norm(z),e]));
+const KO_N = Object.fromEntries(Object.entries(KO).map(([z,k])=>[norm(z),k]));
 // 任意语言文案 → 规范 zh。
 function toZh(s, from){
   if(from==='zh') return s;
@@ -234,11 +351,13 @@ function toZh(s, from){
 // 规范 zh → 目标语言。
 function fromZh(zh, to){
   if(to==='zh') return zh;
-  const map = to==='en'?EN:KO;
+  const map = to==='en'?EN:KO, mapN = to==='en'?EN_N:KO_N;
   if(map[zh]) return map[zh];
-  for(const [re,rep] of PAT[to]) if(re.test(zh)) return zh.replace(re,rep);
+  const zn=norm(zh);
+  if(mapN[zn]) return mapN[zn];
+  for(const [re,rep] of PAT[to]){ if(re.test(zh)) return zh.replace(re,rep); if(re.test(zn)) return zn.replace(re,rep); }
   // KO 未收录 → 回退英文;英文未收录 → null(保持原样)
-  if(to==='ko' && EN[zh]) return EN[zh];
+  if(to==='ko'){ if(EN[zh]) return EN[zh]; if(EN_N[zn]) return EN_N[zn]; }
   return null;
 }
 function tr(s, from, to){
