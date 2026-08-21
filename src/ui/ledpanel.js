@@ -146,27 +146,34 @@ export function initLedPanel(){
       : '已关闭物理布局导出 —— 导出恢复为原始 P1 画面与你设置的尺寸'); });
   sync();
 
-  // 逐模组旋转覆盖(现场校正:实装方向意外时不用改代码)
-  if(!P.p2Rot || P.p2Rot.length!==MODULE_MAP.length) P.p2Rot=MODULE_MAP.map(()=>null);
-  host.innerHTML='';
-  MODULE_MAP.forEach((m,i)=>{
-    const row=document.createElement('div');
-    row.style.cssText='display:flex;align-items:center;gap:6px;font:11px system-ui;color:#9fb;margin:2px 0';
-    const lab=document.createElement('span');
-    lab.textContent=`${i+1} ${m.name}`; lab.style.cssText='flex:1;opacity:.85';
-    const sel=document.createElement('select');
-    sel.style.cssText='background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:1px 3px';
-    // 只提供与【槽位尺寸相容】的角度:横向槽(128×64)=0/180;旋转槽(64×128)=90/270。
-    // 给横向槽设 90° 会让它变成 64×128 塞不进去 → 像素被裁掉,所以直接不给选。
-    const rotatedSlot = (m.rotate===90 || m.rotate===270);
-    const opts = rotatedSlot ? [['','按表 ('+m.rotate+'°)'],['90','90°'],['270','270°']]
-                             : [['','按表 ('+m.rotate+'°)'],['0','0°'],['180','180°']];
-    sel.title = rotatedSlot ? '这块是竖装槽位(64×128),只能 90°/270°' : '这块是横装槽位(128×64),只能 0°/180°';
-    opts.forEach(([v,t])=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; sel.appendChild(o); });
-    sel.value = P.p2Rot[i]==null ? '' : String(P.p2Rot[i]);
-    sel.onchange=()=>{ P.p2Rot[i] = sel.value==='' ? null : parseInt(sel.value,10); refreshP2Preview(); };
-    row.append(lab, sel); host.appendChild(row);
-  });
+  // 逐模组旋转覆盖(现场校正:实装方向意外时不用改代码)。
+  // 【按当前映射表】渲染:布局预设(直通/默认)切换后槽位形状变了,可选角度也要跟着变,
+  // 故做成可重建的函数 —— 不再写死读 MODULE_MAP。
+  function renderRotSelects(){
+    const map=P.p2Map||MODULE_MAP;
+    if(!P.p2Rot || P.p2Rot.length!==map.length) P.p2Rot=map.map(()=>null);
+    host.innerHTML='';
+    map.forEach((m,i)=>{
+      const row=document.createElement('div');
+      row.style.cssText='display:flex;align-items:center;gap:6px;font:11px system-ui;color:#9fb;margin:2px 0';
+      const lab=document.createElement('span');
+      lab.textContent=`${i+1} ${m.name}`; lab.style.cssText='flex:1;opacity:.85';
+      const sel=document.createElement('select');
+      sel.style.cssText='background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:1px 3px';
+      // 只提供与【槽位尺寸相容】的角度:横向槽(128×64)=0/180;旋转槽(64×128)=90/270。
+      // 给横向槽设 90° 会让它变成 64×128 塞不进去 → 像素被裁掉,所以直接不给选。
+      const rotatedSlot = (m.rotate===90 || m.rotate===270);
+      const opts = rotatedSlot ? [['','按表 ('+m.rotate+'°)'],['90','90°'],['270','270°']]
+                               : [['','按表 ('+m.rotate+'°)'],['0','0°'],['180','180°']];
+      sel.title = rotatedSlot ? '这块是竖装槽位(64×128),只能 90°/270°;要 0°/180° 请点「⬒ 直通(不旋转)」换布局'
+                              : '这块是横装槽位(128×64),只能 0°/180°';
+      opts.forEach(([v,t])=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; sel.appendChild(o); });
+      sel.value = P.p2Rot[i]==null ? '' : String(P.p2Rot[i]);
+      sel.onchange=()=>{ P.p2Rot[i] = sel.value==='' ? null : parseInt(sel.value,10); refreshP2Preview(); };
+      row.append(lab, sel); host.appendChild(row);
+    });
+  }
+  renderRotSelects();
 
   // 侧板方向(实装镜像时一处翻转全部侧板)
   const side=$('p2Side');
@@ -210,9 +217,20 @@ export function initLedPanel(){
         +(P.p2Scale===1?'(硬件原生,送控制器用这份)':'(高清演示片;送硬件请切回 1×)')); }; }
 
   renderMapRows();
+  // 恢复会话/打开工程后,映射表与旋转下拉要按存档里的 p2Map 重建(exportmode 经此钩子调用,避免模块环)
+  window.refreshP2MapUI=()=>{ renderMapRows(); renderRotSelects(); };
   const rst=$('p2MapReset');
-  if(rst) rst.onclick=()=>{ P.p2Map=null; renderMapRows(); refreshP2Preview();
+  if(rst) rst.onclick=()=>{ P.p2Map=null; P.p2Rot=MODULE_MAP.map(()=>null);
+    renderMapRows(); renderRotSelects(); refreshP2Preview();
     setHint('↺ 模组映射已恢复默认(128×320,模组 2/3 旋转 90° 并排)'); };
+  // ⬒ 直通布局:接线就是五条 128×64 横带直接堆叠(不旋转)时用 —— 画面原样送出,
+  // 车上方向不对只需 0°/180° 微调。校准帧应显示:全部竖条为竖、白块在各块左上。
+  const flat=$('p2MapFlat');
+  if(flat) flat.onclick=()=>{
+    P.p2Map=MODULE_MAP.map(m=>({name:m.name, src:[...m.src], dst:[m.src[0],m.src[1]], rotate:0}));
+    P.p2Rot=MODULE_MAP.map(()=>null);
+    renderMapRows(); renderRotSelects(); refreshP2Preview();
+    setHint('⬒ 直通布局:五条横带原样输出(不旋转)。生成校准帧发到屏上验证 —— 竖条应是竖的、白块在左上;方向不对再用 0°/180° 微调'); };
 
   // 校准帧:预览切成校准图案;可直接存 P1/P2 两张 PNG 拿去打屏比对
   $('p2Calib').onclick=()=>{

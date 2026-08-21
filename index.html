@@ -643,7 +643,8 @@
           <option value="none">原样</option>
         </select></div>
       <div class="row"><label title="每块模组【从画面哪块区域取像素】(源 x/y/宽/高)以及【放到实装画布的哪个位置】(目标 x/y)。实装尺寸与默认不符时,直接在这里改成真实值 —— 改完预览立刻更新。">模组映射</label>
-        <button id="p2MapReset" style="font:11px system-ui;padding:2px 6px" title="恢复默认映射表">↺ 重置</button></div>
+        <button id="p2MapReset" style="font:11px system-ui;padding:2px 6px" title="恢复默认映射表(模组 2/3 旋转 90° 并排)">↺ 重置</button>
+        <button id="p2MapFlat" style="font:11px system-ui;padding:2px 6px" title="直通布局:五条 128×64 横带原样堆叠输出,全部不旋转 —— 控制器接线就是五条横带依次相连时用这个。切换后侧板可选 0°/180° 微调;发校准帧验证:竖条应是竖的、白块在各块左上。">⬒ 直通(不旋转)</button></div>
       <div class="small" style="opacity:.5">源 x · y · 宽 · 高 → 目标 x · y</div>
       <div id="p2MapRows"></div>
       <div class="row">
