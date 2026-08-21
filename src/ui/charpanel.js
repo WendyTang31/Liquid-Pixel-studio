@@ -140,8 +140,15 @@ export function renderCharacters(){
       try{ crossI.value=+charCrossSec(ch).toFixed(1); }catch(_){} window.refreshExportDurInfo?.(); };
     crossI.oninput=()=>{ const v=parseFloat(crossI.value); if(v>0){ setCharCrossSec(ch,v); gsI.value=Math.round(ch.groundSpeed); window.refreshExportDurInfo?.(); } };
     const wrapCk=chk('🔁跑不停', ()=>!!ch.wrap, v=>{ ch.wrap=v; renderCharacters(); },
-      '环绕平移:跑出右边画外就立刻从左边画外接着进来,永远向前跑,接缝在画外看不见。\n想"一直往前跑"请用这个 —— 把行程拉到几千像素是没用的,画布只有这么宽,人跑出去就看不见了。');
-    r5.append(mkLabel('地面速度'), gsI, mkLabel('px/s'), mkLabel('走过用时'), crossI, mkLabel('s'), wrapCk);
+      '环绕平移:跑出画外就立刻从另一边画外接着进来,永远向前跑,接缝在画外看不见。\n想"一直往前跑"请用这个 —— 把行程拉到几千像素是没用的,画布只有这么宽,人跑出去就看不见了。');
+    // ↔/↕ 跑不停方向:横向(出右回左,默认)或竖向(出下回上;配合旋转 90° 的角色跑竖排画面)
+    const axSel=document.createElement('select');
+    axSel.style.cssText='background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:1px 3px';
+    axSel.title='跑不停方向:↔ 横向 = 出右画外回左边(默认);↕ 竖向 = 出下画外回上边(角色旋转 90° 跑竖排画面用)。\n横向时方向由「左右」正负决定,竖向时由「上下」正负决定(如 上下 0→-1 = 向上跑)。';
+    [['h','↔ 横向'],['v','↕ 竖向']].forEach(([v,t])=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; axSel.appendChild(o); });
+    axSel.value=ch.wrapAxis||'h'; axSel.onclick=e=>e.stopPropagation();
+    axSel.onchange=()=>{ ch.wrapAxis=axSel.value; window.refreshExportDurInfo?.(); };
+    r5.append(mkLabel('地面速度'), gsI, mkLabel('px/s'), mkLabel('走过用时'), crossI, mkLabel('s'), wrapCk, axSel);
     card.appendChild(r5);
     box.appendChild(card);
   });

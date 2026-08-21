@@ -15,7 +15,7 @@ export function makeCharacter(name, frames, cycleSec){
     x0:0, y0:0, x1:0, y1:0,      // 位移:循环内从 (x0,y0) 线性走到 (x1,y1)(px,画布坐标偏移)
     scale:1, rot:0, speed:1, visible:true,   // rot=整体旋转(度)
     groundSpeed:DEFAULT_GROUND_SPEED,        // 地面速度(px/s):距离越远自动走越久,速度恒定(与步频/时长解耦)
-    wrap:false,                              // wrap=环绕(出右回左,永远向前)
+    wrap:false, wrapAxis:'h',                // wrap=环绕(永远向前);wrapAxis:'h'横向(出右回左)|'v'竖向(出下回上)
     mirX:false, mirY:false,                  // 整体镜像(水平/垂直):跑向左 ⇄ 跑向右
   };
 }
@@ -52,11 +52,13 @@ export const DEFAULT_GROUND_SPEED = 300;               // 地面速度默认值(
 const mod=(v,m)=>((v%m)+m)%m;
 const WRAP_PAD=200;                     // 环绕出画余量:够角色整个走出画面再折返,接缝落在画外
 const WRAP_SPAN=W+WRAP_PAD;             // 一个环绕周期(画布宽 + 出画余量):跑不停一整圈前进这么多 px
+// 环绕周期按方向取:横向 = 画布宽 + 余量;竖向(wrapAxis='v')= 画布高 + 余量。
+const wrapSpan=ch=> (ch.wrapAxis==='v' ? H : W) + WRAP_PAD;
 // 一整圈需要走【整数个走路循环 laps】—— 首尾腿相位相同 → 无缝可循环。
-// wrap:一圈 = 前进正好一个 WRAP_SPAN,laps=round(span/(gs·cycSec)),故一圈耗时 ≈ span/gs(与步频无关)。
+// wrap:一圈 = 前进正好一个 span,laps=round(span/(gs·cycSec)),故一圈耗时 ≈ span/gs(与步频无关)。
 // 非 wrap:一圈 = 走完 (x0,y0)→(x1,y1) 的距离,laps=round(距离/(gs·cycSec))。
 function charLaps(ch, cycSec, gs){
-  if(ch.wrap) return Math.max(1, Math.round(WRAP_SPAN/(gs*cycSec)));
+  if(ch.wrap) return Math.max(1, Math.round(wrapSpan(ch)/(gs*cycSec)));
   const d=Math.hypot((ch.x1||0)-(ch.x0||0), (ch.y1||0)-(ch.y0||0));
   return d>1 ? Math.max(1, Math.round(d/(gs*cycSec))) : 1;
 }
@@ -98,7 +100,7 @@ export function charCrossSec(ch){
 // 反解:想让走过用时 = sec 秒,则地面速度 = 距离 / sec。距离:跑不停=一个环绕周期,自由=起止距离。
 export function setCharCrossSec(ch, sec){
   sec=Math.max(0.1, sec||1);
-  const dist = ch.wrap ? WRAP_SPAN
+  const dist = ch.wrap ? wrapSpan(ch)
     : Math.max(1, Math.hypot((ch.x1||0)-(ch.x0||0), (ch.y1||0)-(ch.y0||0)));
   ch.groundSpeed = Math.max(1, dist/sec);
 }
@@ -112,10 +114,18 @@ export function charPolys(ch, clock, gMain){
   // 接着进来。环绕周期 = 画布宽 + 余量,翻转点在画外发生 → 肉眼完全看不出接缝,视觉上就是永远向前跑。
   let dx, dy;
   if(ch.wrap){
-    const dir=((ch.x1||0)-(ch.x0||0))<0 ? -1 : 1;       // 方向:x1<x0 向左跑,否则向右(x0=x1 默认向右)
-    const travelled=dir*WRAP_SPAN*progC;                // 一圈正好前进一个 span → 首尾无缝;连续里程,永不回头
-    dx = -W/2 - WRAP_PAD/2 + mod(travelled, WRAP_SPAN); // 取模 → 出右画外即从左画外接着进来
-    dy = (ch.y0||0);                                    // 环绕模式纵向固定(要斜跑就关掉环绕)
+    const span=wrapSpan(ch);
+    if(ch.wrapAxis==='v'){                              // ↕ 竖向跑不停:出下画外即从上画外接着进来
+      const dir=((ch.y1||0)-(ch.y0||0))<0 ? -1 : 1;     // y1<y0 向上跑,否则向下(y0=y1 默认向下)
+      const travelled=dir*span*progC;
+      dy = -H/2 - WRAP_PAD/2 + mod(travelled, span);
+      dx = (ch.x0||0);                                  // 竖向环绕横向固定
+    } else {
+      const dir=((ch.x1||0)-(ch.x0||0))<0 ? -1 : 1;     // 方向:x1<x0 向左跑,否则向右(x0=x1 默认向右)
+      const travelled=dir*span*progC;                   // 一圈正好前进一个 span → 首尾无缝;连续里程,永不回头
+      dx = -W/2 - WRAP_PAD/2 + mod(travelled, span);    // 取模 → 出右画外即从左画外接着进来
+      dy = (ch.y0||0);                                  // 横向环绕纵向固定(要斜跑就关掉环绕)
+    }
   } else {
     dx=(ch.x0||0)+((ch.x1||0)-(ch.x0||0))*prog;
     dy=(ch.y0||0)+((ch.y1||0)-(ch.y0||0))*prog;
@@ -156,7 +166,7 @@ export function serializeCharacters(){
   return store.characters.map(ch=>({
     id:ch.id, name:ch.name, cycleSec:ch.cycleSec,
     x0:ch.x0, y0:ch.y0, x1:ch.x1, y1:ch.y1, scale:ch.scale, rot:ch.rot||0, speed:ch.speed, visible:ch.visible,
-    mirX:!!ch.mirX, mirY:!!ch.mirY, sync:ch.sync||'free', delay:ch.delay||0, groundSpeed:ch.groundSpeed||DEFAULT_GROUND_SPEED, wrap:!!ch.wrap,
+    mirX:!!ch.mirX, mirY:!!ch.mirY, sync:ch.sync||'free', delay:ch.delay||0, groundSpeed:ch.groundSpeed||DEFAULT_GROUND_SPEED, wrap:!!ch.wrap, wrapAxis:ch.wrapAxis||'h',
     states:ch.states.map(s=>({ name:s.name, color:s.color, hold:s.hold, dur:s.dur,
       shapes:JSON.parse(JSON.stringify(s.shapes)) })),
   }));
@@ -169,7 +179,7 @@ export function hydrateCharacters(arr){
       hold:s.hold||0, dur:s.dur||0.1 }));
     return { id:d.id, name:d.name, states:frames, SEQ:null, seqDirty:true, cycleSec:d.cycleSec||1,
       x0:d.x0||0, y0:d.y0||0, x1:d.x1||0, y1:d.y1||0, scale:d.scale??1, rot:d.rot||0, speed:d.speed??1,
-      visible:d.visible!==false, mirX:!!d.mirX, mirY:!!d.mirY, sync:d.sync||'free', delay:d.delay||0, groundSpeed:d.groundSpeed||DEFAULT_GROUND_SPEED, wrap:!!d.wrap };
+      visible:d.visible!==false, mirX:!!d.mirX, mirY:!!d.mirY, sync:d.sync||'free', delay:d.delay||0, groundSpeed:d.groundSpeed||DEFAULT_GROUND_SPEED, wrap:!!d.wrap, wrapAxis:d.wrapAxis||'h' };
   });
 }
 export function loadCharacters(arr){
