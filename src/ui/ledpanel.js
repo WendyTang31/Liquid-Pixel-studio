@@ -188,7 +188,17 @@ export function initLedPanel(){
       opts.forEach(([v,t])=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; sel.appendChild(o); });
       sel.value = P.p2Rot[i]==null ? '' : String(P.p2Rot[i]);
       sel.onchange=()=>{ P.p2Rot[i] = sel.value==='' ? null : parseInt(sel.value,10); refreshP2Preview(); };
-      row.append(lab, sel); host.appendChild(row);
+      // ⇋/⇅ 逐模组镜像:接收卡扫描方向反了(探测帧 F 反写)时勾上 —— 写进映射表随工程保存
+      const mkFlip=(key,icon,tip)=>{ const w=document.createElement('label');
+        w.style.cssText='display:flex;align-items:center;gap:1px;cursor:pointer'; w.title=tip;
+        const c=document.createElement('input'); c.type='checkbox'; c.checked=!!m[key];
+        c.onchange=()=>{ currentMap()[i][key]=c.checked; refreshP2Preview(); };
+        const s=document.createElement('span'); s.textContent=icon; s.style.opacity='.85';
+        w.append(c,s); return w; };
+      row.append(lab, sel,
+        mkFlip('flipX','⇋','该板水平镜像(探测帧 F 左右反写时勾)'),
+        mkFlip('flipY','⇅','该板垂直镜像(探测帧 F 上下颠倒但未旋转时勾)'));
+      host.appendChild(row);
     });
   }
   renderRotSelects();

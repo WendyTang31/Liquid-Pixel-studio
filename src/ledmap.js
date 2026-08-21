@@ -79,13 +79,16 @@ export function transformP1toP2(src, opts = {}){
     const [sx0, sy0, w, h] = m.src;
     const [dx0, dy0] = m.dst;
     const rot = effectiveRot(m, rots[mi], side);
+    // 逐模组镜像(flipX/flipY,可选):接收卡扫描方向反了/模组倒装带镜像时的现场校正。
+    // 语义 = 先在源区域内翻转、再旋转;0°/180° 时翻转与旋转可交换,直通布局下即"该板画面翻个面"。
+    const fX = !!m.flipX, fY = !!m.flipY;
     for(let sy = 0; sy < h; sy++){
       const ay = sy0 + sy;
       if(ay < 0 || ay >= H) continue;
       for(let sx = 0; sx < w; sx++){
         const ax = sx0 + sx;
         if(ax < 0 || ax >= W) continue;
-        const [rx, ry] = mapPixel(sx, sy, w, h, rot);
+        const [rx, ry] = mapPixel(fX ? w-1-sx : sx, fY ? h-1-sy : sy, w, h, rot);
         const dx = dx0 + rx, dy = dy0 + ry;
         if(dx < 0 || dy < 0 || dx >= W || dy >= H) continue;   // 越界写入丢弃(覆盖角度异常时的护栏)
         const si = (ay * W + ax) * 4, di = (dy * W + dx) * 4;
@@ -103,8 +106,11 @@ export function invertMap(map = MODULE_MAP, rots = [], side = SIDE_PANEL_ROTATIO
   return base.map((m, i) => {
     const rot = effectiveRot(map[i], rots[i], side);          // 用【原表】判定角度,再取反
     const [dw, dh] = destSize(m.src[2], m.src[3], rot);
+    // 镜像随行:0°/180° 时翻转与旋转可交换,原样带过去即逆;90°/270° 时 flipX/flipY 互换。
+    const fx = (rot===90||rot===270) ? !!m.flipY : !!m.flipX;
+    const fy = (rot===90||rot===270) ? !!m.flipX : !!m.flipY;
     return { name: m.name, src: [m.dst[0], m.dst[1], dw, dh], dst: [m.src[0], m.src[1]],
-             rotate: (360 - rot) % 360 };
+             rotate: (360 - rot) % 360, flipX: fx, flipY: fy };
   });
 }
 // 反向变换:读一张【实装外观(P2)】的帧,产出控制器所需的 P1 顺序帧。
