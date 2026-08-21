@@ -13,7 +13,7 @@ import { rebuildSequence } from './sequence.js';
 import { resampleAll } from './pipeline.js';
 import { setMode } from './ui/stage.js';
 import { LED_W, LED_H } from './ledmap.js';
-import { p2On, p2Size, p2Scale, makeCanvas, transformCanvasP1toP2, mirrorSymmetricH } from './ledcanvas.js';
+import { p2On, p2Size, p2Scale, makeCanvas, transformCanvasP1toP2, mirrorSymmetricH, syncSideModules } from './ledcanvas.js';
 import { uvCropOn, uvCropCfg, activePatch, planSize, composeCrop } from './uvcrop.js';
 import { charactersSolids, charPolys, charLoopFrames } from './characters.js';
 import { renderWideFrame, wideEW } from './widexport.js';
@@ -135,6 +135,7 @@ function makeOfflineRenderer(EW, EH){
     if(!p2on) return;
     const cx=crop.getContext('2d',{willReadFrequently:true}); cx.imageSmoothingEnabled=false;
     cx.drawImage(ec, cropX, 0, EW, EH, 0, 0, EW, EH);   // 同尺寸裁切 = 逐像素原样搬运
+    if((P.p2SideSync||'off')!=='off') syncSideModules(crop, P.p2SideSync, P.p2SideSyncFlip||'h'); // 🚘 双侧同显:一段侧板动画上两侧
     if(P.p2Mirror) mirrorSymmetricH(crop, P.p2MirrorMode||'left'); // 🪞 双边镜像:【在分屏切割之前】,故分屏也得到准确镜像
     transformCanvasP1toP2(crop, p2);
   }

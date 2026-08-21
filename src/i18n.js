@@ -154,6 +154,12 @@ const EN = {
   '🪞 整体镜像(双边)':'🪞 Symmetric mirror (bilateral)',
   '留左半 → 镜像到右':'Keep left → mirror to right', '留右半 → 镜像到左':'Keep right → mirror to left',
   '对称叠加(融合)':'Overlay (blend)',
+  '🚘 双侧同显':'🚘 Both side panels',
+  '左板(2)→ 双侧':'Left panel (2) → both', '右板(3)→ 双侧':'Right panel (3) → both',
+  '⇋ 镜像':'⇋ Mirrored', '⇅ 镜像':'⇅ Mirrored', '原样':'As-is',
+  '已关闭双侧同显':'Both-sides sync off',
+  '🚘 双侧同显:左板(模组2)为源,复制到右板 —— 两块侧板播同一段动画':'🚘 Both sides: left panel (module 2) is the source, copied to the right — both side panels play the same animation',
+  '🚘 双侧同显:右板(模组3)为源,复制到左板 —— 两块侧板播同一段动画':'🚘 Both sides: right panel (module 3) is the source, copied to the left — both side panels play the same animation',
   '模组映射':'Module map', '↺ 重置':'↺ Reset',
   '源 x · y · 宽 · 高 → 目标 x · y':'src x · y · w · h → dst x · y',
   // ── 常用提示 ──

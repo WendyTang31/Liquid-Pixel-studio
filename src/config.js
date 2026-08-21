@@ -56,6 +56,11 @@ export const P = {
   // 镜像方式:'left'=只留左半,镜像到右半(默认);'right'=只留右半,镜像到左半;
   // 'overlay'=整幅对称叠加(旧行为,两份画面融合)。left/right 是纯覆盖 → 与背景颜色无关,永不"吃掉"图形。
   p2MirrorMode:'left',
+  // 🚘 双侧同显:一段侧板动画同时上两块侧板(模组 2 side_left + 3 side_right)。
+  // 'off'=关;'left'=以左板(模组2)的条带为源,复制到右板;'right'=反之。
+  // p2SideSyncFlip:复制时的翻转 —— 'h'=沿条带横向镜像(默认,车两侧对称的常用解),'v'=纵向,'none'=原样。
+  // 在分屏切割之前、整体镜像之前施加;两块侧板装车方向不同,预览/3D 里眼见为准,不对就换个翻转。
+  p2SideSync:'off', p2SideSyncFlip:'h',
 
   // 🧩 按取景框导出(Blender):只输出 3D 取景框内的画面(+镜像补全),框外丢弃。见 uvcrop.js
   uvCrop:{ on:false, patch:'', mirror:'h', res:4096 }

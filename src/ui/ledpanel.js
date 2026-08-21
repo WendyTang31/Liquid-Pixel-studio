@@ -7,7 +7,7 @@ import { sampleFrame } from '../engine.js';
 import { computeVectorPolys, rasterizeVectorSolids } from '../vector.js';
 import { renderToImageData } from '../render.js';
 import { LED_W, LED_H, MODULE_MAP } from '../ledmap.js';
-import { makeCanvas, transformCanvasP1toP2, calibrationCanvas, mirrorSymmetricH } from '../ledcanvas.js';
+import { makeCanvas, transformCanvasP1toP2, calibrationCanvas, mirrorSymmetricH, syncSideModules } from '../ledcanvas.js';
 import { uvPatches, activePatch, planSize, mirrorScale } from '../uvcrop.js';
 import { exclusiveExportMode } from './exportmode.js';
 import { charactersSolids } from '../characters.js';
@@ -42,7 +42,10 @@ function seekOfState(){
 export function refreshP2Preview(){
   if(!p1Cv) return;
   // 预览失败要看得见(静默 catch 会让人以为"没接上"):只警告一次,避免刷屏。
-  try{ renderP1(); if(P.p2Mirror) mirrorSymmetricH(p1Cv, P.p2MirrorMode||'left'); transformCanvasP1toP2(p1Cv, p2Cv); }
+  try{ renderP1();
+    if((P.p2SideSync||'off')!=='off') syncSideModules(p1Cv, P.p2SideSync, P.p2SideSyncFlip||'h');
+    if(P.p2Mirror) mirrorSymmetricH(p1Cv, P.p2MirrorMode||'left');
+    transformCanvasP1toP2(p1Cv, p2Cv); }
   catch(e){ if(!warned){ warned=true; console.warn('[P2 预览] 渲染失败:', e); } }
 }
 function tick(){
@@ -50,7 +53,7 @@ function tick(){
   if(!$('p2Panel') || $('p2Panel').style.display==='none') return;
   // 只在画面可能变化时重算(播放中/切帧/改了覆盖角度/校准模式)
   const sig=[store.mode, store.playing?store.g.toFixed(2):'', store.active, calibMode,
-             (P.p2Rot||[]).join(','), P.p2Side, P.p2Mirror, P.p2MirrorMode, P.colBg, store.seqDirty].join('|');
+             (P.p2Rot||[]).join(','), P.p2Side, P.p2Mirror, P.p2MirrorMode, P.p2SideSync, P.p2SideSyncFlip, P.colBg, store.seqDirty].join('|');
   if(sig===lastSig && !store.playing) return;
   lastSig=sig;
   refreshP2Preview();
@@ -181,6 +184,15 @@ export function initLedPanel(){
       setHint(mm.value==='overlay'?'对称叠加:两份画面融合(逐像素取离背景色更远的那份)'
         : mm.value==='right'?'留右半:只保留右半画面,镜像覆盖到左半'
         : '留左半:只保留左半画面,镜像覆盖到右半'); }; }
+  // 🚘 双侧同显:一段侧板动画同时上两块侧板(模组 2+3)。
+  const ss=$('p2SideSync'), sf=$('p2SideSyncFlip');
+  if(ss){ ss.value=P.p2SideSync||'off';
+    ss.onchange=()=>{ P.p2SideSync=ss.value; refreshP2Preview();
+      setHint(ss.value==='off'?'已关闭双侧同显'
+        : ss.value==='right'?'🚘 双侧同显:右板(模组3)为源,复制到左板 —— 两块侧板播同一段动画'
+        : '🚘 双侧同显:左板(模组2)为源,复制到右板 —— 两块侧板播同一段动画'); }; }
+  if(sf){ sf.value=P.p2SideSyncFlip||'h';
+    sf.onchange=()=>{ P.p2SideSyncFlip=sf.value; refreshP2Preview(); }; }
 
   // 变换方向:正向 / 反向(照车上的样子画)
   const dir=$('p2Dir');

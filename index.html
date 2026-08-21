@@ -631,6 +631,17 @@
           <option value="right">留右半 → 镜像到左</option>
           <option value="overlay">对称叠加(融合)</option>
         </select></div>
+      <div class="row"><label title="双侧同显:一段侧板动画【同时】上两块侧板(模组 2 side_left + 3 side_right)。以其中一块的条带为源,复制到另一块(原内容被覆盖),在分屏切割之前施加。两块侧板装车方向不同 —— 复制方式选镜像/原样,P2 预览与 3D 里眼见为准。">🚘 双侧同显</label>
+        <select id="p2SideSync" style="flex:1">
+          <option value="off">关闭</option>
+          <option value="left">左板(2)→ 双侧</option>
+          <option value="right">右板(3)→ 双侧</option>
+        </select>
+        <select id="p2SideSyncFlip" style="width:96px" title="复制方式:⇋ 沿条带横向镜像(默认,常用于两侧对称)· ⇅ 纵向镜像 · 原样复制。不对就换一个,预览眼见为准。">
+          <option value="h">⇋ 镜像</option>
+          <option value="v">⇅ 镜像</option>
+          <option value="none">原样</option>
+        </select></div>
       <div class="row"><label title="每块模组【从画面哪块区域取像素】(源 x/y/宽/高)以及【放到实装画布的哪个位置】(目标 x/y)。实装尺寸与默认不符时,直接在这里改成真实值 —— 改完预览立刻更新。">模组映射</label>
         <button id="p2MapReset" style="font:11px system-ui;padding:2px 6px" title="恢复默认映射表">↺ 重置</button></div>
       <div class="small" style="opacity:.5">源 x · y · 宽 · 高 → 目标 x · y</div>

@@ -18,6 +18,30 @@ export function makeCanvas(w=LED_W, h=LED_H){
   const x=c.getContext('2d', {willReadFrequently:true}); x.imageSmoothingEnabled=false;
   return c;
 }
+
+// 🚘 双侧同显:把一块侧板的条带复制到另一块侧板 —— 一段侧面动画同时上两侧(模组 2 side_left + 3 side_right)。
+// 【在分屏切割与整体镜像之前】对 P1 画面施加。条带位置从模组映射表读(自定义映射也跟着走),按画布倍数缩放。
+// keep:'left'=以模组2的条带为源(右板被覆盖);'right'=反之。
+// flip:'h'=沿条带横向镜像(默认;两侧板朝向相反,镜像后车两侧图案对称)|'v'=纵向|'none'=原样。
+// 纯 1:1 像素拷贝(drawImage 同尺寸)→ 零插值,不违反"永不缩放"铁律。
+export function syncSideModules(cv, keep='left', flip='h'){
+  const scale=Math.max(1, Math.round(cv.width/LED_W));
+  const map=P.p2Map||MODULE_MAP;
+  const A=map[1], B=map[2];                      // 模组 2 side_left / 3 side_right(表序固定)
+  if(!A||!B) return;
+  const S=(keep==='right'?B:A).src.map(v=>v*scale);   // 源条带 [x,y,w,h]
+  const D=(keep==='right'?A:B).src.map(v=>v*scale);   // 目标条带左上角
+  const [sx,sy,sw,sh]=S, [dx,dy]=D;
+  const ctx=cv.getContext('2d',{willReadFrequently:true}); ctx.imageSmoothingEnabled=false;
+  const tmp=makeCanvas(sw,sh); const tc=tmp.getContext('2d'); tc.imageSmoothingEnabled=false;
+  tc.drawImage(cv, sx,sy,sw,sh, 0,0,sw,sh);
+  ctx.save();
+  if(flip==='h'){ ctx.translate(dx+sw, dy); ctx.scale(-1,1); }
+  else if(flip==='v'){ ctx.translate(dx, dy+sh); ctx.scale(1,-1); }
+  else ctx.translate(dx, dy);
+  ctx.drawImage(tmp, 0, 0);
+  ctx.restore();
+}
 // 🪞 整体镜像(双边):沿【竖直中线 x=宽/2】做左右对称 —— 双边动画效果。
 // 【必须在 transformCanvasP1toP2(分屏切割)之前】对 P1 画面施加:这样模组分屏拿到的已是镜像后的内容,
 // 分屏/侧板旋转随之得到准确镜像。整幅(含所有帧 + 角色动画)一起镜像,因为它作用在最终 P1 画面上。
