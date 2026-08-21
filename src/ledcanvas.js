@@ -84,13 +84,15 @@ export function mirrorSymmetricH(cv, mode='left'){
 }
 
 // 源画布 → 新画布(P2 布局)。out 可复用以免每帧新建。
-export function transformCanvasP1toP2(src, out){
+// dir:可选覆盖变换方向 —— 校准帧必须永远走正向('fwd'),它的语义就是"P1 图案 → 控制器顺序";
+// 若跟随用户当前的「反向(照车画)」设置,存出去的校准 PNG 是被反向变换过的,拿去打屏毫无意义。
+export function transformCanvasP1toP2(src, out, dir){
   const sctx=src.getContext('2d', {willReadFrequently:true});
   sctx.imageSmoothingEnabled=false;
   const img=sctx.getImageData(0,0,src.width,src.height);
   const scale=Math.max(1, Math.round(src.width / LED_W));   // 由画面宽度反推倍数
   // 方向:正向=在 P1 竖排里画;反向=照着车上的样子画,导出翻回控制器顺序。
-  const fn = (P.p2Dir==='inv') ? transformP2toP1 : transformP1toP2;
+  const fn = ((dir||P.p2Dir)==='inv') ? transformP2toP1 : transformP1toP2;
   const res=fn({width:img.width,height:img.height,data:img.data}, {...p2Opts(), scale});
   const dst=out||makeCanvas(res.width,res.height);
   if(dst.width!==res.width||dst.height!==res.height){ dst.width=res.width; dst.height=res.height; }

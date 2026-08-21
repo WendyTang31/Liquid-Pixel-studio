@@ -43,9 +43,11 @@ export function refreshP2Preview(){
   if(!p1Cv) return;
   // 预览失败要看得见(静默 catch 会让人以为"没接上"):只警告一次,避免刷屏。
   try{ renderP1();
-    if((P.p2SideSync||'off')!=='off') syncSideModules(p1Cv, P.p2SideSync, P.p2SideSyncFlip||'h');
-    if(P.p2Mirror) mirrorSymmetricH(p1Cv, P.p2MirrorMode||'left');
-    transformCanvasP1toP2(p1Cv, p2Cv); }
+    if(!calibMode){                     // 校准帧不叠加双侧同显/镜像 —— 校准的是几何,不是内容效果
+      if((P.p2SideSync||'off')!=='off') syncSideModules(p1Cv, P.p2SideSync, P.p2SideSyncFlip||'h');
+      if(P.p2Mirror) mirrorSymmetricH(p1Cv, P.p2MirrorMode||'left');
+    }
+    transformCanvasP1toP2(p1Cv, p2Cv, calibMode?'fwd':undefined); } // 校准帧恒走正向
   catch(e){ if(!warned){ warned=true; console.warn('[P2 预览] 渲染失败:', e); } }
 }
 function tick(){
@@ -247,7 +249,8 @@ export function initLedPanel(){
   };
   $('p2Save').onclick=async ()=>{
     if(!calibCv) calibCv=calibrationCanvas();
-    const wasCalib=calibMode; calibMode=true; renderP1(); transformCanvasP1toP2(p1Cv,p2Cv);
+    const wasCalib=calibMode; calibMode=true; renderP1();
+    transformCanvasP1toP2(p1Cv, p2Cv, 'fwd');   // 校准 PNG 恒走正向(与用户当前「变换方向」无关)
     downloadBlob(await toBlobP(p1Cv), 'calibration_P1.png');
     downloadBlob(await toBlobP(p2Cv), 'calibration_P2.png');
     calibMode=wasCalib; lastSig='';
