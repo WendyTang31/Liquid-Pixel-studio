@@ -103,9 +103,10 @@ export function transformCanvasP1toP2(src, out, dir){
   dctx.putImageData(outImg,0,0);
   return dst;
 }
-// 校准帧(P1 布局)→ 画布。
-export function calibrationCanvas(out){
-  const cal=makeCalibrationFrame(MODULE_MAP, LED_W, LED_H);
+// 校准帧 → 画布。map 可选:缺省 = 默认表(P1 横带区域);传 invertMap(...) 的结果则按
+// 【车上区域】画(反向工作流用:侧屏 = 两块竖 64×128 并排)—— 区域形状永远和当前变换方向匹配。
+export function calibrationCanvas(out, map){
+  const cal=makeCalibrationFrame(map||MODULE_MAP, LED_W, LED_H);
   const dst=out||makeCanvas(LED_W,LED_H);
   const ctx=dst.getContext('2d', {willReadFrequently:true});
   ctx.imageSmoothingEnabled=false;

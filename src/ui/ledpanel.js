@@ -6,7 +6,7 @@ import { $, setHint, hex2rgb, downloadBlob, toBlobP } from '../utils.js';
 import { sampleFrame } from '../engine.js';
 import { computeVectorPolys, rasterizeVectorSolids } from '../vector.js';
 import { renderToImageData } from '../render.js';
-import { LED_W, LED_H, MODULE_MAP, effectiveRot } from '../ledmap.js';
+import { LED_W, LED_H, MODULE_MAP, effectiveRot, invertMap } from '../ledmap.js';
 import { makeCanvas, transformCanvasP1toP2, calibrationCanvas, mirrorSymmetricH, syncSideModules } from '../ledcanvas.js';
 import { uvPatches, activePatch, planSize, mirrorScale } from '../uvcrop.js';
 import { exclusiveExportMode } from './exportmode.js';
@@ -14,6 +14,16 @@ import { charactersSolids } from '../characters.js';
 
 let p1Cv=null, p2Cv=null, raf=0, lastSig='';
 let calibMode=false, calibCv=null, warned=false;
+// 校准帧按【当前工作流】生成,与动画导出走同一条路:
+//  正向 P1→P2:按 P1 横带区域画(每条横带一色)→ 正向变换。
+//  反向 P2→P1:按【车上区域】画(invertMap:侧屏 = 两块竖 64×128 并排,各自竖条+左上白块)→ 反向变换。
+//  这样"校准帧对了"就等价于"动画方向一定对"—— 旧版校准帧永远按横带画,在反向工作流下形状不匹配,
+//  打到屏上没法解读(这正是"校准看着对了动画却不对"的根源)。
+function buildCalib(){
+  const baseMap=P.p2Map||MODULE_MAP;
+  const calMap = P.p2Dir==='inv' ? invertMap(baseMap, P.p2Rot||[], P.p2Side||'cw') : baseMap;
+  calibCv=calibrationCanvas(calibCv, calMap);
+}
 
 // 当前时间轴位置的一帧。与【导出完全同一条路径】:先按正方形渲染(方画布零变形),
 // 再纯裁切出中间 2:5 的 LED 取景窗 —— 所以预览所见即导出所得,不会一个变形一个不变形。
@@ -42,12 +52,14 @@ function seekOfState(){
 export function refreshP2Preview(){
   if(!p1Cv) return;
   // 预览失败要看得见(静默 catch 会让人以为"没接上"):只警告一次,避免刷屏。
-  try{ renderP1();
+  try{ if(calibMode) buildCalib();      // 校准帧每次按当前 方向/映射/角度 重建(廉价,128×320)
+    renderP1();
     if(!calibMode){                     // 校准帧不叠加双侧同显/镜像 —— 校准的是几何,不是内容效果
       if((P.p2SideSync||'off')!=='off') syncSideModules(p1Cv, P.p2SideSync, P.p2SideSyncFlip||'h');
       if(P.p2Mirror) mirrorSymmetricH(p1Cv, P.p2MirrorMode||'left');
     }
-    transformCanvasP1toP2(p1Cv, p2Cv, calibMode?'fwd':undefined); } // 校准帧恒走正向
+    transformCanvasP1toP2(p1Cv, p2Cv); }  // 校准帧与动画走【同一条】方向路径 → 端到端可信
+
   catch(e){ if(!warned){ warned=true; console.warn('[P2 预览] 渲染失败:', e); } }
 }
 function tick(){
@@ -55,7 +67,8 @@ function tick(){
   if(!$('p2Panel') || $('p2Panel').style.display==='none') return;
   // 只在画面可能变化时重算(播放中/切帧/改了覆盖角度/校准模式)
   const sig=[store.mode, store.playing?store.g.toFixed(2):'', store.active, calibMode,
-             (P.p2Rot||[]).join(','), P.p2Side, P.p2Mirror, P.p2MirrorMode, P.p2SideSync, P.p2SideSyncFlip, P.colBg, store.seqDirty].join('|');
+             (P.p2Rot||[]).join(','), P.p2Side, P.p2Dir, P.p2Map?JSON.stringify(P.p2Map):'def',
+             P.p2Mirror, P.p2MirrorMode, P.p2SideSync, P.p2SideSyncFlip, P.colBg, store.seqDirty].join('|');
   if(sig===lastSig && !store.playing) return;
   lastSig=sig;
   refreshP2Preview();
@@ -240,7 +253,7 @@ export function initLedPanel(){
   // 校准帧:预览切成校准图案;可直接存 P1/P2 两张 PNG 拿去打屏比对
   $('p2Calib').onclick=()=>{
     calibMode=!calibMode;
-    if(calibMode && !calibCv) calibCv=calibrationCanvas();
+    if(calibMode) buildCalib();
     $('p2Calib').textContent = calibMode ? '✓ 校准帧(点此退出)' : '🎯 生成校准帧';
     lastSig=''; refreshP2Preview();
     setHint(calibMode
@@ -248,9 +261,9 @@ export function initLedPanel(){
       : '已退出校准帧预览');
   };
   $('p2Save').onclick=async ()=>{
-    if(!calibCv) calibCv=calibrationCanvas();
+    buildCalib();
     const wasCalib=calibMode; calibMode=true; renderP1();
-    transformCanvasP1toP2(p1Cv, p2Cv, 'fwd');   // 校准 PNG 恒走正向(与用户当前「变换方向」无关)
+    transformCanvasP1toP2(p1Cv, p2Cv);          // 与动画同一条方向路径(见 buildCalib 注释)
     downloadBlob(await toBlobP(p1Cv), 'calibration_P1.png');
     downloadBlob(await toBlobP(p2Cv), 'calibration_P2.png');
     calibMode=wasCalib; lastSig='';
