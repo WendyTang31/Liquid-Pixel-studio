@@ -6,7 +6,7 @@ import { $, setHint, hex2rgb, downloadBlob, toBlobP } from '../utils.js';
 import { sampleFrame } from '../engine.js';
 import { computeVectorPolys, rasterizeVectorSolids } from '../vector.js';
 import { renderToImageData } from '../render.js';
-import { LED_W, LED_H, MODULE_MAP } from '../ledmap.js';
+import { LED_W, LED_H, MODULE_MAP, effectiveRot } from '../ledmap.js';
 import { makeCanvas, transformCanvasP1toP2, calibrationCanvas, mirrorSymmetricH, syncSideModules } from '../ledcanvas.js';
 import { uvPatches, activePatch, planSize, mirrorScale } from '../uvcrop.js';
 import { exclusiveExportMode } from './exportmode.js';
@@ -163,8 +163,11 @@ export function initLedPanel(){
       // 只提供与【槽位尺寸相容】的角度:横向槽(128×64)=0/180;旋转槽(64×128)=90/270。
       // 给横向槽设 90° 会让它变成 64×128 塞不进去 → 像素被裁掉,所以直接不给选。
       const rotatedSlot = (m.rotate===90 || m.rotate===270);
-      const opts = rotatedSlot ? [['','按表 ('+m.rotate+'°)'],['90','90°'],['270','270°']]
-                               : [['','按表 ('+m.rotate+'°)'],['0','0°'],['180','180°']];
+      // 「按表」显示【实际生效角】:侧板方向=CCW 会把表里的 90° 翻成 270° ——
+      // 之前标签仍写 90°,于是"按表(90°)"和显式选"90°"渲染方向相反,像 bug 一样(确实是 UI 说谎)。
+      const effRot = effectiveRot(m, null, P.p2Side||'cw');
+      const opts = rotatedSlot ? [['','按表 ('+effRot+'°)'],['90','90°'],['270','270°']]
+                               : [['','按表 ('+effRot+'°)'],['0','0°'],['180','180°']];
       sel.title = rotatedSlot ? '这块是竖装槽位(64×128),只能 90°/270°;要 0°/180° 请点「⬒ 直通(不旋转)」换布局'
                               : '这块是横装槽位(128×64),只能 0°/180°';
       opts.forEach(([v,t])=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; sel.appendChild(o); });
@@ -175,10 +178,10 @@ export function initLedPanel(){
   }
   renderRotSelects();
 
-  // 侧板方向(实装镜像时一处翻转全部侧板)
+  // 侧板方向(实装镜像时一处翻转全部侧板)。它改变「按表」的实际生效角 → 旋转下拉标签要跟着重建。
   const side=$('p2Side');
   side.value=P.p2Side||'cw';
-  side.onchange=()=>{ P.p2Side=side.value; refreshP2Preview(); };
+  side.onchange=()=>{ P.p2Side=side.value; renderRotSelects(); refreshP2Preview(); };
   // 🪞 整体镜像(双边):分屏切割前施加,预览立即反映
   const mir=$('p2Mirror');
   if(mir){ mir.checked=!!P.p2Mirror;
