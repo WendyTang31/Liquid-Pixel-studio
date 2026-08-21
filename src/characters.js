@@ -52,8 +52,13 @@ export const DEFAULT_GROUND_SPEED = 300;               // 地面速度默认值(
 const mod=(v,m)=>((v%m)+m)%m;
 const WRAP_PAD=200;                     // 环绕出画余量:够角色整个走出画面再折返,接缝落在画外
 const WRAP_SPAN=W+WRAP_PAD;             // 一个环绕周期(画布宽 + 出画余量):跑不停一整圈前进这么多 px
-// 环绕周期按方向取:横向 = 画布宽 + 余量;竖向(wrapAxis='v')= 画布高 + 余量。
-const wrapSpan=ch=> (ch.wrapAxis==='v' ? H : W) + WRAP_PAD;
+// ↻ 绕车条带(wrapAxis='strip'):P2 竖排的五条 128×64 带,概念上是一条 640×64 的环车光带。
+// 画布上带高/取景窗按 P2 裁切几何换算:窗宽 = W·128/320 = 192,带高 = H·64/320 = 96,窗左缘 = (W-192)/2。
+const STRIP_N=5, STRIP_SEGW=W*128/320, STRIP_SEGH=H*64/320, STRIP_X0=(W-STRIP_SEGW)/2;
+// 环绕周期按方向取:横向 = 画布宽 + 余量;竖向 = 画布高 + 余量;
+// 绕车 = 五段取景窗宽(骑手永远在某条带里 → 不需要出画余量,整圈即无缝)。
+const wrapSpan=ch=> ch.wrapAxis==='strip' ? STRIP_N*STRIP_SEGW
+                  : (ch.wrapAxis==='v' ? H : W) + WRAP_PAD;
 // 一整圈需要走【整数个走路循环 laps】—— 首尾腿相位相同 → 无缝可循环。
 // wrap:一圈 = 前进正好一个 span,laps=round(span/(gs·cycSec)),故一圈耗时 ≈ span/gs(与步频无关)。
 // 非 wrap:一圈 = 走完 (x0,y0)→(x1,y1) 的距离,laps=round(距离/(gs·cycSec))。
@@ -112,33 +117,48 @@ export function charPolys(ch, clock, gMain){
   // 🔁 跑不停:画布只有 W 宽,想"一直往前跑"不能靠把行程拉到几千像素 —— 那样绝大部分时间人在画外,
   // 看起来就是"跑到边上被裁成一条线、又凭空出现在中间"。正解是【环绕平移】:走到右边画外就从左边画外
   // 接着进来。环绕周期 = 画布宽 + 余量,翻转点在画外发生 → 肉眼完全看不出接缝,视觉上就是永远向前跑。
-  let dx, dy;
+  const cx=W/2, cy=H/2;
+  let offs;                                             // 一个或多个 [dx,dy](绕车模式画邻带副本)
   if(ch.wrap){
     const span=wrapSpan(ch);
-    if(ch.wrapAxis==='v'){                              // ↕ 竖向跑不停:出下画外即从上画外接着进来
+    if(ch.wrapAxis==='strip'){
+      // ↻ 绕车条带:角色沿虚拟 640 长带骑行,画在【当前所在带】的取景窗位置;跨带边界时
+      // 同时画出前/后邻带的副本 —— 身体伸出本带窗口的部分会被 P2 裁切丢弃、由邻带副本接上,
+      // 于是 P2/车上是从一块板【无缝骑进】下一块板(带5→带1 也接回,整圈绕车)。
+      const dir=((ch.x1||0)-(ch.x0||0))<0 ? -1 : 1;
+      const s=mod(dir*span*progC, span);
+      const k0=Math.floor(s/STRIP_SEGW);
+      offs=[k0-1, k0, k0+1].map(j=>{
+        const jj=((j%STRIP_N)+STRIP_N)%STRIP_N;         // 邻带下标取模 → 首尾相接
+        const xin=s - j*STRIP_SEGW;                     // 该带坐标系里的里程位置(可越窗,由裁切负责)
+        return [ STRIP_X0 + xin - cx, jj*STRIP_SEGH + STRIP_SEGH/2 - cy + (ch.y0||0) ];
+      });
+    } else if(ch.wrapAxis==='v'){                       // ↕ 竖向跑不停:出下画外即从上画外接着进来
       const dir=((ch.y1||0)-(ch.y0||0))<0 ? -1 : 1;     // y1<y0 向上跑,否则向下(y0=y1 默认向下)
       const travelled=dir*span*progC;
-      dy = -H/2 - WRAP_PAD/2 + mod(travelled, span);
-      dx = (ch.x0||0);                                  // 竖向环绕横向固定
+      offs=[[ (ch.x0||0), -H/2 - WRAP_PAD/2 + mod(travelled, span) ]];
     } else {
       const dir=((ch.x1||0)-(ch.x0||0))<0 ? -1 : 1;     // 方向:x1<x0 向左跑,否则向右(x0=x1 默认向右)
       const travelled=dir*span*progC;                   // 一圈正好前进一个 span → 首尾无缝;连续里程,永不回头
-      dx = -W/2 - WRAP_PAD/2 + mod(travelled, span);    // 取模 → 出右画外即从左画外接着进来
-      dy = (ch.y0||0);                                  // 横向环绕纵向固定(要斜跑就关掉环绕)
+      offs=[[ -W/2 - WRAP_PAD/2 + mod(travelled, span), (ch.y0||0) ]];
     }
   } else {
-    dx=(ch.x0||0)+((ch.x1||0)-(ch.x0||0))*prog;
-    dy=(ch.y0||0)+((ch.y1||0)-(ch.y0||0))*prog;
+    offs=[[ (ch.x0||0)+((ch.x1||0)-(ch.x0||0))*prog,
+            (ch.y0||0)+((ch.y1||0)-(ch.y0||0))*prog ]];
   }
-  const sc=ch.scale||1, cx=W/2, cy=H/2;
+  const sc=ch.scale||1;
   const ang=(ch.rot||0)*Math.PI/180, ca=Math.cos(ang), sa=Math.sin(ang); // 整体旋转(绕画面中心)
   const mx=ch.mirX?-1:1, my=ch.mirY?-1:1;                                 // 整体镜像(在旋转之前,故是"角色自身"翻面)
   const polys=computeVectorPolys(ch.states, SEQ, t, t, P, true); // includeHold:停留帧也画,不闪烁(相位用循环时间 t → 确定)
-  return polys.map(o=>({ ...o,
-    // 相对中心 → 镜像 → 缩放 → 旋转 → 位移(镜像在最内层 = 原地翻面,不影响走位)
-    poly:o.poly.map(p=>{ const rx=(p.x-cx)*mx*sc, ry=(p.y-cy)*my*sc;
-      return { x:cx + (rx*ca - ry*sa) + dx, y:cy + (rx*sa + ry*ca) + dy }; }),
-    strokeW:(o.strokeW||0)*sc }));
+  const out=[];
+  for(const [dx,dy] of offs){
+    for(const o of polys) out.push({ ...o,
+      // 相对中心 → 镜像 → 缩放 → 旋转 → 位移(镜像在最内层 = 原地翻面,不影响走位)
+      poly:o.poly.map(p=>{ const rx=(p.x-cx)*mx*sc, ry=(p.y-cy)*my*sc;
+        return { x:cx + (rx*ca - ry*sa) + dx, y:cy + (rx*sa + ry*ca) + dy }; }),
+      strokeW:(o.strokeW||0)*sc });
+  }
+  return out;
 }
 // 给定角色数组 → 合成实心(每个角色一块 SDF solid)。store 无关 → 编辑器与 3D 预览器共用。
 // gMain=主时间轴当前循环位置(秒),供 sync='timeline' 的角色与主动画同步;不传则所有角色按自由时钟。

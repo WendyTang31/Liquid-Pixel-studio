@@ -1,7 +1,7 @@
 // ledmap.js(纯函数)与画布之间的薄适配层。所有 DOM 相关的东西都在这里,ledmap 保持零依赖可单测。
 // 铁律:任何一次绘制前都关掉平滑 —— 一个像素 = 一颗灯珠,插值会糊掉边缘。
 import { P } from './config.js';
-import { LED_W, LED_H, MODULE_MAP, transformP1toP2, transformP2toP1, makeCalibrationFrame } from './ledmap.js';
+import { LED_W, LED_H, MODULE_MAP, transformP1toP2, transformP2toP1, makeCalibrationFrame, makeProbeFrame } from './ledmap.js';
 
 export const p2On = () => !!P.p2Export;
 // 导出倍数:1×=硬件原生 128×320;N× = 原生按 128N×320N 渲染,模组网格同步放大(仍零重采样)。
@@ -101,6 +101,14 @@ export function transformCanvasP1toP2(src, out, dir){
   const outImg=dctx.createImageData(res.width,res.height);
   outImg.data.set(res.data);
   dctx.putImageData(outImg,0,0);
+  return dst;
+}
+// 🧭 探测帧 → 画布(平铺横带,原样直发不经任何变换 —— 测控制器+安装的真实映射用)。
+export function probeCanvas(out){
+  const pr=makeProbeFrame(LED_W, LED_H);
+  const dst=out||makeCanvas(LED_W,LED_H);
+  const ctx=dst.getContext('2d',{willReadFrequently:true}); ctx.imageSmoothingEnabled=false;
+  const img=ctx.createImageData(pr.width,pr.height); img.data.set(pr.data); ctx.putImageData(img,0,0);
   return dst;
 }
 // 校准帧 → 画布。map 可选:缺省 = 默认表(P1 横带区域);传 invertMap(...) 的结果则按

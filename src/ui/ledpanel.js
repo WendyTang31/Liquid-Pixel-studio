@@ -7,7 +7,7 @@ import { sampleFrame } from '../engine.js';
 import { computeVectorPolys, rasterizeVectorSolids } from '../vector.js';
 import { renderToImageData } from '../render.js';
 import { LED_W, LED_H, MODULE_MAP, effectiveRot, invertMap } from '../ledmap.js';
-import { makeCanvas, transformCanvasP1toP2, calibrationCanvas, mirrorSymmetricH, syncSideModules } from '../ledcanvas.js';
+import { makeCanvas, transformCanvasP1toP2, calibrationCanvas, probeCanvas, mirrorSymmetricH, syncSideModules } from '../ledcanvas.js';
 import { uvPatches, activePatch, planSize, mirrorScale } from '../uvcrop.js';
 import { exclusiveExportMode } from './exportmode.js';
 import { charactersSolids } from '../characters.js';
@@ -260,6 +260,11 @@ export function initLedPanel(){
       ? '🎯 校准帧:每块模组 = 不同底色 + N 条竖条(N=模组号)+ 左上白块。看右侧 P2:模组2 的白块应在其旋转块的【右上角】= 方向正确'
       : '已退出校准帧预览');
   };
+  // 🧭 探测帧:原样直发(不经任何变换),测控制器+安装的真实映射。一键直接下载 PNG。
+  const probe=$('p2Probe');
+  if(probe) probe.onclick=async ()=>{
+    downloadBlob(await toBlobP(probeCanvas()), 'probe_128x320.png');
+    setHint('🧭 已保存 probe_128x320.png —— 【原样】发到屏上拍照:每块板看 F 的朝向 = 需要的补偿角,F 反写 = 有镜像,白点数 = 第几条带'); };
   $('p2Save').onclick=async ()=>{
     buildCalib();
     const wasCalib=calibMode; calibMode=true; renderP1();

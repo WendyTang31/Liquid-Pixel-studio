@@ -128,6 +128,34 @@ const CAL_COLORS = [
   [255, 208,  64],   // 4 rear_upper  黄
   [208, 112, 255],   // 5 rear_lower  紫
 ];
+// ── 🧭 探测帧(P1 平铺横带,【原样直发不经任何变换】)──
+// 用途:测出「控制器 + 物理安装」的真实映射,软件变换完全不掺和 —— 一张照片定乾坤。
+// 每条 128×64 横带:自己的底色 + 大写【F】(F 无任何旋转/镜像对称:朝向直接读出该板需要的补偿角,
+// 反写 = 存在镜像)+ 右上角 N 个白点(N=模组号)+ 左上白方块 + 1px 描边。
+export function makeProbeFrame(W = LED_W, H = LED_H){
+  const d = new Uint8ClampedArray(W * H * 4);
+  for(let i = 3; i < d.length; i += 4) d[i] = 255;
+  const put=(x,y,c)=>{ if(x<0||y<0||x>=W||y>=H) return;
+    const i=(y*W+x)*4; d[i]=c[0]; d[i+1]=c[1]; d[i+2]=c[2]; d[i+3]=255; };
+  const rect=(x,y,w,h,c)=>{ for(let j=0;j<h;j++) for(let i=0;i<w;i++) put(x+i,y+j,c); };
+  const bandH=64, n=Math.floor(H/bandH);
+  for(let b=0;b<n;b++){
+    const y0=b*bandH, col=CAL_COLORS[b%CAL_COLORS.length];
+    const dim=[col[0]*0.18|0, col[1]*0.18|0, col[2]*0.18|0];
+    rect(0,y0,W,bandH,dim);                                  // 底色(暗)
+    for(let x=0;x<W;x++){ put(x,y0,col); put(x,y0+bandH-1,col); }   // 1px 描边
+    for(let y=0;y<bandH;y++){ put(0,y0+y,col); put(W-1,y0+y,col); }
+    // 大写 F:竖干 + 顶长臂 + 中短臂(线宽 6px,占带高 70%)
+    const fx=44, fy=y0+10, t=6, fh=44;
+    rect(fx, fy, t, fh, col);                                // 竖干
+    rect(fx, fy, 34, t, col);                                // 顶臂(长)
+    rect(fx, fy+20, 22, t, col);                             // 中臂(短)
+    for(let i=0;i<=b;i++) rect(W-12-(i*10), y0+4, 6,6, [255,255,255]); // N 个白点 = 模组号
+    rect(2, y0+2, 8,8, [255,255,255]);                       // 左上白方块
+  }
+  return { width: W, height: H, data: d };
+}
+
 export function makeCalibrationFrame(map = MODULE_MAP, W = LED_W, H = LED_H){
   const d = new Uint8ClampedArray(W * H * 4);
   for(let i = 3; i < d.length; i += 4) d[i] = 255;

@@ -144,8 +144,8 @@ export function renderCharacters(){
     // ↔/↕ 跑不停方向:横向(出右回左,默认)或竖向(出下回上;配合旋转 90° 的角色跑竖排画面)
     const axSel=document.createElement('select');
     axSel.style.cssText='background:#0d1210;border:1px solid #2a3330;border-radius:4px;color:#dfe;font:11px system-ui;padding:1px 3px';
-    axSel.title='跑不停方向:↔ 横向 = 出右画外回左边(默认);↕ 竖向 = 出下画外回上边(角色旋转 90° 跑竖排画面用)。\n横向时方向由「左右」正负决定,竖向时由「上下」正负决定(如 上下 0→-1 = 向上跑)。';
-    [['h','↔ 横向'],['v','↕ 竖向']].forEach(([v,t])=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; axSel.appendChild(o); });
+    axSel.title='跑不停方向:↔ 横向 = 出右画外回左边(默认);↕ 竖向 = 出下画外回上边;\n↻ 绕车 = 沿 P2 五条带组成的环车长带骑行(带1→带2→…→带5→带1),跨板无缝 —— 正向 P1→P2 工作流用。\n横向/绕车方向由「左右」正负决定,竖向由「上下」正负决定(如 0→-1 = 反向)。';
+    [['h','↔ 横向'],['v','↕ 竖向'],['strip','↻ 绕车']].forEach(([v,t])=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; axSel.appendChild(o); });
     axSel.value=ch.wrapAxis||'h'; axSel.onclick=e=>e.stopPropagation();
     axSel.onchange=()=>{ ch.wrapAxis=axSel.value; window.refreshExportDurInfo?.(); };
     r5.append(mkLabel('地面速度'), gsI, mkLabel('px/s'), mkLabel('走过用时'), crossI, mkLabel('s'), wrapCk, axSel);
