@@ -27,10 +27,17 @@ export function makeCanvas(w=LED_W, h=LED_H){
 export function syncSideModules(cv, keep='left', flip='h'){
   const scale=Math.max(1, Math.round(cv.width/LED_W));
   const map=P.p2Map||MODULE_MAP;
-  const A=map[1], B=map[2];                      // 模组 2 side_left / 3 side_right(表序固定)
-  if(!A||!B) return;
-  const S=(keep==='right'?B:A).src.map(v=>v*scale);   // 源条带 [x,y,w,h]
-  const D=(keep==='right'?A:B).src.map(v=>v*scale);   // 目标条带左上角
+  // 侧板区域按布局取:
+  //  半板布局(≥10 行,G1–G10):左侧板 = G3+G4 源区之并,右侧板 = G5+G6 —— ALIAS 竖装下即
+  //  画布中段左右两块 64×128 竖区,复制+⇋ = 直接"把一块侧板镜像到另一块",前板/尾板分毫不动。
+  //  5 行布局:沿用模组 2/3 两条横带(旧行为)。
+  const uni=(a,b)=>{ const x=Math.min(a[0],b[0]), y=Math.min(a[1],b[1]);
+    return [x, y, Math.max(a[0]+a[2],b[0]+b[2])-x, Math.max(a[1]+a[3],b[1]+b[3])-y]; };
+  let A,B;
+  if(map.length>=10 && map[5]){ A=uni(map[2].src, map[3].src); B=uni(map[4].src, map[5].src); }
+  else { if(!map[1]||!map[2]) return; A=map[1].src.slice(); B=map[2].src.slice(); }
+  const S=(keep==='right'?B:A).map(v=>v*scale);   // 源区域 [x,y,w,h]
+  const D=(keep==='right'?A:B).map(v=>v*scale);   // 目标区域左上角
   const [sx,sy,sw,sh]=S, [dx,dy]=D;
   const ctx=cv.getContext('2d',{willReadFrequently:true}); ctx.imageSmoothingEnabled=false;
   const tmp=makeCanvas(sw,sh); const tc=tmp.getContext('2d'); tc.imageSmoothingEnabled=false;
