@@ -155,6 +155,7 @@ const EN = {
   'P2 → P1(反向 · 照车上的样子画)':'P2 → P1 (inverse · draw as seen on the car)',
   '🪞 整体镜像(双边)':'🪞 Symmetric mirror (bilateral)',
   '留左半 → 镜像到右':'Keep left → mirror to right', '留右半 → 镜像到左':'Keep right → mirror to left',
+  '留上半 → 镜像到下':'Keep top → mirror down', '留下半 → 镜像到上':'Keep bottom → mirror up',
   '对称叠加(融合)':'Overlay (blend)',
   '🚘 双侧同显':'🚘 Both side panels',
   '左板(2)→ 双侧':'Left panel (2) → both', '右板(3)→ 双侧':'Right panel (3) → both',

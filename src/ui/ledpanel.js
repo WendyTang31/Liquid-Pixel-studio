@@ -218,6 +218,8 @@ export function initLedPanel(){
     mm.onchange=()=>{ P.p2MirrorMode=mm.value; refreshP2Preview();
       setHint(mm.value==='overlay'?'对称叠加:两份画面融合(逐像素取离背景色更远的那份)'
         : mm.value==='right'?'留右半:只保留右半画面,镜像覆盖到左半'
+        : mm.value==='top'?'留上半:沿水平中线(y=160)上下对称 —— 上半画面镜像覆盖到下半'
+        : mm.value==='bottom'?'留下半:沿水平中线上下对称 —— 下半画面镜像覆盖到上半'
         : '留左半:只保留左半画面,镜像覆盖到右半'); }; }
   // 🚘 双侧同显:一段侧板动画同时上两块侧板(模组 2+3)。
   const ss=$('p2SideSync'), sf=$('p2SideSyncFlip');

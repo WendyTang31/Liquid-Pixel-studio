@@ -626,9 +626,11 @@
           <option value="ccw">逆时针 CCW(实装镜像时)</option>
         </select></div>
       <div class="row"><label class="ck" title="整体镜像(双边):沿竖直中线做左右对称的双边动画。在【分屏切割之前】施加,所以侧板分屏也得到准确镜像。"><input type="checkbox" id="p2Mirror"> 🪞 整体镜像(双边)</label>
-        <select id="p2MirMode" style="flex:1" title="镜像方式:『留左半』=只保留左半边画面,镜像覆盖到右半(原来的右半被替换);『留右半』反之;『对称叠加』=两份画面融合(旧行为)。留左/右半是纯覆盖,与背景颜色无关。">
+        <select id="p2MirMode" style="flex:1" title="镜像方式:『留左半/右半』沿竖直中线左右对称;『留上半/下半』沿【水平中线】(LED 整幅画布 y=160)上下对称;『对称叠加』=两份画面融合(旧行为)。留半模式是纯覆盖,与背景颜色无关。">
           <option value="left">留左半 → 镜像到右</option>
           <option value="right">留右半 → 镜像到左</option>
+          <option value="top">留上半 → 镜像到下</option>
+          <option value="bottom">留下半 → 镜像到上</option>
           <option value="overlay">对称叠加(融合)</option>
         </select></div>
       <div class="row"><label title="双侧同显:一段侧板动画【同时】上两块侧板(模组 2 side_left + 3 side_right)。以其中一块的条带为源,复制到另一块(原内容被覆盖),在分屏切割之前施加。两块侧板装车方向不同 —— 复制方式选镜像/原样,P2 预览与 3D 里眼见为准。">🚘 双侧同显</label>

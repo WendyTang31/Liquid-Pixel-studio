@@ -48,6 +48,8 @@ export function syncSideModules(cv, keep='left', flip='h'){
 // mode:
 //  'left'  = 只保留左半,镜像覆盖到右半(默认)。纯像素覆盖,与背景颜色无关 —— 图形永不丢失。
 //  'right' = 只保留右半,镜像覆盖到左半。
+//  'top'   = 只保留上半,沿【水平中线】镜像覆盖到下半(LED 整幅画布的横轴中线,y=高/2)。
+//  'bottom'= 只保留下半,镜像覆盖到上半。
 //  'overlay' = 整幅对称叠加(旧行为):逐像素取【离背景色更远】的那份 —— 修掉旧 darken/lighten
 //    亮度猜测在灰背景下把深色图形"吃掉"的 bug(背景一变灰图形消失、变白又回来)。
 function hex2rgbLed(hx){ hx=(hx||'#000').replace('#',''); if(hx.length===3) hx=hx.split('').map(c=>c+c).join('');
@@ -62,6 +64,16 @@ export function mirrorSymmetricH(cv, mode='left'){
     ctx.save(); ctx.setTransform(-1,0,0,1,w,0);          // 翻转坐标系:画到 x' = w−x
     if(mode==='left') ctx.drawImage(tmp, 0,0,hw,h, 0,0,hw,h);        // 左半 → 翻转落到右半
     else              ctx.drawImage(tmp, w-hw,0,hw,h, w-hw,0,hw,h);  // 右半 → 翻转落到左半
+    ctx.restore();
+    return;
+  }
+  if(mode==='top' || mode==='bottom'){
+    const hh=h>>1;
+    const tmp=makeCanvas(w,h); const tc=tmp.getContext('2d'); tc.imageSmoothingEnabled=false;
+    tc.drawImage(cv,0,0);
+    ctx.save(); ctx.setTransform(1,0,0,-1,0,h);          // 翻转坐标系:画到 y' = h−y(水平中线对称)
+    if(mode==='top') ctx.drawImage(tmp, 0,0,w,hh, 0,0,w,hh);         // 上半 → 翻转落到下半
+    else             ctx.drawImage(tmp, 0,h-hh,w,hh, 0,h-hh,w,hh);   // 下半 → 翻转落到上半
     ctx.restore();
     return;
   }
