@@ -164,6 +164,9 @@ const EN = {
   '🚘 双侧同显:右板(模组3)为源,复制到左板 —— 两块侧板播同一段动画':'🚘 Both sides: right panel (module 3) is the source, copied to the left — both side panels play the same animation',
   '模组映射':'Module map', '↺ 重置':'↺ Reset',
   '⬒ 直通(不旋转)':'⬒ Passthrough (no rotation)',
+  '⬓ 半板 G1–G10':'⬓ Half-boards G1–G10',
+  '⬓ 半板布局 G1–G10(与 HD 构造箱体一一对应):发 32px 探测帧读方向 —— 哪条 G 的 F 转了 180°(箭头倒着走),就给那条 G 设 180°;左右反写勾 ⇋':
+    '⬓ Half-board layout G1–G10 (matches the HD cabinet data groups): send the 32px probe — whichever G shows its F rotated 180° gets 180°; mirrored-reading gets ⇋',
   '↺ 模组映射已恢复默认(128×320,模组 2/3 旋转 90° 并排)':'↺ Module map reset to default (128×320, modules 2/3 rotated 90° side-by-side)',
   '⬒ 直通布局:五条横带原样输出(不旋转)。生成校准帧发到屏上验证 —— 竖条应是竖的、白块在左上;方向不对再用 0°/180° 微调':
     '⬒ Passthrough: five horizontal bands output as-is (no rotation). Send the calibration frame to verify — bars vertical, white square top-left; fine-tune with 0°/180° if needed',

@@ -259,6 +259,16 @@ export function initLedPanel(){
     P.p2Rot=MODULE_MAP.map(()=>null);
     renderMapRows(); renderRotSelects(); refreshP2Preview();
     setHint('⬒ 直通布局:五条横带原样输出(不旋转)。生成校准帧发到屏上验证 —— 竖条应是竖的、白块在左上;方向不对再用 0°/180° 微调'); };
+  // ⬓ 半板布局 G1–G10:与 HD「构造箱体」的数据组一一对应(每行 128×32,两行 = 一块物理板)。
+  // 柔性板常见"蛇形走线":一块板的两条 G 有一条整行反向 → 上下两半的动画朝相反方向跑、
+  // 图案在中缝断开(草图 p5/p6 的症状)。在这里给反向的那条 G 单独设 180°(必要时 ⇋/⇅),
+  // 就在 32px 粒度上把方向掰正 —— 完全不动硬件设置。
+  const halfB=$('p2MapHalf');
+  if(halfB) halfB.onclick=()=>{
+    P.p2Map=Array.from({length:10},(_,i)=>({ name:'G'+(i+1), src:[0,i*32,128,32], dst:[0,i*32], rotate:0 }));
+    P.p2Rot=P.p2Map.map(()=>null);
+    renderMapRows(); renderRotSelects(); refreshP2Preview();
+    setHint('⬓ 半板布局 G1–G10(与 HD 构造箱体一一对应):发 32px 探测帧读方向 —— 哪条 G 的 F 转了 180°(箭头倒着走),就给那条 G 设 180°;左右反写勾 ⇋'); };
 
   // 校准帧:预览切成校准图案;可直接存 P1/P2 两张 PNG 拿去打屏比对
   $('p2Calib').onclick=()=>{
@@ -273,8 +283,12 @@ export function initLedPanel(){
   // 🧭 探测帧:原样直发(不经任何变换),测控制器+安装的真实映射。一键直接下载 PNG。
   const probe=$('p2Probe');
   if(probe) probe.onclick=async ()=>{
-    downloadBlob(await toBlobP(probeCanvas()), 'probe_128x320.png');
-    setHint('🧭 已保存 probe_128x320.png —— 【原样】发到屏上拍照:每块板看 F 的朝向 = 需要的补偿角,F 反写 = 有镜像,白点数 = 第几条带'); };
+    // 当前映射是半板粒度(有 32 高的行)→ 探测帧也按 32 行出,能读出每条 G 的方向
+    const bandH=(P.p2Map && P.p2Map.some(m=>m.src[3]<=32)) ? 32 : 64;
+    downloadBlob(await toBlobP(probeCanvas(null, bandH)), `probe_128x320_${bandH===32?'G10':'5band'}.png`);
+    setHint(bandH===32
+      ? '🧭 已保存 32px 半板探测帧(G1–G10)—— 原样发屏拍照:同色深浅一对 = 同一块板;哪条 G 的 F 倒转/反写,就给那条 G 设 180°/勾镜像'
+      : '🧭 已保存 probe_128x320.png —— 【原样】发到屏上拍照:每块板看 F 的朝向 = 需要的补偿角,F 反写 = 有镜像,白点数 = 第几条带'); };
   $('p2Save').onclick=async ()=>{
     buildCalib();
     const wasCalib=calibMode; calibMode=true; renderP1();

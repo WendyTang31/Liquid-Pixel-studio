@@ -138,26 +138,32 @@ const CAL_COLORS = [
 // 用途:测出「控制器 + 物理安装」的真实映射,软件变换完全不掺和 —— 一张照片定乾坤。
 // 每条 128×64 横带:自己的底色 + 大写【F】(F 无任何旋转/镜像对称:朝向直接读出该板需要的补偿角,
 // 反写 = 存在镜像)+ 右上角 N 个白点(N=模组号)+ 左上白方块 + 1px 描边。
-export function makeProbeFrame(W = LED_W, H = LED_H){
+// bandH 可选(默认 64 = 整板行;传 32 = 半板行,对应 HD 构造箱体的 G1–G10 数据组粒度)。
+// 32 行时同一块物理板的两条 G 共享色相、奇数行调淡 —— 配对一眼可辨,反向的那半直接读出来。
+export function makeProbeFrame(W = LED_W, H = LED_H, bandH = 64){
   const d = new Uint8ClampedArray(W * H * 4);
   for(let i = 3; i < d.length; i += 4) d[i] = 255;
   const put=(x,y,c)=>{ if(x<0||y<0||x>=W||y>=H) return;
     const i=(y*W+x)*4; d[i]=c[0]; d[i+1]=c[1]; d[i+2]=c[2]; d[i+3]=255; };
   const rect=(x,y,w,h,c)=>{ for(let j=0;j<h;j++) for(let i=0;i<w;i++) put(x+i,y+j,c); };
-  const bandH=64, n=Math.floor(H/bandH);
+  const n=Math.floor(H/bandH), perPanel=Math.max(1, Math.round(64/bandH));
   for(let b=0;b<n;b++){
-    const y0=b*bandH, col=CAL_COLORS[b%CAL_COLORS.length];
+    const y0=b*bandH;
+    let col=CAL_COLORS[Math.floor(b/perPanel)%CAL_COLORS.length];
+    if(perPanel>1 && (b%perPanel)===1) col=col.map(v=>Math.round(v*0.55+255*0.35)); // 同板第二条:调淡
     const dim=[col[0]*0.18|0, col[1]*0.18|0, col[2]*0.18|0];
     rect(0,y0,W,bandH,dim);                                  // 底色(暗)
     for(let x=0;x<W;x++){ put(x,y0,col); put(x,y0+bandH-1,col); }   // 1px 描边
     for(let y=0;y<bandH;y++){ put(0,y0+y,col); put(W-1,y0+y,col); }
-    // 大写 F:竖干 + 顶长臂 + 中短臂(线宽 6px,占带高 70%)
-    const fx=44, fy=y0+10, t=6, fh=44;
+    // 大写 F(尺寸随行高缩放):竖干 + 顶长臂 + 中短臂
+    const t=Math.max(3, Math.round(bandH/10)), fh=Math.round(bandH*0.68);
+    const fx=44, fy=y0+Math.round(bandH*0.16);
     rect(fx, fy, t, fh, col);                                // 竖干
     rect(fx, fy, 34, t, col);                                // 顶臂(长)
-    rect(fx, fy+20, 22, t, col);                             // 中臂(短)
-    for(let i=0;i<=b;i++) rect(W-12-(i*10), y0+4, 6,6, [255,255,255]); // N 个白点 = 模组号
-    rect(2, y0+2, 8,8, [255,255,255]);                       // 左上白方块
+    rect(fx, fy+Math.round(fh*0.45), 22, t, col);            // 中臂(短)
+    const ds=bandH>=48?6:5;
+    for(let i=0;i<=b;i++) rect(W-2-ds-(i*(ds+4)), y0+3, ds,ds, [255,255,255]); // N 个白点 = 行号
+    rect(2, y0+2, Math.min(8,bandH>>2)+2, Math.min(8,bandH>>2)+2, [255,255,255]); // 左上白方块
   }
   return { width: W, height: H, data: d };
 }

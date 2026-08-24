@@ -104,8 +104,9 @@ export function transformCanvasP1toP2(src, out, dir){
   return dst;
 }
 // 🧭 探测帧 → 画布(平铺横带,原样直发不经任何变换 —— 测控制器+安装的真实映射用)。
-export function probeCanvas(out){
-  const pr=makeProbeFrame(LED_W, LED_H);
+// bandH:64=整板行;32=半板行(G1–G10 数据组粒度,查"半板反向/蛇形走线"用)。
+export function probeCanvas(out, bandH=64){
+  const pr=makeProbeFrame(LED_W, LED_H, bandH);
   const dst=out||makeCanvas(LED_W,LED_H);
   const ctx=dst.getContext('2d',{willReadFrequently:true}); ctx.imageSmoothingEnabled=false;
   const img=ctx.createImageData(pr.width,pr.height); img.data.set(pr.data); ctx.putImageData(img,0,0);
