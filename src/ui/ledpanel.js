@@ -269,6 +269,18 @@ export function initLedPanel(){
     P.p2Rot=P.p2Map.map(()=>null);
     renderMapRows(); renderRotSelects(); refreshP2Preview();
     setHint('⬓ 半板布局 G1–G10(与 HD 构造箱体一一对应):发 32px 探测帧读方向 —— 哪条 G 的 F 转了 180°(箭头倒着走),就给那条 G 设 180°;左右反写勾 ⇋'); };
+  // 🚗 ALIAS 实装预设 —— 2026-08 探测帧实测定型:
+  //   G1/G2、G7–G10 横装直通;G3–G6(两块侧板)竖装,硬件把各行【逆时针 90°】立起来显示
+  //   (探测帧读数:白点在顶、白方块在底)。补偿 = 源改为画布中段四条 32×128 竖条(车上样子),
+  //   顺时针 90° 预旋转装回各自 G 行 —— CW ∘ CCW = 恒等,车上即为所画。
+  //   创作约定:侧屏内容画在画布中段 y64..192:左侧板 = x0..64(G3 左列 G4 右列),右侧板 = x64..128(G5/G6)。
+  const alias=$('p2MapAlias');
+  if(alias) alias.onclick=()=>{
+    const rows=Array.from({length:10},(_,i)=>({ name:'G'+(i+1), src:[0,i*32,128,32], dst:[0,i*32], rotate:0 }));
+    [2,3,4,5].forEach((gi,k)=>{ rows[gi]={ name:'G'+(gi+1), src:[k*32, 64, 32, 128], dst:[0, gi*32], rotate:90 }; });
+    P.p2Map=rows; P.p2Rot=rows.map(()=>null);
+    renderMapRows(); renderRotSelects(); refreshP2Preview();
+    setHint('🚗 ALIAS 实装:G1/G2/G7–G10 直通;G3–G6 = 中段四条竖条(y64..192,x 每 32 一列)预旋转 90° 入行。发校准帧验证 —— 侧区若上下反了,把 G3–G6 改成 270°;某板左右列互换,交换那对的源 x 即可'); };
 
   // 校准帧:预览切成校准图案;可直接存 P1/P2 两张 PNG 拿去打屏比对
   $('p2Calib').onclick=()=>{

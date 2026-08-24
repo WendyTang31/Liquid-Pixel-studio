@@ -165,6 +165,9 @@ const EN = {
   '模组映射':'Module map', '↺ 重置':'↺ Reset',
   '⬒ 直通(不旋转)':'⬒ Passthrough (no rotation)',
   '⬓ 半板 G1–G10':'⬓ Half-boards G1–G10',
+  '🚗 ALIAS 实装':'🚗 ALIAS rig',
+  '🚗 ALIAS 实装:G1/G2/G7–G10 直通;G3–G6 = 中段四条竖条(y64..192,x 每 32 一列)预旋转 90° 入行。发校准帧验证 —— 侧区若上下反了,把 G3–G6 改成 270°;某板左右列互换,交换那对的源 x 即可':
+    '🚗 ALIAS rig: G1/G2/G7–G10 passthrough; G3–G6 = four vertical 32×128 columns (y64..192) pre-rotated 90° into their rows. Verify with the calibration frame — if the side content is upside-down switch G3–G6 to 270°; if a panel’s columns are swapped, swap that pair’s src x',
   '⬓ 半板布局 G1–G10(与 HD 构造箱体一一对应):发 32px 探测帧读方向 —— 哪条 G 的 F 转了 180°(箭头倒着走),就给那条 G 设 180°;左右反写勾 ⇋':
     '⬓ Half-board layout G1–G10 (matches the HD cabinet data groups): send the 32px probe — whichever G shows its F rotated 180° gets 180°; mirrored-reading gets ⇋',
   '↺ 模组映射已恢复默认(128×320,模组 2/3 旋转 90° 并排)':'↺ Module map reset to default (128×320, modules 2/3 rotated 90° side-by-side)',

@@ -645,7 +645,8 @@
       <div class="row"><label title="每块模组【从画面哪块区域取像素】(源 x/y/宽/高)以及【放到实装画布的哪个位置】(目标 x/y)。实装尺寸与默认不符时,直接在这里改成真实值 —— 改完预览立刻更新。">模组映射</label>
         <button id="p2MapReset" style="font:11px system-ui;padding:2px 6px" title="恢复默认映射表(模组 2/3 旋转 90° 并排)">↺ 重置</button>
         <button id="p2MapFlat" style="font:11px system-ui;padding:2px 6px" title="直通布局:五条 128×64 横带原样堆叠输出,全部不旋转 —— 控制器接线就是五条横带依次相连时用这个。切换后侧板可选 0°/180° 微调;发校准帧验证:竖条应是竖的、白块在各块左上。">⬒ 直通(不旋转)</button>
-        <button id="p2MapHalf" style="font:11px system-ui;padding:2px 6px" title="半板布局 G1–G10:每行 128×32,与 HD『构造箱体』的十个数据组一一对应(两行 = 一块 128×64 物理板)。柔性板蛇形走线导致一块板的上下两半动画方向相反、图案在中缝断开时用这个 —— 给反向的那条 G 单独设 180°(必要时 ⇋/⇅),32px 粒度掰正方向,不动任何硬件设置。">⬓ 半板 G1–G10</button></div>
+        <button id="p2MapHalf" style="font:11px system-ui;padding:2px 6px" title="半板布局 G1–G10:每行 128×32,与 HD『构造箱体』的十个数据组一一对应(两行 = 一块 128×64 物理板)。柔性板蛇形走线导致一块板的上下两半动画方向相反、图案在中缝断开时用这个 —— 给反向的那条 G 单独设 180°(必要时 ⇋/⇅),32px 粒度掰正方向,不动任何硬件设置。">⬓ 半板 G1–G10</button>
+        <button id="p2MapAlias" style="font:11px system-ui;padding:2px 6px" title="ALIAS 实装一键配置(2026-08 探测帧实测):G1/G2/G7–G10 横装直通;G3–G6 两块侧板竖装(硬件把行逆时针立起) → 源改为画布中段 y64..192 的四条 32×128 竖条、顺时针 90° 预旋转入行,车上即为所画。侧屏内容画在中段:左侧板 x0..64,右侧板 x64..128。">🚗 ALIAS 实装</button></div>
       <div class="small" style="opacity:.5">源 x · y · 宽 · 高 → 目标 x · y</div>
       <div id="p2MapRows"></div>
       <div class="row">
